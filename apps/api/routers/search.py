@@ -2,6 +2,9 @@ from fastapi import APIRouter, Query
 
 from db.neo4j import get_neo4j_session
 from models.schemas import SearchResult
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -150,7 +153,7 @@ async def search(
 
             return results
     except Exception as e:
-        print(f"[Search] Error: {e}")
+        logger.error(f"Search error: {e}")
         return []
 
 
@@ -219,5 +222,5 @@ async def search_suggestions(
 
             return results[:limit]
     except Exception as e:
-        print(f"[Search Suggest] Error: {e}")
+        logger.error(f"Search suggest error: {e}")
         return []

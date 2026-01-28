@@ -9,9 +9,10 @@ This test suite covers:
 - Knowledge graph endpoints
 """
 
-import pytest
-import httpx
 from uuid import uuid4
+
+import httpx
+import pytest
 
 # Base URL for API
 BASE_URL = "http://localhost:8000/api"
@@ -409,7 +410,7 @@ class TestEndToEndFlow:
         assert link_response.status_code == 200
 
         # 4. Verify link in graph
-        graph_response = client.get(f"/graph?limit=100")
+        graph_response = client.get("/graph?limit=100")
         assert graph_response.status_code == 200
 
         # 5. Cleanup

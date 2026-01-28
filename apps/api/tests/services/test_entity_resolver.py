@@ -11,16 +11,17 @@ Tests all 6 resolution stages:
 Target: 90%+ coverage for entity_resolver.py
 """
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch
 from uuid import uuid4
 
-from services.entity_resolver import EntityResolver, get_entity_resolver
-from models.ontology import ResolvedEntity, normalize_entity_name, get_canonical_name
-from tests.mocks.neo4j_mock import MockNeo4jSession, MockNeo4jResult
-from tests.mocks.llm_mock import MockEmbeddingService
-from tests.factories import EntityFactory, Neo4jRecordFactory
+import pytest
 
+from models.ontology import get_canonical_name, normalize_entity_name
+from services.entity_resolver import EntityResolver, get_entity_resolver
+from tests.factories import EntityFactory, Neo4jRecordFactory
+from tests.mocks.llm_mock import MockEmbeddingService
+from tests.mocks.neo4j_mock import MockNeo4jResult, MockNeo4jSession
+from utils.vectors import cosine_similarity
 
 # ============================================================================
 # Test Fixtures
@@ -698,28 +699,28 @@ class TestEntityResolverCosineSimilarity:
     def test_cosine_similarity_identical_vectors(self):
         """Should return 1.0 for identical vectors."""
         vec = [0.5] * 100
-        result = EntityResolver._cosine_similarity(vec, vec)
+        result = cosine_similarity(vec, vec)
         assert abs(result - 1.0) < 0.0001
 
     def test_cosine_similarity_orthogonal_vectors(self):
         """Should return 0.0 for orthogonal vectors."""
         vec_a = [1.0, 0.0, 0.0]
         vec_b = [0.0, 1.0, 0.0]
-        result = EntityResolver._cosine_similarity(vec_a, vec_b)
+        result = cosine_similarity(vec_a, vec_b)
         assert abs(result) < 0.0001
 
     def test_cosine_similarity_opposite_vectors(self):
         """Should return -1.0 for opposite vectors."""
         vec_a = [1.0, 0.0]
         vec_b = [-1.0, 0.0]
-        result = EntityResolver._cosine_similarity(vec_a, vec_b)
+        result = cosine_similarity(vec_a, vec_b)
         assert abs(result + 1.0) < 0.0001
 
     def test_cosine_similarity_zero_vector(self):
         """Should return 0.0 for zero vectors."""
         vec_a = [0.0] * 100
         vec_b = [0.5] * 100
-        result = EntityResolver._cosine_similarity(vec_a, vec_b)
+        result = cosine_similarity(vec_a, vec_b)
         assert result == 0.0
 
 

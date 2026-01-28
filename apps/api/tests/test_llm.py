@@ -1,14 +1,12 @@
 """Tests for NVIDIA Llama LLM integration and rate limiting."""
 
-import asyncio
-import pytest
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.llm import LLMClient, RateLimiter, get_llm_client
-from services.extractor import DecisionExtractor
-from agents.interview import InterviewAgent, InterviewState
+import pytest
 
+from agents.interview import InterviewAgent, InterviewState
+from services.extractor import DecisionExtractor
+from services.llm import LLMClient, RateLimiter, get_llm_client
 
 # ============================================================================
 # Rate Limiter Tests
@@ -219,10 +217,13 @@ class TestDecisionExtractor:
     @pytest.mark.asyncio
     async def test_extract_entities(self):
         """Should extract entities from text."""
-        mock_response = '''[
-            {"name": "PostgreSQL", "type": "technology"},
-            {"name": "Caching", "type": "concept"}
-        ]'''
+        mock_response = '''{
+            "entities": [
+                {"name": "PostgreSQL", "type": "technology", "confidence": 0.95},
+                {"name": "Caching", "type": "concept", "confidence": 0.85}
+            ],
+            "reasoning": "PostgreSQL is a database technology, caching is a concept"
+        }'''
 
         with patch('services.extractor.get_llm_client') as mock_get_client:
             mock_client = AsyncMock()
@@ -233,10 +234,10 @@ class TestDecisionExtractor:
             entities = await extractor.extract_entities("Using PostgreSQL with caching")
 
             assert len(entities) == 2
-            assert entities[0].name == "PostgreSQL"
-            assert entities[0].type == "technology"
-            assert entities[1].name == "Caching"
-            assert entities[1].type == "concept"
+            assert entities[0]["name"] == "PostgreSQL"
+            assert entities[0]["type"] == "technology"
+            assert entities[1]["name"] == "Caching"
+            assert entities[1]["type"] == "concept"
 
     @pytest.mark.asyncio
     async def test_extract_decisions_handles_error(self):

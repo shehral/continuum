@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 from db.neo4j import get_neo4j_session
 from models.schemas import DashboardStats, Decision, Entity

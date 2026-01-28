@@ -6,7 +6,8 @@ AI-dependent code without making actual API calls.
 
 import json
 from typing import Optional
-from unittest.mock import AsyncMock
+
+from utils.vectors import cosine_similarity
 
 
 class MockLLMClient:
@@ -154,7 +155,7 @@ class MockEmbeddingService:
         scored = []
         for candidate in candidates:
             if "embedding" in candidate:
-                similarity = self._cosine_similarity(
+                similarity = cosine_similarity(
                     query_embedding,
                     candidate["embedding"],
                 )
@@ -162,16 +163,6 @@ class MockEmbeddingService:
 
         scored.sort(key=lambda x: x["similarity"], reverse=True)
         return scored[:top_k]
-
-    @staticmethod
-    def _cosine_similarity(a: list[float], b: list[float]) -> float:
-        """Calculate cosine similarity between two vectors."""
-        dot_product = sum(x * y for x, y in zip(a, b))
-        norm_a = sum(x * x for x in a) ** 0.5
-        norm_b = sum(x * x for x in b) ** 0.5
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot_product / (norm_a * norm_b)
 
     def get_call_count(self) -> int:
         """Get number of embedding calls."""
@@ -188,8 +179,6 @@ def create_similar_embeddings(base_text: str, similar_texts: list[str]) -> dict[
 
     Returns a dict mapping text to embedding vectors.
     """
-    service = MockEmbeddingService()
-
     # Create base embedding
     base_embedding = [0.5] * 2048
 

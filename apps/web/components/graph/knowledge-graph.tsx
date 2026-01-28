@@ -438,6 +438,7 @@ export function KnowledgeGraph({
                   size="icon"
                   onClick={() => setShowSourceLegend(false)}
                   className="h-6 w-6 text-slate-400 hover:text-slate-200"
+                  aria-label="Close source legend"
                 >
                   <X className="h-3 w-3" />
                 </Button>
@@ -509,10 +510,10 @@ export function KnowledgeGraph({
 
         {/* Node Type Legend */}
         <Panel position="top-left" className="m-4" style={{ marginTop: showSourceLegend ? '280px' : '0' }}>
-          <Card className="w-52 bg-slate-800/90 backdrop-blur-xl border-white/10">
+          <Card className="w-52 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Entity types legend">
             <CardHeader className="py-3 px-4">
               <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
-                <span>📊</span> Entity Types
+                <span role="img" aria-label="Chart icon">📊</span> Entity Types
               </CardTitle>
             </CardHeader>
             <CardContent className="py-2 px-4 space-y-2">
@@ -543,7 +544,7 @@ export function KnowledgeGraph({
         {/* Relationship Legend */}
         {showRelationshipLegend && (
           <Panel position="top-right" className="m-4">
-            <Card className="w-56 bg-slate-800/90 backdrop-blur-xl border-white/10">
+            <Card className="w-56 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Relationship types legend">
               <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
                   <GitBranch className="h-4 w-4" /> Relationships
@@ -553,6 +554,7 @@ export function KnowledgeGraph({
                   size="icon"
                   onClick={() => setShowRelationshipLegend(false)}
                   className="h-6 w-6 text-slate-400 hover:text-slate-200"
+                  aria-label="Close relationship legend"
                 >
                   <X className="h-3 w-3" />
                 </Button>

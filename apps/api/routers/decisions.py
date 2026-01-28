@@ -1,11 +1,11 @@
-from uuid import uuid4
 from datetime import datetime
+from uuid import uuid4
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional
 
 from db.neo4j import get_neo4j_session
-from models.schemas import Decision, Entity, DecisionCreate
+from models.schemas import Decision, DecisionCreate, Entity
 
 router = APIRouter()
 

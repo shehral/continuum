@@ -86,6 +86,7 @@ export function Sidebar() {
             size="sm"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             className="flex-1 text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]"
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           >
             {theme === "dark" ? "☀️" : "🌙"}
           </Button>
@@ -93,6 +94,7 @@ export function Sidebar() {
             variant="ghost"
             size="sm"
             className="flex-1 text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]"
+            aria-label="Open settings"
           >
             ⚙️
           </Button>
@@ -101,6 +103,7 @@ export function Sidebar() {
             size="sm"
             onClick={() => signOut()}
             className="flex-1 text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]"
+            aria-label="Sign out"
           >
             🚪
           </Button>

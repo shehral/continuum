@@ -4,8 +4,7 @@ Provides a controllable mock that simulates Neo4j async session behavior
 without requiring a running database.
 """
 
-from typing import Any, Optional
-from unittest.mock import AsyncMock
+from typing import Optional
 
 
 class MockNeo4jResult:

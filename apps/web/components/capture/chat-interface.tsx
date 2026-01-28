@@ -179,11 +179,13 @@ export function ChatInterface({
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
             disabled={isLoading}
+            aria-label="Type your message"
             className="flex-1 bg-white/[0.05] border-white/[0.1] text-slate-200 placeholder:text-slate-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
           />
           <Button
             type="submit"
             disabled={!input.trim() || isLoading}
+            aria-label={isLoading ? "Sending message" : "Send message"}
             className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 hover:shadow-[0_0_20px_rgba(34,211,238,0.3)] transition-all disabled:opacity-50"
           >
             {isLoading ? (

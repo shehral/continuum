@@ -3,10 +3,10 @@
 These factories create realistic test data for unit and integration tests.
 """
 
-from uuid import uuid4
+import random
 from datetime import datetime, timedelta
 from typing import Optional
-import random
+from uuid import uuid4
 
 
 class EntityFactory:
@@ -184,7 +184,7 @@ class RelationshipFactory:
             "target_id": target_id,
             "type": rel_type or random.choice(cls.DECISION_RELATIONSHIPS),
             "confidence": confidence,
-            "reasoning": reasoning or f"Relationship between decisions",
+            "reasoning": reasoning or "Relationship between decisions",
         }
 
 
@@ -241,7 +241,7 @@ class ValidationIssueFactory:
         ids: Optional[list[str]] = None,
     ):
         """Create a circular dependency issue."""
-        from services.validator import ValidationIssue, IssueType, IssueSeverity
+        from services.validator import IssueSeverity, IssueType, ValidationIssue
 
         return ValidationIssue(
             type=IssueType.CIRCULAR_DEPENDENCY,
@@ -255,7 +255,7 @@ class ValidationIssueFactory:
     @classmethod
     def create_orphan_entity(cls, name: str, entity_type: str = "technology"):
         """Create an orphan entity issue."""
-        from services.validator import ValidationIssue, IssueType, IssueSeverity
+        from services.validator import IssueSeverity, IssueType, ValidationIssue
 
         return ValidationIssue(
             type=IssueType.ORPHAN_ENTITY,
@@ -274,7 +274,7 @@ class ValidationIssueFactory:
         similarity: int = 90,
     ):
         """Create a duplicate entity issue."""
-        from services.validator import ValidationIssue, IssueType, IssueSeverity
+        from services.validator import IssueSeverity, IssueType, ValidationIssue
 
         return ValidationIssue(
             type=IssueType.DUPLICATE_ENTITY,

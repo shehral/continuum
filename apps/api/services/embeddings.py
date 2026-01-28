@@ -1,11 +1,11 @@
 """Embedding service using NVIDIA NV-EmbedQA model for semantic search."""
 
-import asyncio
 from typing import List
 
 from openai import AsyncOpenAI
 
 from config import get_settings
+from utils.vectors import cosine_similarity
 
 
 class EmbeddingService:
@@ -117,7 +117,7 @@ class EmbeddingService:
         scored = []
         for candidate in candidates:
             if 'embedding' in candidate:
-                similarity = self._cosine_similarity(
+                similarity = cosine_similarity(
                     query_embedding,
                     candidate['embedding']
                 )
@@ -126,17 +126,6 @@ class EmbeddingService:
         # Sort by similarity descending
         scored.sort(key=lambda x: x['similarity'], reverse=True)
         return scored[:top_k]
-
-    @staticmethod
-    def _cosine_similarity(a: List[float], b: List[float]) -> float:
-        """Calculate cosine similarity between two vectors."""
-        dot_product = sum(x * y for x, y in zip(a, b))
-        norm_a = sum(x * x for x in a) ** 0.5
-        norm_b = sum(x * x for x in b) ** 0.5
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot_product / (norm_a * norm_b)
-
 
 # Singleton instance
 _embedding_service: EmbeddingService | None = None

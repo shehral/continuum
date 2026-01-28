@@ -130,7 +130,6 @@ export default function CapturePage() {
 
   const handleLinkEntity = (entity: Entity) => {
     // In real implementation, this would call the API
-    console.log("Linking entity:", entity)
     setSuggestedEntities((prev) => prev.filter((e) => e.id !== entity.id))
   }
 

@@ -1,4 +1,5 @@
 from uuid import uuid4
+
 from fastapi import APIRouter
 
 from db.neo4j import get_neo4j_session

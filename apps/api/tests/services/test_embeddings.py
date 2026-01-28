@@ -11,11 +11,12 @@ Tests:
 Target: 80%+ coverage for embeddings.py
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 
 from services.embeddings import EmbeddingService, get_embedding_service
-
+from utils.vectors import cosine_similarity
 
 # ============================================================================
 # Test Fixtures
@@ -350,7 +351,7 @@ class TestCosineSimilarity:
     def test_identical_vectors(self):
         """Should return 1.0 for identical vectors."""
         vec = [0.5, 0.5, 0.5]
-        result = EmbeddingService._cosine_similarity(vec, vec)
+        result = cosine_similarity(vec, vec)
 
         assert abs(result - 1.0) < 0.0001
 
@@ -358,7 +359,7 @@ class TestCosineSimilarity:
         """Should return 0.0 for orthogonal vectors."""
         vec_a = [1.0, 0.0, 0.0]
         vec_b = [0.0, 1.0, 0.0]
-        result = EmbeddingService._cosine_similarity(vec_a, vec_b)
+        result = cosine_similarity(vec_a, vec_b)
 
         assert abs(result) < 0.0001
 
@@ -366,7 +367,7 @@ class TestCosineSimilarity:
         """Should return -1.0 for opposite vectors."""
         vec_a = [1.0, 0.0]
         vec_b = [-1.0, 0.0]
-        result = EmbeddingService._cosine_similarity(vec_a, vec_b)
+        result = cosine_similarity(vec_a, vec_b)
 
         assert abs(result + 1.0) < 0.0001
 
@@ -374,7 +375,7 @@ class TestCosineSimilarity:
         """Should return 0.0 when one vector is zero."""
         vec_a = [0.0, 0.0, 0.0]
         vec_b = [1.0, 2.0, 3.0]
-        result = EmbeddingService._cosine_similarity(vec_a, vec_b)
+        result = cosine_similarity(vec_a, vec_b)
 
         assert result == 0.0
 
@@ -382,7 +383,7 @@ class TestCosineSimilarity:
         """Should return 0.0 when both vectors are zero."""
         vec_a = [0.0, 0.0]
         vec_b = [0.0, 0.0]
-        result = EmbeddingService._cosine_similarity(vec_a, vec_b)
+        result = cosine_similarity(vec_a, vec_b)
 
         assert result == 0.0
 
@@ -391,7 +392,7 @@ class TestCosineSimilarity:
         import math
         # Create a normalized vector
         vec = [1/math.sqrt(3), 1/math.sqrt(3), 1/math.sqrt(3)]
-        result = EmbeddingService._cosine_similarity(vec, vec)
+        result = cosine_similarity(vec, vec)
 
         assert abs(result - 1.0) < 0.0001
 

@@ -1,11 +1,11 @@
 """Shared pytest fixtures for Continuum API tests."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from models.ontology import ResolvedEntity
+import pytest
 
+from models.ontology import ResolvedEntity
 
 # ============================================================================
 # Neo4j Session Fixtures
@@ -233,7 +233,7 @@ def mock_embedding_response():
 @pytest.fixture
 def sample_validation_issues():
     """Return sample validation issues."""
-    from services.validator import ValidationIssue, IssueType, IssueSeverity
+    from services.validator import IssueSeverity, IssueType, ValidationIssue
 
     return [
         ValidationIssue(

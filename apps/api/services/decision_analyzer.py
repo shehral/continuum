@@ -5,7 +5,9 @@ import json
 from typing import Optional
 
 from services.llm import get_llm_client
-from models.ontology import RelationType
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DecisionAnalyzer:
@@ -85,7 +87,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             }
 
         except Exception as e:
-            print(f"[DecisionAnalyzer] Error analyzing pair: {e}")
+            logger.error(f"Error analyzing pair: {e}")
             return None
 
     async def analyze_all_pairs(self) -> dict:

@@ -1,11 +1,13 @@
-from typing import AsyncIterator
-from enum import Enum
 import json
+from enum import Enum
+from typing import AsyncIterator
 
-from config import get_settings
 from models.schemas import Entity
 from services.extractor import DecisionExtractor
 from services.llm import get_llm_client
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class InterviewState(str, Enum):
@@ -125,7 +127,7 @@ Ask follow-up questions when needed to get complete information."""
             return response_text, []
 
         except Exception as e:
-            print(f"Error generating response: {e}")
+            logger.error(f"Error generating response: {e}")
             return self._generate_fallback_response(user_message, history), []
 
     def _generate_fallback_response(
@@ -199,7 +201,7 @@ Ask follow-up questions when needed to get complete information."""
             yield "", []
 
         except Exception as e:
-            print(f"Error streaming response: {e}")
+            logger.error(f"Error streaming response: {e}")
             yield self._generate_fallback_response(user_message, history), []
 
     async def synthesize_decision(self, history: list[dict]) -> dict:
@@ -237,5 +239,5 @@ Return ONLY valid JSON."""
             return json.loads(text)
 
         except Exception as e:
-            print(f"Error synthesizing decision: {e}")
+            logger.error(f"Error synthesizing decision: {e}")
             return {}
