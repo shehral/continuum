@@ -50,41 +50,47 @@ vi.mock('@xyflow/react', () => {
   }
 })
 
-// Sample test data
+// Sample test data with proper types
 const sampleGraphData = {
   nodes: [
     {
       id: 'decision-1',
-      type: 'decision',
+      type: 'decision' as const,
       label: 'Use PostgreSQL for database',
       has_embedding: true,
       data: {
+        id: 'decision-1',
         trigger: 'Need to choose a database',
         context: 'Building a new application',
+        options: ['PostgreSQL', 'MongoDB', 'MySQL'],
         decision: 'Use PostgreSQL',
         rationale: 'Better for relational data',
+        confidence: 0.9,
+        created_at: '2024-01-01T00:00:00Z',
         source: 'claude_logs',
-        entities: [{ id: 'e1', name: 'PostgreSQL', type: 'technology' }],
+        entities: [{ id: 'e1', name: 'PostgreSQL', type: 'technology' as const }],
       },
     },
     {
       id: 'entity-1',
-      type: 'entity',
+      type: 'entity' as const,
       label: 'PostgreSQL',
       has_embedding: true,
       data: {
+        id: 'entity-1',
         name: 'PostgreSQL',
-        type: 'technology',
+        type: 'technology' as const,
       },
     },
     {
       id: 'entity-2',
-      type: 'entity',
+      type: 'entity' as const,
       label: 'Redis',
       has_embedding: false,
       data: {
+        id: 'entity-2',
         name: 'Redis',
-        type: 'technology',
+        type: 'technology' as const,
       },
     },
   ],

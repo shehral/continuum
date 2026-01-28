@@ -160,7 +160,9 @@ function DecisionNode({ data, selected }: NodeProps) {
           {sourceStyle.label}
         </Badge>
         {nodeData.hasEmbedding && (
-          <Sparkles className="h-3 w-3 text-purple-400" title="Has semantic embedding" />
+          <span title="Has semantic embedding">
+            <Sparkles className="h-3 w-3 text-purple-400" />
+          </span>
         )}
       </div>
       <div className="font-semibold text-sm text-slate-100 line-clamp-2">
@@ -237,7 +239,9 @@ function EntityNode({ data, selected }: NodeProps) {
           {nodeData.label}
         </span>
         {nodeData.hasEmbedding && (
-          <Sparkles className="h-3 w-3 text-purple-400" title="Has semantic embedding" />
+          <span title="Has semantic embedding">
+            <Sparkles className="h-3 w-3 text-purple-400" />
+          </span>
         )}
       </div>
       <Handle
@@ -397,7 +401,10 @@ export function KnowledgeGraph({
         onNodeClick={handleNodeClick}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: 0.3, maxZoom: 1.5 }}
+        minZoom={0.1}
+        maxZoom={2}
+        defaultViewport={{ x: 0, y: 0, zoom: 0.5 }}
         className="!bg-transparent"
         proOptions={{ hideAttribution: true }}
       >
