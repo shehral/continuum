@@ -1,0 +1,169 @@
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#22d3ee', 'primaryTextColor': '#f1f5f9', 'primaryBorderColor': '#0e7490', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#334155'}}}%%
+
+flowchart TB
+    subgraph Sources["📥 Knowledge Sources"]
+        direction LR
+        LOGS["🤖 Claude Code Logs<br/>~/.claude/projects/*.jsonl"]
+        INTERVIEW["👤 AI Interview<br/>Capture Session"]
+        MANUAL["✏️ Manual Entry<br/>Direct Form"]
+    end
+
+    subgraph LogParsing["📂 Log Parsing Pipeline"]
+        direction TB
+        SCAN["Scan Project Directories"]
+        PARSE["Parse JSONL Files"]
+        HASH["Compute File Hash<br/>(Skip Processed)"]
+        EXTRACT_MSG["Extract Messages<br/>role + content + timestamp"]
+        BUILD_CONV["Build Conversation Objects"]
+
+        SCAN --> PARSE
+        PARSE --> HASH
+        HASH --> EXTRACT_MSG
+        EXTRACT_MSG --> BUILD_CONV
+    end
+
+    subgraph InterviewFlow["💬 Interview Capture Pipeline"]
+        direction TB
+        START_SESSION["Start Capture Session"]
+        STAGE1["Stage 1: Trigger<br/>'What prompted this decision?'"]
+        STAGE2["Stage 2: Context<br/>'What was the background?'"]
+        STAGE3["Stage 3: Options<br/>'What alternatives existed?'"]
+        STAGE4["Stage 4: Decision<br/>'What did you choose?'"]
+        STAGE5["Stage 5: Rationale<br/>'Why this choice?'"]
+        SYNTHESIZE["AI Synthesizes Decision<br/>from conversation"]
+
+        START_SESSION --> STAGE1
+        STAGE1 --> STAGE2
+        STAGE2 --> STAGE3
+        STAGE3 --> STAGE4
+        STAGE4 --> STAGE5
+        STAGE5 --> SYNTHESIZE
+    end
+
+    subgraph Extraction["🧠 AI Extraction Engine"]
+        direction TB
+        LLM["NVIDIA Llama 3.3<br/>Nemotron Super 49B"]
+
+        subgraph DecisionExtraction["Decision Extraction"]
+            PROMPT_DEC["Prompt: Extract decisions<br/>from conversation"]
+            PARSE_JSON["Parse JSON Response"]
+            CREATE_DEC["Create DecisionCreate<br/>trigger, context, options,<br/>decision, rationale"]
+        end
+
+        subgraph EntityExtraction["Entity Extraction"]
+            PROMPT_ENT["Prompt: Extract entities<br/>from decision text"]
+            CATEGORIZE["Categorize Entities<br/>concept | system | technology<br/>pattern | person"]
+        end
+
+        subgraph RelationshipExtraction["Relationship Extraction"]
+            PROMPT_REL["Prompt: Identify relationships<br/>between entities"]
+            REL_TYPES["Relationship Types:<br/>IS_A | PART_OF | RELATED_TO<br/>DEPENDS_ON"]
+        end
+
+        LLM --> PROMPT_DEC
+        PROMPT_DEC --> PARSE_JSON
+        PARSE_JSON --> CREATE_DEC
+        CREATE_DEC --> PROMPT_ENT
+        PROMPT_ENT --> CATEGORIZE
+        CATEGORIZE --> PROMPT_REL
+        PROMPT_REL --> REL_TYPES
+    end
+
+    subgraph Embedding["🔮 Embedding Generation"]
+        direction TB
+        NVIDIA_EMB["NVIDIA NV-EmbedQA<br/>Llama 3.2 1B v2"]
+
+        DEC_EMB["Decision Embedding<br/>Combine: trigger + context<br/>+ decision + rationale"]
+        ENT_EMB["Entity Embedding<br/>Format: 'type: name'"]
+
+        VECTOR["2048-dim Vector"]
+
+        NVIDIA_EMB --> DEC_EMB
+        NVIDIA_EMB --> ENT_EMB
+        DEC_EMB --> VECTOR
+        ENT_EMB --> VECTOR
+    end
+
+    subgraph GraphStorage["🔗 Neo4j Knowledge Graph"]
+        direction TB
+
+        subgraph Nodes["Node Creation"]
+            DEC_NODE["DecisionTrace Node<br/>id, trigger, context, options,<br/>decision, rationale, confidence,<br/>source, embedding, created_at"]
+            ENT_NODE["Entity Node<br/>id, name, type, embedding"]
+        end
+
+        subgraph Relationships["Relationship Creation"]
+            INVOLVES["INVOLVES<br/>(Decision → Entity)<br/>weight: 1.0"]
+            SIMILAR["SIMILAR_TO<br/>(Decision ↔ Decision)<br/>score: cosine similarity"]
+            INFLUENCED["INFLUENCED_BY<br/>(Decision → Decision)<br/>shared_entities count"]
+            IS_A["IS_A<br/>(Entity → Entity)<br/>confidence score"]
+            PART_OF["PART_OF<br/>(Entity → Entity)"]
+            RELATED["RELATED_TO<br/>(Entity ↔ Entity)"]
+            DEPENDS["DEPENDS_ON<br/>(Entity → Entity)"]
+        end
+
+        DEC_NODE --> INVOLVES
+        INVOLVES --> ENT_NODE
+        DEC_NODE --> SIMILAR
+        DEC_NODE --> INFLUENCED
+        ENT_NODE --> IS_A
+        ENT_NODE --> PART_OF
+        ENT_NODE --> RELATED
+        ENT_NODE --> DEPENDS
+    end
+
+    subgraph SimilarityDetection["✨ Similarity Detection"]
+        direction TB
+        FETCH_EMB["Fetch all decision embeddings"]
+        COSINE["Calculate Cosine Similarity"]
+        THRESHOLD["Threshold > 0.75"]
+        CREATE_EDGE["Create SIMILAR_TO edge<br/>with similarity score"]
+
+        FETCH_EMB --> COSINE
+        COSINE --> THRESHOLD
+        THRESHOLD -->|Pass| CREATE_EDGE
+    end
+
+    subgraph TemporalChains["⏳ Temporal Chain Detection"]
+        direction TB
+        FIND_SHARED["Find decisions sharing<br/>≥2 entities"]
+        CHECK_TIME["Check created_at timestamps"]
+        CREATE_INFLUENCED["Create INFLUENCED_BY edge<br/>newer → older"]
+
+        FIND_SHARED --> CHECK_TIME
+        CHECK_TIME --> CREATE_INFLUENCED
+    end
+
+    %% Main Flow Connections
+    LOGS --> LogParsing
+    INTERVIEW --> InterviewFlow
+    MANUAL --> CREATE_DEC
+
+    BUILD_CONV --> Extraction
+    SYNTHESIZE --> CREATE_DEC
+
+    REL_TYPES --> GraphStorage
+    VECTOR --> GraphStorage
+
+    GraphStorage --> SimilarityDetection
+    GraphStorage --> TemporalChains
+
+    SimilarityDetection --> SIMILAR
+    TemporalChains --> INFLUENCED
+
+    %% Styling
+    classDef source fill:#7c3aed,stroke:#a78bfa,stroke-width:2px,color:#f1f5f9
+    classDef parsing fill:#0891b2,stroke:#22d3ee,stroke-width:2px,color:#f1f5f9
+    classDef interview fill:#059669,stroke:#34d399,stroke-width:2px,color:#f1f5f9
+    classDef extraction fill:#d97706,stroke:#fbbf24,stroke-width:2px,color:#f1f5f9
+    classDef embedding fill:#8b5cf6,stroke:#a78bfa,stroke-width:2px,color:#f1f5f9
+    classDef storage fill:#2563eb,stroke:#60a5fa,stroke-width:2px,color:#f1f5f9
+    classDef similarity fill:#ec4899,stroke:#f472b6,stroke-width:2px,color:#f1f5f9
+
+    class LOGS,INTERVIEW,MANUAL source
+    class SCAN,PARSE,HASH,EXTRACT_MSG,BUILD_CONV parsing
+    class START_SESSION,STAGE1,STAGE2,STAGE3,STAGE4,STAGE5,SYNTHESIZE interview
+    class LLM,PROMPT_DEC,PARSE_JSON,CREATE_DEC,PROMPT_ENT,CATEGORIZE,PROMPT_REL,REL_TYPES extraction
+    class NVIDIA_EMB,DEC_EMB,ENT_EMB,VECTOR embedding
+    class DEC_NODE,ENT_NODE,INVOLVES,SIMILAR,INFLUENCED,IS_A,PART_OF,RELATED,DEPENDS storage
+    class FETCH_EMB,COSINE,THRESHOLD,CREATE_EDGE,FIND_SHARED,CHECK_TIME,CREATE_INFLUENCED similarity
