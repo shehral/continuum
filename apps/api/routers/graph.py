@@ -695,6 +695,32 @@ async def get_relationship_types():
         return types
 
 
+@router.delete("/reset")
+async def reset_graph(confirm: bool = Query(False, description="Must be true to confirm deletion")):
+    """Clear all data from the knowledge graph.
+
+    WARNING: This permanently deletes all decisions, entities, and relationships.
+    Pass confirm=true to execute.
+    """
+    if not confirm:
+        return {
+            "status": "aborted",
+            "message": "Pass confirm=true to delete all graph data"
+        }
+
+    session = await get_neo4j_session()
+    async with session:
+        # Delete all relationships first
+        await session.run("MATCH ()-[r]->() DELETE r")
+        # Delete all nodes
+        await session.run("MATCH (n) DELETE n")
+
+    return {
+        "status": "completed",
+        "message": "All graph data has been deleted"
+    }
+
+
 @router.get("/sources")
 async def get_decision_sources():
     """Get decision counts by source type."""

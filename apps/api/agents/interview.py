@@ -21,10 +21,17 @@ class InterviewState(str, Enum):
 class InterviewAgent:
     """AI-powered interview agent for knowledge capture using NVIDIA Llama."""
 
-    def __init__(self):
+    def __init__(self, fast_mode: bool = False):
+        """Initialize the interview agent.
+
+        Args:
+            fast_mode: If True, uses pre-written responses for faster interaction.
+                      If False, uses LLM for each response (slower but more dynamic).
+        """
         self.llm = get_llm_client()
         self.extractor = DecisionExtractor()
         self.state = InterviewState.OPENING
+        self.fast_mode = fast_mode
 
     def _get_system_prompt(self) -> str:
         return """You are a knowledge capture assistant helping engineers document their decisions.
@@ -82,6 +89,10 @@ Current conversation state will be provided. Respond appropriately for that stat
         # Determine current state
         self.state = self._determine_next_state(history)
 
+        # Fast mode: use pre-written responses for instant feedback
+        if self.fast_mode:
+            return self._generate_fallback_response(user_message, history), []
+
         # Build prompt
         system_prompt = self._get_system_prompt()
         stage_prompt = self._get_stage_prompt(self.state)
@@ -109,10 +120,9 @@ Ask follow-up questions when needed to get complete information."""
                 temperature=0.7,
             )
 
-            # Extract entities from the user's message
-            entities = await self.extractor.extract_entities(user_message)
-
-            return response_text, entities
+            # Skip entity extraction during chat for faster responses
+            # Entities will be extracted when the session is completed
+            return response_text, []
 
         except Exception as e:
             print(f"Error generating response: {e}")
@@ -123,21 +133,21 @@ Ask follow-up questions when needed to get complete information."""
         user_message: str,
         history: list[dict],
     ) -> str:
-        """Generate a fallback response when AI is not available."""
+        """Generate a pre-written response for fast interaction."""
         self.state = self._determine_next_state(history)
 
         responses = {
-            InterviewState.TRIGGER: "Thanks for sharing. Can you tell me more about the context around this decision? What was the situation?",
-            InterviewState.CONTEXT: "I understand the context better now. What other options or alternatives did you consider?",
-            InterviewState.OPTIONS: "Those are interesting alternatives. What did you ultimately decide to do?",
-            InterviewState.DECISION: "Got it. Why did you choose this approach over the alternatives?",
-            InterviewState.RATIONALE: "Thank you for explaining the rationale. Let me summarize what we've captured...",
-            InterviewState.SUMMARIZING: "I've captured this decision. Would you like to add any additional notes or save it to your knowledge graph?",
+            InterviewState.TRIGGER: "Great, that's a good start! Can you tell me more about the context? What was the situation you were in, and what constraints or requirements did you have?",
+            InterviewState.CONTEXT: "I understand the situation better now. What alternatives or options did you consider before making this decision?",
+            InterviewState.OPTIONS: "Those are interesting alternatives. What did you ultimately decide to do? What was your final choice?",
+            InterviewState.DECISION: "Got it. Why did you choose this approach over the other options? What factors influenced your decision?",
+            InterviewState.RATIONALE: "Excellent! I have all the key information now. Let me save this decision trace to your knowledge graph.",
+            InterviewState.SUMMARIZING: "This decision has been captured! You can view it in the Knowledge Graph or start documenting another decision.",
         }
 
         return responses.get(
             self.state,
-            "Thank you for sharing. Please tell me more about the decision you're documenting.",
+            "Thanks for sharing! What decision would you like to document? Tell me what triggered this decision or what problem you were trying to solve.",
         )
 
     async def stream_response(
@@ -148,6 +158,12 @@ Ask follow-up questions when needed to get complete information."""
         """Stream a response (for WebSocket use)."""
         # Determine current state
         self.state = self._determine_next_state(history)
+
+        # Fast mode: return pre-written response immediately
+        if self.fast_mode:
+            response = self._generate_fallback_response(user_message, history)
+            yield response, []
+            return
 
         # Build prompt
         system_prompt = self._get_system_prompt()
@@ -179,9 +195,8 @@ Ask follow-up questions when needed to get complete information."""
                 full_response += chunk
                 yield chunk, []
 
-            # Extract entities after streaming completes
-            entities = await self.extractor.extract_entities(user_message)
-            yield "", entities
+            # Skip entity extraction for faster responses
+            yield "", []
 
         except Exception as e:
             print(f"Error streaming response: {e}")

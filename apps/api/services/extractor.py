@@ -366,6 +366,13 @@ Return ONLY valid JSON, no markdown or explanation."""
             return None
 
     async def save_decision(self, decision: DecisionCreate, source: str = "unknown") -> str:
+        import traceback
+        print(f"\n{'='*60}")
+        print(f"[SAVE_DECISION] Source: {source}")
+        print(f"[SAVE_DECISION] Trigger: {decision.trigger[:50]}...")
+        print(f"[SAVE_DECISION] Call stack:")
+        traceback.print_stack(limit=10)
+        print(f"{'='*60}\n")
         """Save a decision to Neo4j with embeddings and rich relationships.
 
         Uses entity resolution to prevent duplicates and canonicalize names.
@@ -575,6 +582,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                             MATCH (e2:Entity)
                             WHERE toLower(e2.name) = toLower($to_name)
                                OR ANY(alias IN COALESCE(e2.aliases, []) WHERE toLower(alias) = toLower($to_name))
+                            WITH e1, e2
                             WHERE e1 <> e2
                             MERGE (e1)-[r:{rel_type}]->(e2)
                             SET r.confidence = $confidence

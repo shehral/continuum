@@ -218,9 +218,41 @@ class ApiClient {
   }
 
   // Ingestion
-  async triggerIngestion(): Promise<{ status: string; processed: number }> {
-    return this.fetch<{ status: string; processed: number }>(
-      "/api/ingest/trigger",
+  async getAvailableProjects(): Promise<{
+    dir: string
+    name: string
+    files: number
+    path: string
+  }[]> {
+    return this.fetch("/api/ingest/projects")
+  }
+
+  async previewIngestion(options?: {
+    project?: string
+    exclude?: string[]
+    limit?: number
+  }): Promise<{
+    total_conversations: number
+    previews: { file: string; project: string; messages: number; preview: string }[]
+    project_filter: string | null
+    exclude_projects: string[]
+  }> {
+    const params = new URLSearchParams()
+    if (options?.project) params.append("project", options.project)
+    if (options?.exclude?.length) params.append("exclude", options.exclude.join(","))
+    if (options?.limit) params.append("limit", String(options.limit))
+    return this.fetch(`/api/ingest/preview?${params}`)
+  }
+
+  async triggerIngestion(options?: {
+    project?: string
+    exclude?: string[]
+  }): Promise<{ status: string; processed: number; decisions_extracted: number }> {
+    const params = new URLSearchParams()
+    if (options?.project) params.append("project", options.project)
+    if (options?.exclude?.length) params.append("exclude", options.exclude.join(","))
+    return this.fetch<{ status: string; processed: number; decisions_extracted: number }>(
+      `/api/ingest/trigger?${params}`,
       { method: "POST" }
     )
   }
@@ -235,6 +267,10 @@ class ApiClient {
       last_run: string | null
       files_processed: number
     }>("/api/ingest/status")
+  }
+
+  async resetGraph(): Promise<{ status: string; message: string }> {
+    return this.fetch("/api/graph/reset?confirm=true", { method: "DELETE" })
   }
 
   // Search

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   FolderOpen,
   MessageSquarePlus,
@@ -12,12 +12,32 @@ import {
   CheckCircle2,
   AlertCircle,
   FileJson,
+  Filter,
+  Eye,
+  Trash2,
+  RefreshCw,
 } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { api } from "@/lib/api"
 
 type IngestionStatus = "idle" | "running" | "success" | "error"
@@ -26,16 +46,37 @@ export default function AddKnowledgePage() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [ingestionStatus, setIngestionStatus] = useState<IngestionStatus>("idle")
-  const [ingestionResult, setIngestionResult] = useState<{ processed: number } | null>(null)
+  const [ingestionResult, setIngestionResult] = useState<{ processed: number; decisions: number } | null>(null)
+  const [selectedProject, setSelectedProject] = useState<string>("all")
+  const [showPreview, setShowPreview] = useState(false)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+
+  // Fetch available projects
+  const { data: projects, isLoading: projectsLoading } = useQuery({
+    queryKey: ["ingest-projects"],
+    queryFn: () => api.getAvailableProjects(),
+  })
+
+  // Preview query
+  const { data: preview, isLoading: previewLoading, refetch: refetchPreview } = useQuery({
+    queryKey: ["ingest-preview", selectedProject],
+    queryFn: () => api.previewIngestion({
+      project: selectedProject === "all" ? undefined : selectedProject,
+      limit: 20,
+    }),
+    enabled: showPreview,
+  })
 
   const ingestionMutation = useMutation({
-    mutationFn: () => api.triggerIngestion(),
+    mutationFn: () => api.triggerIngestion({
+      project: selectedProject === "all" ? undefined : selectedProject,
+    }),
     onMutate: () => {
       setIngestionStatus("running")
     },
     onSuccess: (data) => {
       setIngestionStatus("success")
-      setIngestionResult({ processed: data.processed })
+      setIngestionResult({ processed: data.processed, decisions: data.decisions_extracted })
       queryClient.invalidateQueries({ queryKey: ["decisions"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
       queryClient.invalidateQueries({ queryKey: ["graph"] })
@@ -45,151 +86,195 @@ export default function AddKnowledgePage() {
     },
   })
 
-  const methods = [
-    {
-      id: "import",
-      title: "Import from Claude Code",
-      description: "Automatically parse your Claude Code conversation logs and extract decision traces using AI.",
-      icon: FolderOpen,
-      badge: "Automatic",
-      badgeVariant: "default" as const,
-      details: [
-        "Scans ~/.claude/projects for conversation logs",
-        "Uses Gemini AI to extract decisions",
-        "Identifies entities and relationships",
-        "Zero manual effort required",
-      ],
-      action: (
-        <div className="space-y-3">
-          <Button
-            onClick={() => ingestionMutation.mutate()}
-            disabled={ingestionStatus === "running"}
-            className="w-full bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)]"
-          >
-            {ingestionStatus === "running" ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Scanning logs...
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4 mr-2" />
-                Scan &amp; Import
-              </>
-            )}
-          </Button>
-          {ingestionStatus === "success" && ingestionResult && (
-            <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-              <CheckCircle2 className="h-4 w-4" />
-              Processed {ingestionResult.processed} files
-            </div>
-          )}
-          {ingestionStatus === "error" && (
-            <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-              <AlertCircle className="h-4 w-4" />
-              Import failed. Check if Gemini API quota is available.
-            </div>
-          )}
-        </div>
-      ),
+  const resetMutation = useMutation({
+    mutationFn: () => api.resetGraph(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["decisions"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
+      queryClient.invalidateQueries({ queryKey: ["graph"] })
+      setShowResetConfirm(false)
     },
-    {
-      id: "capture",
-      title: "Capture with AI Interview",
-      description: "Have a guided conversation with an AI interviewer that helps you document decisions step by step.",
-      icon: MessageSquarePlus,
-      badge: "Interactive",
-      badgeVariant: "secondary" as const,
-      details: [
-        "AI guides you through the decision trace",
-        "Extracts entities as you talk",
-        "Suggests links to existing knowledge",
-        "Best for complex, nuanced decisions",
-      ],
-      action: (
-        <Button
-          onClick={() => router.push("/capture")}
-          className="w-full bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)]"
-        >
-          <MessageSquarePlus className="h-4 w-4 mr-2" />
-          Start Interview
-        </Button>
-      ),
-    },
-    {
-      id: "manual",
-      title: "Quick Manual Entry",
-      description: "Directly fill out a form to add a decision when you already know all the details.",
-      icon: PenLine,
-      badge: "Quick",
-      badgeVariant: "outline" as const,
-      details: [
-        "Simple form-based entry",
-        "No AI processing required",
-        "Works offline or when AI quota exhausted",
-        "Best for straightforward decisions",
-      ],
-      action: (
-        <Button
-          onClick={() => router.push("/decisions?add=true")}
-          variant="outline"
-          className="w-full bg-white/[0.05] border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100"
-        >
-          <PenLine className="h-4 w-4 mr-2" />
-          Add Manually
-        </Button>
-      ),
-    },
-  ]
+  })
 
   return (
     <AppShell>
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-100">Add Knowledge</h1>
-          <p className="text-slate-400">
-            Choose how you want to add decisions to your knowledge graph
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-100">Add Knowledge</h1>
+            <p className="text-slate-400">
+              Choose how you want to add decisions to your knowledge graph
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-red-400 border-red-400/30 hover:bg-red-400/10"
+            onClick={() => setShowResetConfirm(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Reset Graph
+          </Button>
         </div>
 
-        {/* Method Cards */}
-        <div className="grid gap-6 md:grid-cols-3">
-          {methods.map((method) => (
-            <Card key={method.id} className="flex flex-col bg-white/[0.03] backdrop-blur-xl border-white/[0.06]">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="h-10 w-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
-                    <method.icon className="h-5 w-5 text-cyan-400" />
-                  </div>
-                  <Badge
-                    variant={method.badgeVariant}
-                    className={method.badgeVariant === "default"
-                      ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/30"
-                      : method.badgeVariant === "secondary"
-                      ? "bg-slate-500/20 text-slate-300 border-slate-500/30"
-                      : "bg-white/[0.05] text-slate-400 border-white/10"
-                    }
-                  >
-                    {method.badge}
-                  </Badge>
+        {/* Import Section - Enhanced */}
+        <Card className="bg-white/[0.03] backdrop-blur-xl border-white/[0.06]">
+          <CardHeader>
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                  <FolderOpen className="h-5 w-5 text-cyan-400" />
                 </div>
-                <CardTitle className="mt-4 text-slate-100">{method.title}</CardTitle>
-                <CardDescription className="text-slate-400">{method.description}</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col">
-                <ul className="text-sm text-slate-400 space-y-2 mb-6 flex-1">
-                  {method.details.map((detail, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-cyan-400 mt-1">•</span>
-                      {detail}
-                    </li>
+                <div>
+                  <CardTitle className="text-slate-100">Import from Claude Code</CardTitle>
+                  <CardDescription className="text-slate-400">
+                    Parse conversation logs and extract decisions using AI
+                  </CardDescription>
+                </div>
+              </div>
+              <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">
+                Automatic
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Project Filter */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-slate-400" />
+                <span className="text-sm text-slate-400">Project:</span>
+              </div>
+              <Select value={selectedProject} onValueChange={setSelectedProject}>
+                <SelectTrigger className="w-[280px] bg-white/[0.05] border-white/10">
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Projects</SelectItem>
+                  {projects?.map((p) => (
+                    <SelectItem key={p.dir} value={p.name}>
+                      {p.name} ({p.files} files)
+                    </SelectItem>
                   ))}
-                </ul>
-                {method.action}
-              </CardContent>
-            </Card>
-          ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowPreview(true)
+                  refetchPreview()
+                }}
+                className="bg-white/[0.05] border-white/10"
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                Preview
+              </Button>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <Button
+                onClick={() => ingestionMutation.mutate()}
+                disabled={ingestionStatus === "running"}
+                className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)]"
+              >
+                {ingestionStatus === "running" ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Extracting decisions...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" />
+                    Import {selectedProject === "all" ? "All" : selectedProject}
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {/* Status Messages */}
+            {ingestionStatus === "success" && ingestionResult && (
+              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-400/10 px-3 py-2 rounded-lg">
+                <CheckCircle2 className="h-4 w-4" />
+                Processed {ingestionResult.processed} files, extracted {ingestionResult.decisions} decisions
+              </div>
+            )}
+            {ingestionStatus === "error" && (
+              <div className="flex items-center gap-2 text-sm text-red-400 bg-red-400/10 px-3 py-2 rounded-lg">
+                <AlertCircle className="h-4 w-4" />
+                Import failed. Check API keys and try again.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Other Methods */}
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* AI Interview */}
+          <Card className="bg-white/[0.03] backdrop-blur-xl border-white/[0.06]">
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="h-10 w-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                  <MessageSquarePlus className="h-5 w-5 text-purple-400" />
+                </div>
+                <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30">
+                  Interactive
+                </Badge>
+              </div>
+              <CardTitle className="mt-4 text-slate-100">AI Interview</CardTitle>
+              <CardDescription className="text-slate-400">
+                Guided conversation to document decisions step by step
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-sm text-slate-400 space-y-1 mb-4">
+                <li>• AI guides you through trigger → context → options → decision → rationale</li>
+                <li>• Automatically extracts and links entities</li>
+                <li>• Best for complex decisions</li>
+              </ul>
+              <Button
+                onClick={() => router.push("/capture")}
+                className="w-full bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30"
+              >
+                <MessageSquarePlus className="h-4 w-4 mr-2" />
+                Start Interview
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Manual Entry */}
+          <Card className="bg-white/[0.03] backdrop-blur-xl border-white/[0.06]">
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="h-10 w-10 rounded-xl bg-slate-500/10 flex items-center justify-center">
+                  <PenLine className="h-5 w-5 text-slate-400" />
+                </div>
+                <Badge className="bg-slate-500/20 text-slate-400 border-slate-500/30">
+                  Quick
+                </Badge>
+              </div>
+              <CardTitle className="mt-4 text-slate-100">Manual Entry</CardTitle>
+              <CardDescription className="text-slate-400">
+                Direct form entry when you know all the details
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-sm text-slate-400 space-y-1 mb-4">
+                <li>• Simple form-based entry</li>
+                <li>• No AI processing required</li>
+                <li>• Works offline</li>
+              </ul>
+              <Button
+                onClick={() => router.push("/decisions?add=true")}
+                variant="outline"
+                className="w-full bg-white/[0.05] border-white/10 text-slate-300 hover:bg-white/[0.08]"
+              >
+                <PenLine className="h-4 w-4 mr-2" />
+                Add Manually
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Info Section */}
@@ -204,16 +289,91 @@ export default function AddKnowledgePage() {
                 <p className="text-sm text-slate-400">
                   The import feature scans your Claude Code conversation logs stored at{" "}
                   <code className="px-1.5 py-0.5 bg-white/[0.05] rounded text-cyan-400 border border-white/10">~/.claude/projects</code>.
-                  It uses AI to analyze conversations and extract structured decision traces
-                  including the trigger, context, options considered, final decision, and rationale.
-                  Each decision is linked to relevant entities (technologies, concepts, patterns)
-                  to build your knowledge graph.
+                  It uses NVIDIA&apos;s Llama 3.3 to analyze conversations and extract structured decision traces.
+                  Each decision is linked to relevant entities (technologies, concepts, patterns) to build your knowledge graph.
+                  Use the project filter to import only from specific projects.
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Preview Dialog */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Preview: {selectedProject === "all" ? "All Projects" : selectedProject}</DialogTitle>
+            <DialogDescription>
+              Conversations that will be processed for decision extraction
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[400px]">
+            {previewLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-cyan-400" />
+              </div>
+            ) : preview?.previews.length === 0 ? (
+              <p className="text-center text-slate-400 py-8">No conversations found</p>
+            ) : (
+              <div className="space-y-3">
+                {preview?.previews.map((p, i) => (
+                  <div key={i} className="p-3 bg-white/[0.03] rounded-lg border border-white/[0.06]">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="outline" className="text-xs">
+                        {p.project}
+                      </Badge>
+                      <span className="text-xs text-slate-500">{p.messages} messages</span>
+                    </div>
+                    <p className="text-sm text-slate-400 line-clamp-3">{p.preview}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPreview(false)}>
+              Close
+            </Button>
+            <Button onClick={() => {
+              setShowPreview(false)
+              ingestionMutation.mutate()
+            }}>
+              Import These
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Confirmation Dialog */}
+      <Dialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-red-400">Reset Knowledge Graph</DialogTitle>
+            <DialogDescription>
+              This will permanently delete all decisions, entities, and relationships.
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetConfirm(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => resetMutation.mutate()}
+              disabled={resetMutation.isPending}
+            >
+              {resetMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Delete Everything
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   )
 }

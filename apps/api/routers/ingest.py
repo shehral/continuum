@@ -1,7 +1,9 @@
 from datetime import datetime
 from pathlib import Path
-from fastapi import APIRouter, BackgroundTasks, Depends
+from typing import Optional
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
 from config import get_settings
 from db.postgres import get_db
@@ -19,31 +21,66 @@ ingestion_state = {
 }
 
 
-async def run_ingestion(db: AsyncSession):
-    """Background task to run ingestion."""
+class ProjectInfo(BaseModel):
+    dir: str
+    name: str
+    files: int
+    path: str
+
+
+class ConversationPreview(BaseModel):
+    file: str
+    project: str
+    messages: int
+    preview: str
+
+
+class PreviewResponse(BaseModel):
+    total_conversations: int
+    previews: list[ConversationPreview]
+    project_filter: Optional[str]
+    exclude_projects: list[str]
+
+
+@router.get("/projects", response_model=list[ProjectInfo])
+async def list_available_projects():
+    """List all Claude Code projects available for ingestion.
+
+    Returns project directories with conversation file counts.
+    Use this to see what projects are available before filtering.
+    """
     settings = get_settings()
     parser = ClaudeLogParser(settings.claude_logs_path)
-    extractor = DecisionExtractor()
+    return parser.get_available_projects()
 
-    files_processed = 0
-    decisions_extracted = 0
 
-    async for file_path, conversations in parser.parse_all_logs():
-        for conversation in conversations:
-            # Extract decisions from conversation
-            decisions = await extractor.extract_decisions(conversation)
-            decisions_extracted += len(decisions)
+@router.get("/preview", response_model=PreviewResponse)
+async def preview_ingestion(
+    project: Optional[str] = Query(None, description="Only include this project (partial match)"),
+    exclude: Optional[str] = Query(None, description="Comma-separated list of projects to exclude"),
+    limit: int = Query(10, ge=1, le=50, description="Max conversations to preview"),
+):
+    """Preview what would be imported without actually importing.
 
-            # Save decisions to Neo4j
-            for decision in decisions:
-                await extractor.save_decision(decision)
+    Use this to verify your filters before running ingestion.
+    """
+    settings = get_settings()
+    parser = ClaudeLogParser(settings.claude_logs_path)
 
-        files_processed += 1
+    exclude_list = [e.strip() for e in exclude.split(",")] if exclude else []
 
-    ingestion_state["files_processed"] += files_processed
-    ingestion_state["last_run"] = datetime.utcnow()
+    previews = await parser.preview_logs(
+        project_filter=project,
+        exclude_projects=exclude_list,
+        max_conversations=limit,
+    )
 
-    return files_processed, decisions_extracted
+    return PreviewResponse(
+        total_conversations=len(previews),
+        previews=[ConversationPreview(**p) for p in previews],
+        project_filter=project,
+        exclude_projects=exclude_list,
+    )
 
 
 @router.get("/status", response_model=IngestionStatus)
@@ -58,19 +95,31 @@ async def get_ingestion_status():
 
 @router.post("/trigger", response_model=IngestionResult)
 async def trigger_ingestion(
-    background_tasks: BackgroundTasks,
+    project: Optional[str] = Query(None, description="Only include this project (partial match)"),
+    exclude: Optional[str] = Query(None, description="Comma-separated list of projects to exclude"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Trigger a one-time ingestion of Claude Code logs."""
+    """Trigger ingestion of Claude Code logs with optional filtering.
+
+    Examples:
+    - /api/ingest/trigger?project=continuum - Only import from continuum project
+    - /api/ingest/trigger?exclude=CS5330,CS6120 - Exclude coursework
+    - /api/ingest/trigger?project=continuum&exclude=test - Continuum except test files
+    """
     settings = get_settings()
     parser = ClaudeLogParser(settings.claude_logs_path)
     extractor = DecisionExtractor()
+
+    exclude_list = [e.strip() for e in exclude.split(",")] if exclude else []
 
     files_processed = 0
     decisions_extracted = 0
 
     try:
-        async for file_path, conversations in parser.parse_all_logs():
+        async for file_path, conversations in parser.parse_all_logs(
+            project_filter=project,
+            exclude_projects=exclude_list,
+        ):
             for conversation in conversations:
                 # Extract decisions from conversation
                 decisions = await extractor.extract_decisions(conversation)
