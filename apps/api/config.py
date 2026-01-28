@@ -1,21 +1,31 @@
 from functools import lru_cache
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 
 
 class Settings(BaseSettings):
-    # Database
-    database_url: str = "postgresql+asyncpg://continuum:password@localhost:5432/continuum"
-    neo4j_uri: str = "bolt://localhost:7687"
-    neo4j_user: str = "neo4j"
-    neo4j_password: str = "neo4jpassword"
-    redis_url: str = "redis://localhost:6379"
+    # Database - all credentials must be set via environment variables
+    database_url: str = ""  # e.g., postgresql+asyncpg://user:pass@localhost:5432/dbname
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def ensure_asyncpg_driver(cls, v: str) -> str:
+        """Convert postgresql:// to postgresql+asyncpg:// for async support."""
+        if v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
+
+    neo4j_uri: str = ""  # e.g., bolt://localhost:7687 or neo4j+s://xxx.databases.neo4j.io
+    neo4j_user: str = ""
+    neo4j_password: str = ""
+    redis_url: str = ""  # e.g., redis://localhost:6379
 
     # AI Provider (NVIDIA NIM)
-    nvidia_api_key: str = ""  # Set via NVIDIA_API_KEY env var
+    nvidia_api_key: str = ""
     nvidia_model: str = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
 
     # Embedding Model (NVIDIA NV-EmbedQA)
-    nvidia_embedding_api_key: str = ""  # Set via NVIDIA_EMBEDDING_API_KEY env var
+    nvidia_embedding_api_key: str = ""
     nvidia_embedding_model: str = "nvidia/llama-3.2-nv-embedqa-1b-v2"
 
     # Rate limiting
@@ -25,13 +35,13 @@ class Settings(BaseSettings):
     # Paths
     claude_logs_path: str = "~/.claude/projects"
 
-    # Auth
-    secret_key: str = "your-secret-key-change-in-production"
+    # Auth - must be set in production
+    secret_key: str = ""
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
 
     # App
-    debug: bool = True
+    debug: bool = False
     cors_origins: list[str] = ["http://localhost:3000"]
 
     class Config:
