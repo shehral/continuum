@@ -148,12 +148,12 @@ export default function CapturePage() {
         {/* Main chat area */}
         <div className="flex-1 flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b bg-background">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06] bg-slate-900/80 backdrop-blur-xl">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-100">
                 Knowledge Capture
               </h1>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-slate-400">
                 {activeSession
                   ? "Recording decision trace..."
                   : "Start a session to capture knowledge"}
@@ -166,6 +166,7 @@ export default function CapturePage() {
                     variant="outline"
                     size="sm"
                     onClick={handleAbandonSession}
+                    className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
                   >
                     <X className="h-4 w-4 mr-2" />
                     Abandon
@@ -174,6 +175,7 @@ export default function CapturePage() {
                     size="sm"
                     onClick={() => setShowCompleteDialog(true)}
                     disabled={completedStages.length < 3}
+                    className="bg-gradient-to-r from-green-500 to-emerald-400 text-slate-900 hover:shadow-[0_0_20px_rgba(34,197,94,0.3)] disabled:opacity-50"
                   >
                     Complete Session
                   </Button>
@@ -182,6 +184,7 @@ export default function CapturePage() {
                 <Button
                   onClick={() => startSessionMutation.mutate()}
                   disabled={startSessionMutation.isPending}
+                  className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)] hover:scale-105 transition-all"
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   New Session
