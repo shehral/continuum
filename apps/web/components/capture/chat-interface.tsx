@@ -19,43 +19,72 @@ interface ChatInterfaceProps {
   onLinkEntity?: (entity: Entity) => void
 }
 
-function MessageBubble({ message }: { message: CaptureMessage }) {
+function MessageBubble({ message, isNew = false }: { message: CaptureMessage; isNew?: boolean }) {
   const isUser = message.role === "user"
 
   return (
     <div
       className={cn(
         "flex gap-3 mb-4",
-        isUser ? "flex-row-reverse" : "flex-row"
+        isUser ? "flex-row-reverse" : "flex-row",
+        isNew && "animate-in fade-in slide-in-from-bottom-2 duration-300"
       )}
     >
       <Avatar className="h-8 w-8 shrink-0">
-        <AvatarFallback className={isUser ? "bg-primary text-primary-foreground" : "bg-muted"}>
-          {isUser ? "U" : "C"}
+        <AvatarFallback className={cn(
+          "text-sm font-medium",
+          isUser
+            ? "bg-gradient-to-br from-cyan-500 to-teal-400 text-slate-900"
+            : "bg-purple-500/20 text-purple-400"
+        )}>
+          {isUser ? "U" : "🤖"}
         </AvatarFallback>
       </Avatar>
       <div
         className={cn(
-          "max-w-[80%] rounded-lg px-4 py-2",
+          "max-w-[80%] rounded-2xl px-4 py-3",
           isUser
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted"
+            ? "bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900"
+            : "bg-white/[0.05] border border-white/[0.08] text-slate-200"
         )}
       >
-        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+        <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
         {message.extracted_entities && message.extracted_entities.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {message.extracted_entities.map((entity) => (
               <Badge
                 key={entity.id}
-                variant={isUser ? "secondary" : "outline"}
-                className="text-xs"
+                variant="outline"
+                className={cn(
+                  "text-xs",
+                  isUser
+                    ? "bg-white/20 border-white/30 text-slate-900"
+                    : "bg-purple-500/10 border-purple-500/30 text-purple-400"
+                )}
               >
                 {entity.name}
               </Badge>
             ))}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// Typing indicator with animated dots
+function TypingIndicator() {
+  return (
+    <div className="flex gap-3 mb-4 animate-in fade-in duration-300">
+      <Avatar className="h-8 w-8 shrink-0">
+        <AvatarFallback className="bg-purple-500/20 text-purple-400">🤖</AvatarFallback>
+      </Avatar>
+      <div className="bg-white/[0.05] border border-white/[0.08] rounded-2xl px-4 py-3">
+        <div className="flex gap-1">
+          <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+          <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+          <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
       </div>
     </div>
   )
@@ -90,49 +119,47 @@ export function ChatInterface({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-slate-900/50">
       {/* Messages */}
-      <ScrollArea ref={scrollRef} className="flex-1 p-4">
+      <ScrollArea ref={scrollRef} className="flex-1 p-6">
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-center">
-            <div>
-              <p className="text-muted-foreground mb-2">
+            <div className="animate-in fade-in duration-500">
+              <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-purple-500/10 flex items-center justify-center">
+                <span className="text-3xl">💬</span>
+              </div>
+              <p className="text-slate-300 mb-2 font-medium">
                 Start a conversation to capture knowledge
               </p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-slate-500">
                 I&apos;ll help you document decisions, context, and rationale
               </p>
             </div>
           </div>
         ) : (
-          messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+          messages.map((message, index) => (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              isNew={index === messages.length - 1}
+            />
           ))
         )}
-        {isLoading && (
-          <div className="flex gap-3 mb-4">
-            <Avatar className="h-8 w-8 shrink-0">
-              <AvatarFallback className="bg-muted">C</AvatarFallback>
-            </Avatar>
-            <div className="bg-muted rounded-lg px-4 py-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-            </div>
-          </div>
-        )}
+        {isLoading && <TypingIndicator />}
       </ScrollArea>
 
       {/* Entity suggestions */}
       {suggestedEntities && suggestedEntities.length > 0 && (
-        <div className="px-4 py-2 border-t bg-muted/50">
-          <p className="text-xs text-muted-foreground mb-2">
-            Suggested entities to link:
+        <div className="px-6 py-3 border-t border-white/[0.06] bg-white/[0.02]">
+          <p className="text-xs text-slate-500 mb-2">
+            Extracted entities:
           </p>
           <div className="flex flex-wrap gap-2">
             {suggestedEntities.map((entity) => (
               <Badge
                 key={entity.id}
                 variant="outline"
-                className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                className="cursor-pointer bg-purple-500/10 border-purple-500/30 text-purple-400 hover:bg-purple-500/20 hover:scale-105 transition-all"
                 onClick={() => onLinkEntity?.(entity)}
               >
                 {entity.name}
@@ -144,17 +171,21 @@ export function ChatInterface({
       )}
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-4 border-t bg-background">
-        <div className="flex gap-2">
+      <form onSubmit={handleSubmit} className="p-4 border-t border-white/[0.06] bg-slate-900/80 backdrop-blur-xl">
+        <div className="flex gap-3">
           <Input
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
             disabled={isLoading}
-            className="flex-1"
+            className="flex-1 bg-white/[0.05] border-white/[0.1] text-slate-200 placeholder:text-slate-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
           />
-          <Button type="submit" disabled={!input.trim() || isLoading}>
+          <Button
+            type="submit"
+            disabled={!input.trim() || isLoading}
+            className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 hover:shadow-[0_0_20px_rgba(34,211,238,0.3)] transition-all disabled:opacity-50"
+          >
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
