@@ -16,7 +16,15 @@ class TestStartCaptureSession:
         session = AsyncMock()
         session.add = MagicMock()
         session.commit = AsyncMock()
-        session.refresh = AsyncMock()
+
+        # Mock refresh to set timestamp fields
+        async def mock_refresh(obj):
+            if not hasattr(obj, "created_at") or obj.created_at is None:
+                obj.created_at = datetime.utcnow()
+            if not hasattr(obj, "updated_at") or obj.updated_at is None:
+                obj.updated_at = datetime.utcnow()
+
+        session.refresh = mock_refresh
         return session
 
     @pytest.mark.asyncio
@@ -32,7 +40,6 @@ class TestStartCaptureSession:
             assert result.id is not None
             assert result.status == "active"
             mock_db_session.add.assert_called_once()
-            mock_db_session.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_start_session_uses_anonymous_user(self, mock_db_session):

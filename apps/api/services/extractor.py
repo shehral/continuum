@@ -270,6 +270,9 @@ Return ONLY valid JSON, no markdown or explanation."""
         except (TimeoutError, ConnectionError) as e:
             logger.error(f"LLM connection error: {e}")
             return []
+        except Exception as e:
+            logger.error(f"Unexpected error extracting decisions: {e}")
+            return []
 
     async def extract_entities(self, text: str) -> list[dict]:
         """Extract entities from text using few-shot CoT prompt.

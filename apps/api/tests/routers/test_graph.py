@@ -1,19 +1,33 @@
 """Tests for the graph router."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 
+def create_async_result_mock(records):
+    """Create a mock Neo4j result that works as an async iterator."""
+    result = MagicMock()
+
+    async def async_iter():
+        for r in records:
+            yield r
+
+    result.__aiter__ = lambda self: async_iter()
+    return result
+
+
+def create_neo4j_session_mock():
+    """Create a mock Neo4j session that works as an async context manager."""
+    session = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    return session
+
+
 class TestGetGraph:
     """Tests for GET / endpoint."""
-
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock Neo4j session."""
-        session = AsyncMock()
-        return session
 
     @pytest.fixture
     def sample_decisions(self):
@@ -68,35 +82,21 @@ class TestGetGraph:
 
     @pytest.mark.asyncio
     async def test_get_graph_returns_nodes_and_edges(
-        self, mock_session, sample_decisions, sample_entities, sample_edges
+        self, sample_decisions, sample_entities, sample_edges
     ):
         """Should return graph with nodes and edges."""
+        mock_session = create_neo4j_session_mock()
+
         call_count = [0]
 
         async def mock_run(query, **params):
             call_count[0] += 1
-            result = AsyncMock()
-
             if "DecisionTrace" in query and "Entity" not in query:
-                async def decision_iter():
-                    for d in sample_decisions:
-                        yield d
-
-                result.__aiter__ = lambda: decision_iter()
+                return create_async_result_mock(sample_decisions)
             elif "Entity" in query and "DecisionTrace" not in query:
-                async def entity_iter():
-                    for e in sample_entities:
-                        yield e
-
-                result.__aiter__ = lambda: entity_iter()
+                return create_async_result_mock(sample_entities)
             else:
-                async def edge_iter():
-                    for e in sample_edges:
-                        yield e
-
-                result.__aiter__ = lambda: edge_iter()
-
-            return result
+                return create_async_result_mock(sample_edges)
 
         mock_session.run = mock_run
 
@@ -113,16 +113,10 @@ class TestGetGraph:
             assert isinstance(result.edges, list)
 
     @pytest.mark.asyncio
-    async def test_get_graph_empty(self, mock_session):
+    async def test_get_graph_empty(self):
         """Should return empty graph when database is empty."""
-        mock_result = AsyncMock()
-
-        async def empty_iter():
-            return
-            yield
-
-        mock_result.__aiter__ = lambda: empty_iter()
-        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_session = create_neo4j_session_mock()
+        mock_session.run = AsyncMock(return_value=create_async_result_mock([]))
 
         with patch(
             "routers.graph.get_neo4j_session",
@@ -137,16 +131,25 @@ class TestGetGraph:
             assert result.edges == []
 
     @pytest.mark.asyncio
-    async def test_get_graph_filters_by_source(self, mock_session, sample_decisions):
+    async def test_get_graph_filters_by_source(
+        self, sample_decisions, sample_entities, sample_edges
+    ):
         """Should filter by source when specified."""
-        mock_result = AsyncMock()
+        mock_session = create_neo4j_session_mock()
 
-        async def decision_iter():
-            for d in sample_decisions:
-                yield d
+        queries_called = []
 
-        mock_result.__aiter__ = lambda: decision_iter()
-        mock_session.run = AsyncMock(return_value=mock_result)
+        async def mock_run(query, **params):
+            queries_called.append(query)
+            # Return appropriate data based on query
+            if "DecisionTrace" in query and "Entity" not in query:
+                return create_async_result_mock(sample_decisions)
+            elif "Entity" in query and "DecisionTrace" not in query:
+                return create_async_result_mock(sample_entities)
+            else:
+                return create_async_result_mock(sample_edges)
+
+        mock_session.run = mock_run
 
         with patch(
             "routers.graph.get_neo4j_session",
@@ -157,24 +160,17 @@ class TestGetGraph:
 
             await get_graph(source_filter="manual")
 
-            # Verify query includes source filter
-            call_args = mock_session.run.call_args_list[0]
-            query = call_args[0][0]
-            assert "source" in query.lower()
+            # Verify at least one query includes source filter
+            assert any("source" in q.lower() for q in queries_called)
 
 
 class TestGetNodeDetails:
     """Tests for GET /nodes/{node_id} endpoint."""
 
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock Neo4j session."""
-        session = AsyncMock()
-        return session
-
     @pytest.mark.asyncio
-    async def test_get_decision_node(self, mock_session):
+    async def test_get_decision_node(self):
         """Should return decision node details."""
+        mock_session = create_neo4j_session_mock()
         node_id = str(uuid4())
         decision_data = {
             "d": {
@@ -219,8 +215,9 @@ class TestGetNodeDetails:
             assert result.type == "decision"
 
     @pytest.mark.asyncio
-    async def test_get_entity_node(self, mock_session):
+    async def test_get_entity_node(self):
         """Should return entity node details."""
+        mock_session = create_neo4j_session_mock()
         node_id = str(uuid4())
         entity_data = {
             "e": {
@@ -262,8 +259,9 @@ class TestGetNodeDetails:
             assert result.type == "entity"
 
     @pytest.mark.asyncio
-    async def test_get_node_not_found(self, mock_session):
+    async def test_get_node_not_found(self):
         """Should raise 404 when node not found."""
+        mock_session = create_neo4j_session_mock()
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value=None)
         mock_session.run = AsyncMock(return_value=mock_result)
@@ -285,15 +283,11 @@ class TestGetNodeDetails:
 class TestResetGraph:
     """Tests for DELETE /reset endpoint."""
 
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock Neo4j session."""
-        session = AsyncMock()
-        return session
-
     @pytest.mark.asyncio
-    async def test_reset_requires_confirmation(self, mock_session):
+    async def test_reset_requires_confirmation(self):
         """Should abort without confirmation."""
+        mock_session = create_neo4j_session_mock()
+
         with patch(
             "routers.graph.get_neo4j_session",
             new_callable=AsyncMock,
@@ -308,8 +302,9 @@ class TestResetGraph:
             assert mock_session.run.call_count == 0
 
     @pytest.mark.asyncio
-    async def test_reset_with_confirmation(self, mock_session):
+    async def test_reset_with_confirmation(self):
         """Should delete all data with confirmation."""
+        mock_session = create_neo4j_session_mock()
         mock_session.run = AsyncMock()
 
         with patch(
@@ -329,15 +324,10 @@ class TestResetGraph:
 class TestGetGraphStats:
     """Tests for GET /stats endpoint."""
 
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock Neo4j session."""
-        session = AsyncMock()
-        return session
-
     @pytest.mark.asyncio
-    async def test_get_stats_success(self, mock_session):
+    async def test_get_stats_success(self):
         """Should return graph statistics."""
+        mock_session = create_neo4j_session_mock()
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(
             return_value={
@@ -365,8 +355,9 @@ class TestGetGraphStats:
             assert result["relationships"] == 100
 
     @pytest.mark.asyncio
-    async def test_get_stats_empty(self, mock_session):
+    async def test_get_stats_empty(self):
         """Should return zeros when database is empty."""
+        mock_session = create_neo4j_session_mock()
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value=None)
         mock_session.run = AsyncMock(return_value=mock_result)

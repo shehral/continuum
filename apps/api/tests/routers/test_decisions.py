@@ -1,19 +1,33 @@
 """Tests for the decisions router."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 
+def create_async_result_mock(records):
+    """Create a mock Neo4j result that works as an async iterator."""
+    result = MagicMock()
+
+    async def async_iter():
+        for r in records:
+            yield r
+
+    result.__aiter__ = lambda self: async_iter()
+    return result
+
+
+def create_neo4j_session_mock():
+    """Create a mock Neo4j session that works as an async context manager."""
+    session = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    return session
+
+
 class TestGetDecisions:
     """Tests for GET / endpoint."""
-
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock Neo4j session."""
-        session = AsyncMock()
-        return session
 
     @pytest.fixture
     def sample_decisions(self):
@@ -52,16 +66,12 @@ class TestGetDecisions:
         ]
 
     @pytest.mark.asyncio
-    async def test_get_decisions_returns_list(self, mock_session, sample_decisions):
+    async def test_get_decisions_returns_list(self, sample_decisions):
         """Should return a list of decisions."""
-        mock_result = AsyncMock()
-
-        async def async_iter():
-            for d in sample_decisions:
-                yield d
-
-        mock_result.__aiter__ = lambda: async_iter()
-        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_session = create_neo4j_session_mock()
+        mock_session.run = AsyncMock(
+            return_value=create_async_result_mock(sample_decisions)
+        )
 
         with patch(
             "routers.decisions.get_neo4j_session",
@@ -75,16 +85,10 @@ class TestGetDecisions:
             assert results[0].trigger == "Choosing a database"
 
     @pytest.mark.asyncio
-    async def test_get_decisions_empty(self, mock_session):
+    async def test_get_decisions_empty(self):
         """Should return empty list when no decisions."""
-        mock_result = AsyncMock()
-
-        async def empty_iter():
-            return
-            yield
-
-        mock_result.__aiter__ = lambda: empty_iter()
-        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_session = create_neo4j_session_mock()
+        mock_session.run = AsyncMock(return_value=create_async_result_mock([]))
 
         with patch(
             "routers.decisions.get_neo4j_session",
@@ -97,16 +101,10 @@ class TestGetDecisions:
             assert results == []
 
     @pytest.mark.asyncio
-    async def test_get_decisions_with_pagination(self, mock_session):
+    async def test_get_decisions_with_pagination(self):
         """Should pass pagination parameters to query."""
-        mock_result = AsyncMock()
-
-        async def empty_iter():
-            return
-            yield
-
-        mock_result.__aiter__ = lambda: empty_iter()
-        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_session = create_neo4j_session_mock()
+        mock_session.run = AsyncMock(return_value=create_async_result_mock([]))
 
         with patch(
             "routers.decisions.get_neo4j_session",
@@ -126,15 +124,10 @@ class TestGetDecisions:
 class TestGetDecision:
     """Tests for GET /{decision_id} endpoint."""
 
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock Neo4j session."""
-        session = AsyncMock()
-        return session
-
     @pytest.mark.asyncio
-    async def test_get_decision_found(self, mock_session):
+    async def test_get_decision_found(self):
         """Should return decision when found."""
+        mock_session = create_neo4j_session_mock()
         decision_id = str(uuid4())
         decision_data = {
             "d": {
@@ -167,8 +160,9 @@ class TestGetDecision:
             assert result.trigger == "Test decision"
 
     @pytest.mark.asyncio
-    async def test_get_decision_not_found(self, mock_session):
+    async def test_get_decision_not_found(self):
         """Should raise 404 when decision not found."""
+        mock_session = create_neo4j_session_mock()
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value=None)
         mock_session.run = AsyncMock(return_value=mock_result)
@@ -190,15 +184,10 @@ class TestGetDecision:
 class TestDeleteDecision:
     """Tests for DELETE /{decision_id} endpoint."""
 
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock Neo4j session."""
-        session = AsyncMock()
-        return session
-
     @pytest.mark.asyncio
-    async def test_delete_decision_success(self, mock_session):
+    async def test_delete_decision_success(self):
         """Should delete decision when it exists."""
+        mock_session = create_neo4j_session_mock()
         decision_id = str(uuid4())
         decision_data = {"d": {"id": decision_id}}
 
@@ -226,8 +215,9 @@ class TestDeleteDecision:
             assert result["status"] == "deleted"
 
     @pytest.mark.asyncio
-    async def test_delete_decision_not_found(self, mock_session):
+    async def test_delete_decision_not_found(self):
         """Should raise 404 when decision doesn't exist."""
+        mock_session = create_neo4j_session_mock()
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value=None)
         mock_session.run = AsyncMock(return_value=mock_result)
@@ -249,15 +239,10 @@ class TestDeleteDecision:
 class TestCreateDecision:
     """Tests for POST / endpoint."""
 
-    @pytest.fixture
-    def mock_session(self):
-        """Create a mock Neo4j session."""
-        session = AsyncMock()
-        return session
-
     @pytest.mark.asyncio
-    async def test_create_decision_manual(self, mock_session):
+    async def test_create_decision_manual(self):
         """Should create decision without auto-extraction."""
+        mock_session = create_neo4j_session_mock()
         decision_id = str(uuid4())
 
         call_count = [0]
