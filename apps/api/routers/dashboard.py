@@ -1,15 +1,23 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.neo4j import get_neo4j_session
+from db.postgres import get_db
+from models.postgres import CaptureSession
 from models.schemas import DashboardStats, Decision, Entity
 
 router = APIRouter()
 
 
 @router.get("/stats", response_model=DashboardStats)
-async def get_dashboard_stats():
+async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     """Get dashboard statistics."""
     try:
+        # Get session count from PostgreSQL
+        result = await db.execute(select(func.count(CaptureSession.id)))
+        total_sessions = result.scalar() or 0
+
         session = await get_neo4j_session()
         async with session:
             # Count decisions
@@ -63,7 +71,7 @@ async def get_dashboard_stats():
             return DashboardStats(
                 total_decisions=total_decisions,
                 total_entities=total_entities,
-                total_sessions=0,  # TODO: Get from PostgreSQL
+                total_sessions=total_sessions,
                 recent_decisions=recent_decisions,
             )
     except Exception:

@@ -1,10 +1,14 @@
 from uuid import uuid4
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from neo4j.exceptions import ClientError, DatabaseError, DriverError
 
 from db.neo4j import get_neo4j_session
 from models.schemas import Entity, LinkEntityRequest, SuggestEntitiesRequest
 from services.extractor import DecisionExtractor
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -110,8 +114,12 @@ async def get_all_entities():
                 )
 
             return entities
-    except Exception:
-        return []
+    except DriverError as e:
+        logger.error(f"Database connection error: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    except (ClientError, DatabaseError) as e:
+        logger.error(f"Error fetching entities: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch entities")
 
 
 @router.post("", response_model=Entity)
@@ -141,8 +149,6 @@ async def create_entity(entity: Entity):
 @router.get("/{entity_id}", response_model=Entity)
 async def get_entity(entity_id: str):
     """Get a single entity by ID."""
-    from fastapi import HTTPException
-
     session = await get_neo4j_session()
     async with session:
         result = await session.run(
@@ -174,8 +180,6 @@ async def delete_entity(entity_id: str, force: bool = False):
         force: If True, delete even if entity has relationships.
                If False (default), only delete orphan entities.
     """
-    from fastapi import HTTPException
-
     session = await get_neo4j_session()
     async with session:
         # Check if entity exists

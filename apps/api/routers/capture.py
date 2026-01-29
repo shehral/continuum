@@ -17,6 +17,7 @@ from models.schemas import (
 from models.schemas import (
     Entity,
 )
+from routers.auth import get_current_user_id
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,11 +26,14 @@ router = APIRouter()
 
 
 @router.post("/sessions", response_model=CaptureSessionSchema)
-async def start_capture_session(db: AsyncSession = Depends(get_db)):
+async def start_capture_session(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
     """Start a new capture session."""
     session = CaptureSession(
         id=str(uuid4()),
-        user_id="anonymous",  # TODO: Get from auth
+        user_id=user_id,
         status=SessionStatus.ACTIVE,
     )
     db.add(session)

@@ -10,18 +10,38 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        // For MVP, accept any credentials
-        // In production, validate against database
         if (!credentials?.email || !credentials?.password) {
           return null
         }
 
-        // TODO: Validate against PostgreSQL database
-        // For now, return a mock user
-        return {
-          id: "1",
-          email: credentials.email,
-          name: credentials.email.split("@")[0],
+        try {
+          // Validate credentials against backend API
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL}/api/users/login`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                email: credentials.email,
+                password: credentials.password,
+              }),
+            }
+          )
+
+          if (!response.ok) {
+            return null
+          }
+
+          const user = await response.json()
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+          }
+        } catch {
+          return null
         }
       },
     }),

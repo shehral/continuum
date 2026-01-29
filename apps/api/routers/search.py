@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
+from neo4j.exceptions import ClientError, DatabaseError, DriverError
 
 from db.neo4j import get_neo4j_session
 from models.schemas import SearchResult
@@ -7,6 +8,12 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+class FullTextFallbackError(Exception):
+    """Signal to fall back to CONTAINS search when full-text returns no results."""
+
+    pass
 
 
 @router.get("", response_model=list[SearchResult])
@@ -54,9 +61,9 @@ async def search(
 
                     # If no full-text results, fall back to CONTAINS
                     if not found_results:
-                        raise Exception("No full-text results, fall back")
+                        raise FullTextFallbackError()
 
-                except Exception:
+                except (FullTextFallbackError, ClientError, DatabaseError):
                     # Fall back to case-insensitive CONTAINS
                     result = await session.run(
                         """
@@ -118,9 +125,9 @@ async def search(
                         )
 
                     if not found_results:
-                        raise Exception("No full-text results, fall back")
+                        raise FullTextFallbackError()
 
-                except Exception:
+                except (FullTextFallbackError, ClientError, DatabaseError):
                     # Fall back to case-insensitive CONTAINS
                     result = await session.run(
                         """
@@ -152,9 +159,12 @@ async def search(
             results.sort(key=lambda x: x.score, reverse=True)
 
             return results
-    except Exception as e:
-        logger.error(f"Search error: {e}")
-        return []
+    except DriverError as e:
+        logger.error(f"Database connection error: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    except (ClientError, DatabaseError) as e:
+        logger.error(f"Search query error: {e}")
+        raise HTTPException(status_code=500, detail="Search failed")
 
 
 @router.get("/suggest", response_model=list[SearchResult])
@@ -221,6 +231,9 @@ async def search_suggestions(
                 )
 
             return results[:limit]
-    except Exception as e:
+    except DriverError as e:
+        logger.error(f"Database connection error: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    except (ClientError, DatabaseError) as e:
         logger.error(f"Search suggest error: {e}")
-        return []
+        raise HTTPException(status_code=500, detail="Search suggestions failed")

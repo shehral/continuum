@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,7 +9,11 @@ from config import get_settings
 from db.postgres import get_db
 from models.schemas import IngestionResult, IngestionStatus
 from services.extractor import DecisionExtractor
+from services.file_watcher import get_file_watcher
 from services.parser import ClaudeLogParser
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -147,16 +151,69 @@ async def trigger_ingestion(
         )
 
 
+async def process_changed_file(file_path: str) -> None:
+    """Process a changed Claude log file.
+
+    This is called by the file watcher when a file changes.
+    """
+    logger.info(f"Processing changed file: {file_path}")
+
+    try:
+        parser = ClaudeLogParser("")
+        conversations = await parser.parse_file(file_path)
+
+        extractor = DecisionExtractor()
+        decisions_extracted = 0
+
+        for conversation in conversations:
+            decisions = await extractor.extract_decisions(conversation)
+            decisions_extracted += len(decisions)
+
+            for decision in decisions:
+                await extractor.save_decision(decision, source="claude_logs")
+
+        ingestion_state["files_processed"] += 1
+        ingestion_state["last_run"] = datetime.utcnow()
+        logger.info(f"Processed {decisions_extracted} decisions from {file_path}")
+
+    except Exception as e:
+        logger.error(f"Error processing file {file_path}: {e}")
+
+
 @router.post("/watch/start")
-async def start_watching():
-    """Start watching Claude Code logs for new conversations."""
-    ingestion_state["is_watching"] = True
-    # TODO: Implement file watcher using watchdog or similar
-    return {"status": "watching started"}
+async def start_watching(background_tasks: BackgroundTasks):
+    """Start watching Claude Code logs for new conversations.
+
+    Uses watchdog to monitor the logs directory for new or modified
+    JSONL files. When changes are detected, decisions are automatically
+    extracted and saved to the knowledge graph.
+    """
+    settings = get_settings()
+    watcher = get_file_watcher()
+
+    if watcher.is_running:
+        return {"status": "already watching", "path": settings.claude_logs_path}
+
+    success = watcher.start(
+        logs_path=settings.claude_logs_path,
+        on_change=lambda path: background_tasks.add_task(process_changed_file, path),
+    )
+
+    if success:
+        ingestion_state["is_watching"] = True
+        return {"status": "watching started", "path": settings.claude_logs_path}
+    else:
+        return {"status": "failed to start", "error": "Could not start file watcher"}
 
 
 @router.post("/watch/stop")
 async def stop_watching():
     """Stop watching Claude Code logs."""
+    watcher = get_file_watcher()
+
+    if not watcher.is_running:
+        return {"status": "not watching"}
+
+    watcher.stop()
     ingestion_state["is_watching"] = False
     return {"status": "watching stopped"}

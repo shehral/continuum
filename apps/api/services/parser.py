@@ -165,6 +165,19 @@ class ClaudeLogParser:
 
         return conversations
 
+    async def parse_file(self, file_path: str) -> list[Conversation]:
+        """Parse a single JSONL file into conversations.
+
+        Public async wrapper for _parse_jsonl_file.
+
+        Args:
+            file_path: Path to the JSONL file
+
+        Returns:
+            List of Conversation objects
+        """
+        return self._parse_jsonl_file(Path(file_path))
+
     async def parse_all_logs(
         self,
         project_filter: Optional[str] = None,

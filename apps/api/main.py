@@ -7,7 +7,16 @@ from config import get_settings
 from db.neo4j import close_neo4j, init_neo4j
 from db.postgres import close_postgres, init_postgres
 from db.redis import close_redis, init_redis
-from routers import capture, dashboard, decisions, entities, graph, ingest, search
+from routers import (
+    capture,
+    dashboard,
+    decisions,
+    entities,
+    graph,
+    ingest,
+    search,
+    users,
+)
 
 
 @asynccontextmanager
@@ -48,6 +57,7 @@ app.include_router(capture.router, prefix="/api/capture", tags=["Capture"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["Ingest"])
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(entities.router, prefix="/api/entities", tags=["Entities"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
 
 
 @app.get("/health")

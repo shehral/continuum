@@ -3,6 +3,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from neo4j.exceptions import ClientError, DatabaseError, DriverError
 from pydantic import BaseModel
 
 from db.neo4j import get_neo4j_session
@@ -198,9 +199,12 @@ async def get_graph(
                 edge_id += 1
 
             return GraphData(nodes=nodes, edges=edges)
-    except Exception as e:
+    except DriverError as e:
+        logger.error(f"Database connection error: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    except (ClientError, DatabaseError) as e:
         logger.error(f"Error fetching graph: {e}")
-        return GraphData(nodes=[], edges=[])
+        raise HTTPException(status_code=500, detail="Failed to fetch graph data")
 
 
 @router.get("/validate", response_model=ValidationSummary)
@@ -518,8 +522,8 @@ async def get_similar_nodes(
                 threshold=threshold,
                 top_k=top_k,
             )
-        except Exception:
-            # Fall back to manual similarity calculation
+        except (ClientError, DatabaseError):
+            # Fall back to manual similarity calculation (GDS not installed)
             result = await session.run(
                 """
                 MATCH (d:DecisionTrace)
@@ -591,8 +595,8 @@ async def semantic_search(request: SemanticSearchRequest):
                 top_k=request.top_k,
                 threshold=request.threshold,
             )
-        except Exception:
-            # Fall back to manual search
+        except (ClientError, DatabaseError):
+            # Fall back to manual search (vector index not available)
             result = await session.run(
                 """
                 MATCH (d:DecisionTrace)
@@ -834,8 +838,10 @@ async def enhance_graph():
                 )
                 results["decisions_enhanced"] += 1
                 logger.debug(f"Added embedding to decision {dec['id'][:8]}...")
-            except Exception as e:
+            except (TimeoutError, ConnectionError) as e:
                 logger.warning(f"Failed to enhance decision {dec['id']}: {e}")
+            except (ClientError, DatabaseError) as e:
+                logger.warning(f"Database error enhancing decision {dec['id']}: {e}")
 
         # 2. Add embeddings to entities without them
         result = await session.run(
@@ -863,8 +869,10 @@ async def enhance_graph():
                     embedding=embedding,
                 )
                 results["entities_enhanced"] += 1
-            except Exception as e:
+            except (TimeoutError, ConnectionError) as e:
                 logger.warning(f"Failed to enhance entity {ent['name']}: {e}")
+            except (ClientError, DatabaseError) as e:
+                logger.warning(f"Database error enhancing entity {ent['name']}: {e}")
 
         # 3. Create SIMILAR_TO edges between similar decisions
         result = await session.run(
@@ -951,8 +959,10 @@ async def enhance_graph():
                             confidence=confidence,
                         )
                         results["entity_relationships_created"] += 1
-                except Exception as e:
-                    logger.error(f"Error extracting entity relationships: {e}")
+                except (TimeoutError, ConnectionError) as e:
+                    logger.error(f"LLM connection error extracting entity relationships: {e}")
+                except (ClientError, DatabaseError) as e:
+                    logger.error(f"Database error saving entity relationships: {e}")
 
         # 5. Create INFLUENCED_BY temporal chains
         await session.run(

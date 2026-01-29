@@ -31,11 +31,30 @@ export default function RegisterPage() {
     }
 
     try {
-      // TODO: Call API to register user
-      // For MVP, just redirect to login
-      router.push("/login")
-    } catch {
-      setError("An error occurred. Please try again.")
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/users/register`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name,
+            email,
+            password,
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.detail || "Registration failed")
+      }
+
+      // Success - redirect to login
+      router.push("/login?registered=true")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred. Please try again.")
     } finally {
       setIsLoading(false)
     }

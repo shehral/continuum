@@ -3,6 +3,7 @@
 from typing import Optional
 from uuid import uuid4
 
+from neo4j.exceptions import ClientError, DatabaseError
 from rapidfuzz import fuzz
 
 from models.ontology import (
@@ -125,8 +126,10 @@ class EntityResolver:
                     match_method="embedding",
                     confidence=similar["similarity"],
                 )
-        except Exception as e:
-            logger.error(f"Embedding similarity check failed: {e}")
+        except (TimeoutError, ConnectionError) as e:
+            logger.warning(f"Embedding service connection failed: {e}")
+        except (ClientError, DatabaseError) as e:
+            logger.warning(f"Database error during embedding similarity: {e}")
 
         # Stage 6: Create new entity
         final_name = canonical if canonical.lower() != normalized_name else name
@@ -235,8 +238,8 @@ class EntityResolver:
             )
             record = await result.single()
             return dict(record) if record else None
-        except Exception:
-            # Fall back to manual calculation
+        except (ClientError, DatabaseError):
+            # Fall back to manual calculation (GDS not installed)
             return await self._find_by_embedding_similarity_manual(embedding, threshold)
 
     async def _find_by_embedding_similarity_manual(

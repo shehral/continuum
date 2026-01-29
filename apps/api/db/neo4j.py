@@ -1,4 +1,5 @@
 from neo4j import AsyncGraphDatabase
+from neo4j.exceptions import ClientError, DatabaseError
 
 from config import get_settings
 from utils.logging import get_logger
@@ -62,7 +63,7 @@ async def init_neo4j():
                 "CREATE INDEX entity_name_lookup IF NOT EXISTS FOR (e:Entity) ON (e.name)"
             )
             logger.info("Created entity_name_lookup index")
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             logger.debug(f"Entity name lookup index skipped: {e}")
 
         # Entity aliases index for resolution
@@ -71,7 +72,7 @@ async def init_neo4j():
                 "CREATE INDEX entity_aliases IF NOT EXISTS FOR (e:Entity) ON (e.aliases)"
             )
             logger.info("Created entity_aliases index")
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             logger.debug(f"Entity aliases index skipped: {e}")
 
         # Decision source index for filtering
@@ -80,7 +81,7 @@ async def init_neo4j():
                 "CREATE INDEX decision_source IF NOT EXISTS FOR (d:DecisionTrace) ON (d.source)"
             )
             logger.info("Created decision_source index")
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             logger.debug(f"Decision source index skipped: {e}")
 
         # Vector indexes for semantic search (Neo4j 5.11+)
@@ -101,7 +102,7 @@ async def init_neo4j():
                 dimensions=EMBEDDING_DIMENSIONS,
             )
             logger.info("Created decision_embedding vector index")
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             logger.debug(f"Vector index creation skipped (may already exist or Neo4j < 5.11): {e}")
 
         try:
@@ -120,7 +121,7 @@ async def init_neo4j():
                 dimensions=EMBEDDING_DIMENSIONS,
             )
             logger.info("Created entity_embedding vector index")
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             logger.debug(f"Vector index creation skipped: {e}")
 
         # Full-text indexes for hybrid search
@@ -133,7 +134,7 @@ async def init_neo4j():
                 """
             )
             logger.info("Created decision_fulltext index")
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             logger.debug(f"Full-text index creation skipped: {e}")
 
         try:
@@ -145,7 +146,7 @@ async def init_neo4j():
                 """
             )
             logger.info("Created entity_fulltext index")
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             logger.debug(f"Full-text index creation skipped: {e}")
 
 
@@ -266,7 +267,7 @@ async def find_similar_entity_by_embedding(
             )
             record = await result.single()
             return dict(record) if record else None
-        except Exception:
+        except (ClientError, DatabaseError):
             # Fall back to returning all entities for manual calculation
             result = await session.run(
                 """

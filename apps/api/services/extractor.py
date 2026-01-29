@@ -2,8 +2,11 @@
 
 import json
 from datetime import datetime
+from json import JSONDecodeError
 from typing import Optional
 from uuid import uuid4
+
+from neo4j.exceptions import ClientError, DatabaseError
 
 from db.neo4j import get_neo4j_session
 from models.ontology import get_canonical_name
@@ -261,8 +264,11 @@ Return ONLY valid JSON, no markdown or explanation."""
                 for d in decisions_data
             ]
 
-        except Exception as e:
-            logger.error(f"Error extracting decisions: {e}")
+        except JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response as JSON: {e}")
+            return []
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error: {e}")
             return []
 
     async def extract_entities(self, text: str) -> list[dict]:
@@ -290,8 +296,11 @@ Return ONLY valid JSON, no markdown or explanation."""
 
             return entities
 
-        except Exception as e:
-            logger.error(f"Error extracting entities: {e}")
+        except JSONDecodeError as e:
+            logger.error(f"Failed to parse entity extraction response: {e}")
+            return []
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error during entity extraction: {e}")
             return []
 
     async def extract_entity_relationships(
@@ -325,8 +334,11 @@ Return ONLY valid JSON, no markdown or explanation."""
 
             return relationships
 
-        except Exception as e:
-            logger.error(f"Error extracting entity relationships: {e}")
+        except JSONDecodeError as e:
+            logger.error(f"Failed to parse relationship extraction response: {e}")
+            return []
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error during relationship extraction: {e}")
             return []
 
     async def extract_decision_relationship(
@@ -363,8 +375,11 @@ Return ONLY valid JSON, no markdown or explanation."""
                 "reasoning": result.get("reasoning", ""),
             }
 
-        except Exception as e:
-            logger.error(f"Error extracting decision relationship: {e}")
+        except JSONDecodeError as e:
+            logger.error(f"Failed to parse decision relationship response: {e}")
+            return None
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error during decision relationship analysis: {e}")
             return None
 
     async def save_decision(self, decision: DecisionCreate, source: str = "unknown") -> str:
@@ -393,8 +408,11 @@ Return ONLY valid JSON, no markdown or explanation."""
         try:
             embedding = await self.embedding_service.embed_decision(decision_dict)
             logger.debug(f"Generated embedding with {len(embedding)} dimensions")
-        except Exception as e:
-            logger.warning(f"Embedding generation failed: {e}")
+        except (TimeoutError, ConnectionError) as e:
+            logger.warning(f"Embedding service connection failed: {e}")
+            embedding = None
+        except ValueError as e:
+            logger.warning(f"Invalid embedding input: {e}")
             embedding = None
 
         session = await get_neo4j_session()
@@ -483,7 +501,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                             "name": resolved.name,
                             "type": resolved.type,
                         })
-                    except Exception:
+                    except (TimeoutError, ConnectionError, ValueError):
                         pass
 
                 # Create or update entity node
@@ -639,7 +657,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                 )
                 logger.info(f"Linked similar decision {similar_id} (score: {similarity:.3f})")
 
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             # GDS library may not be installed, fall back to manual calculation
             logger.debug(f"Vector search failed (GDS may not be installed): {e}")
             await self._link_similar_decisions_manual(session, decision_id, embedding)
@@ -684,7 +702,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                     )
                     logger.info(f"Linked similar decision {other_id} (score: {similarity:.3f})")
 
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             logger.error(f"Manual similarity linking failed: {e}")
 
     async def _create_temporal_chains(self, session, decision_id: str):
@@ -704,7 +722,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                 new_id=decision_id,
             )
             logger.debug(f"Created temporal chains for decision {decision_id}")
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             logger.error(f"Temporal chain creation failed: {e}")
 
 
