@@ -8,6 +8,7 @@ import { AppShell } from "@/components/layout/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api, type DashboardStats, type Decision } from "@/lib/api"
 import { entityStyles, getEntityStyle } from "@/lib/constants"
 
@@ -110,9 +111,18 @@ function DecisionCard({ decision, index = 0 }: { decision: Decision; index?: num
               {Math.round(decision.confidence * 100)}%
             </Badge>
           </div>
-          <CardDescription className="line-clamp-2 text-slate-400 mt-1">
-            {decision.decision}
-          </CardDescription>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <CardDescription className="line-clamp-2 text-slate-400 mt-1 cursor-help">
+                  {decision.decision}
+                </CardDescription>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-sm">
+                <p>{decision.decision}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-1.5">

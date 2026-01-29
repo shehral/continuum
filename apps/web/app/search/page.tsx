@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api, type Decision, type Entity } from "@/lib/api"
 import { getEntityStyle } from "@/lib/constants"
 
@@ -136,9 +137,18 @@ export default function SearchPage() {
                 </CardHeader>
                 <CardContent>
                   {isDecision(result) ? (
-                    <p className="text-sm text-slate-400 line-clamp-2">
-                      {result.decision}
-                    </p>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <p className="text-sm text-slate-400 line-clamp-2 cursor-help">
+                            {result.decision}
+                          </p>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-sm">
+                          <p>{result.decision}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   ) : (
                     <p className="text-sm text-slate-500">
                       Click to view in knowledge graph

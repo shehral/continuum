@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog"
 import { api, type Decision } from "@/lib/api"
 import { getEntityStyle } from "@/lib/constants"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 // Confidence badge styling based on level
 const getConfidenceStyle = (confidence: number) => {
@@ -400,9 +401,18 @@ export default function DecisionsPage() {
                           {Math.round(decision.confidence * 100)}%
                         </Badge>
                       </div>
-                      <CardDescription className="text-slate-400 line-clamp-2 mt-1">
-                        {decision.decision}
-                      </CardDescription>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <CardDescription className="text-slate-400 line-clamp-2 mt-1 cursor-help">
+                              {decision.decision}
+                            </CardDescription>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-sm">
+                            <p>{decision.decision}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </CardHeader>
                     <CardContent>
                       <div className="flex items-center justify-between">

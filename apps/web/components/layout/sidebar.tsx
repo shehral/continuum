@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: "🏠" },
@@ -70,13 +71,31 @@ export function Sidebar() {
               {session?.user?.name?.charAt(0).toUpperCase() || "U"}
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1 truncate">
-            <p className="text-sm font-medium text-slate-200">
-              {session?.user?.name || "User"}
-            </p>
-            <p className="text-xs text-slate-500 truncate">
-              {session?.user?.email || ""}
-            </p>
+          <div className="flex-1 min-w-0">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-sm font-medium text-slate-200 truncate cursor-help">
+                    {session?.user?.name || "User"}
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>{session?.user?.name || "User"}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-xs text-slate-500 truncate cursor-help">
+                    {session?.user?.email || ""}
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p>{session?.user?.email || ""}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
 

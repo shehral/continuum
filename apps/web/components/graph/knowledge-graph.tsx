@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { X, Sparkles, GitBranch, ArrowRight, Link2, Bot, User, FileText } from "lucide-react"
 import { type GraphData, type Decision, type Entity } from "@/lib/api"
 
@@ -165,12 +166,30 @@ function DecisionNode({ data, selected }: NodeProps) {
           </span>
         )}
       </div>
-      <div className="font-semibold text-sm text-slate-100 line-clamp-2">
-        {nodeData.label}
-      </div>
-      <div className="text-xs text-slate-400 mt-2 line-clamp-2">
-        {nodeData.decision?.decision || "Decision trace"}
-      </div>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="font-semibold text-sm text-slate-100 line-clamp-2 cursor-help">
+              {nodeData.label}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-sm">
+            <p>{nodeData.label}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-xs text-slate-400 mt-2 line-clamp-2 cursor-help">
+              {nodeData.decision?.decision || "Decision trace"}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-sm">
+            <p>{nodeData.decision?.decision || "Decision trace"}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <Handle
         type="source"
         position={Position.Bottom}
