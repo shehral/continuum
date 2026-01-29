@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { X, Sparkles, GitBranch, ArrowRight, Link2, Bot, User, FileText } from "lucide-react"
 import { type GraphData, type Decision, type Entity } from "@/lib/api"
 
@@ -165,12 +166,30 @@ function DecisionNode({ data, selected }: NodeProps) {
           </span>
         )}
       </div>
-      <div className="font-semibold text-sm text-slate-100 line-clamp-2">
-        {nodeData.label}
-      </div>
-      <div className="text-xs text-slate-400 mt-2 line-clamp-2">
-        {nodeData.decision?.decision || "Decision trace"}
-      </div>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="font-semibold text-sm text-slate-100 line-clamp-2 cursor-help">
+              {nodeData.label}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-sm">
+            <p>{nodeData.label}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-xs text-slate-400 mt-2 line-clamp-2 cursor-help">
+              {nodeData.decision?.decision || "Decision trace"}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-sm">
+            <p>{nodeData.decision?.decision || "Decision trace"}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <Handle
         type="source"
         position={Position.Bottom}
@@ -392,7 +411,7 @@ export function KnowledgeGraph({
   const closeDetailPanel = () => setSelectedNode(null)
 
   return (
-    <div className="h-full w-full relative">
+    <div className="h-full w-full relative" role="application" aria-label="Knowledge graph visualization">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -438,6 +457,7 @@ export function KnowledgeGraph({
                   size="icon"
                   onClick={() => setShowSourceLegend(false)}
                   className="h-6 w-6 text-slate-400 hover:text-slate-200"
+                  aria-label="Close source legend"
                 >
                   <X className="h-3 w-3" />
                 </Button>
@@ -446,6 +466,8 @@ export function KnowledgeGraph({
                 {/* All sources button */}
                 <button
                   onClick={() => onSourceFilterChange?.(null)}
+                  aria-pressed={!sourceFilter}
+                  aria-label="Show all decision sources"
                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
                     !sourceFilter
                       ? "bg-white/10 border border-white/20"
@@ -467,6 +489,8 @@ export function KnowledgeGraph({
                     <button
                       key={key}
                       onClick={() => onSourceFilterChange?.(sourceFilter === key ? null : key)}
+                      aria-pressed={sourceFilter === key}
+                      aria-label={`Filter by ${style.label}`}
                       className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
                         sourceFilter === key
                           ? "bg-white/10 border border-white/20"
@@ -509,10 +533,10 @@ export function KnowledgeGraph({
 
         {/* Node Type Legend */}
         <Panel position="top-left" className="m-4" style={{ marginTop: showSourceLegend ? '280px' : '0' }}>
-          <Card className="w-52 bg-slate-800/90 backdrop-blur-xl border-white/10">
+          <Card className="w-52 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Entity types legend">
             <CardHeader className="py-3 px-4">
               <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
-                <span>📊</span> Entity Types
+                <span role="img" aria-label="Chart icon">📊</span> Entity Types
               </CardTitle>
             </CardHeader>
             <CardContent className="py-2 px-4 space-y-2">
@@ -543,7 +567,7 @@ export function KnowledgeGraph({
         {/* Relationship Legend */}
         {showRelationshipLegend && (
           <Panel position="top-right" className="m-4">
-            <Card className="w-56 bg-slate-800/90 backdrop-blur-xl border-white/10">
+            <Card className="w-56 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Relationship types legend">
               <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
                   <GitBranch className="h-4 w-4" /> Relationships
@@ -553,6 +577,7 @@ export function KnowledgeGraph({
                   size="icon"
                   onClick={() => setShowRelationshipLegend(false)}
                   className="h-6 w-6 text-slate-400 hover:text-slate-200"
+                  aria-label="Close relationship legend"
                 >
                   <X className="h-3 w-3" />
                 </Button>
@@ -623,6 +648,7 @@ export function KnowledgeGraph({
                 size="icon"
                 onClick={closeDetailPanel}
                 className="h-8 w-8 text-slate-400 hover:text-slate-200 hover:bg-white/10"
+                aria-label="Close details panel"
               >
                 <X className="h-4 w-4" />
               </Button>

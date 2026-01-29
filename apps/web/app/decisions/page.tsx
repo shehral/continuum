@@ -21,18 +21,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { api, type Decision } from "@/lib/api"
-
-// Entity type styling
-const entityStyles: Record<string, { icon: string; bg: string; text: string; border: string }> = {
-  technology: { icon: "🔧", bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/30" },
-  concept: { icon: "💡", bg: "bg-purple-500/10", text: "text-purple-400", border: "border-purple-500/30" },
-  system: { icon: "⚙️", bg: "bg-green-500/10", text: "text-green-400", border: "border-green-500/30" },
-  pattern: { icon: "🧩", bg: "bg-orange-500/10", text: "text-orange-400", border: "border-orange-500/30" },
-  person: { icon: "👤", bg: "bg-pink-500/10", text: "text-pink-400", border: "border-pink-500/30" },
-  organization: { icon: "🏢", bg: "bg-indigo-500/10", text: "text-indigo-400", border: "border-indigo-500/30" },
-}
-
-const getEntityStyle = (type: string) => entityStyles[type] || entityStyles.concept
+import { getEntityStyle } from "@/lib/constants"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 // Confidence badge styling based on level
 const getConfidenceStyle = (confidence: number) => {
@@ -411,9 +401,18 @@ export default function DecisionsPage() {
                           {Math.round(decision.confidence * 100)}%
                         </Badge>
                       </div>
-                      <CardDescription className="text-slate-400 line-clamp-2 mt-1">
-                        {decision.decision}
-                      </CardDescription>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <CardDescription className="text-slate-400 line-clamp-2 mt-1 cursor-help">
+                              {decision.decision}
+                            </CardDescription>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-sm">
+                            <p>{decision.decision}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </CardHeader>
                     <CardContent>
                       <div className="flex items-center justify-between">

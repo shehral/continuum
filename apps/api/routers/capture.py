@@ -1,27 +1,39 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
-from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from agents.interview import InterviewAgent
 from db.postgres import get_db
-from models.postgres import CaptureSession, CaptureMessage, SessionStatus
+from models.postgres import CaptureMessage, CaptureSession, SessionStatus
+from models.schemas import (
+    CaptureMessage as CaptureMessageSchema,
+)
 from models.schemas import (
     CaptureSession as CaptureSessionSchema,
-    CaptureMessage as CaptureMessageSchema,
+)
+from models.schemas import (
     Entity,
 )
-from agents.interview import InterviewAgent
+from routers.auth import get_current_user_id
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
 
 @router.post("/sessions", response_model=CaptureSessionSchema)
-async def start_capture_session(db: AsyncSession = Depends(get_db)):
+async def start_capture_session(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
     """Start a new capture session."""
     session = CaptureSession(
         id=str(uuid4()),
-        user_id="anonymous",  # TODO: Get from auth
+        user_id=user_id,
         status=SessionStatus.ACTIVE,
     )
     db.add(session)
@@ -157,7 +169,7 @@ async def complete_capture_session(session_id: str, db: AsyncSession = Depends(g
 
     # Update session status
     session.status = SessionStatus.COMPLETED
-    session.completed_at = datetime.utcnow()
+    session.completed_at = datetime.now(UTC)
 
     # Get all messages
     result = await db.execute(
@@ -172,11 +184,11 @@ async def complete_capture_session(session_id: str, db: AsyncSession = Depends(g
     history = [{"role": m.role, "content": m.content} for m in messages]
 
     decision_data = await interview_agent.synthesize_decision(history)
-    print(f"[Capture] Synthesized decision: {decision_data}")
+    logger.debug(f"Synthesized decision: {decision_data}")
 
     if decision_data and decision_data.get("trigger"):
-        from services.extractor import DecisionExtractor
         from models.schemas import DecisionCreate
+        from services.extractor import DecisionExtractor
 
         extractor = DecisionExtractor()
         decision = DecisionCreate(
@@ -189,9 +201,9 @@ async def complete_capture_session(session_id: str, db: AsyncSession = Depends(g
             source="interview",  # Tag as human-captured via interview
         )
         decision_id = await extractor.save_decision(decision, source="interview")
-        print(f"[Capture] Decision saved with ID: {decision_id} (source: interview)")
+        logger.info(f"Decision saved with ID: {decision_id} (source: interview)")
     else:
-        print(f"[Capture] No valid decision to save - missing trigger or empty data")
+        logger.warning("No valid decision to save - missing trigger or empty data")
 
     await db.commit()
     await db.refresh(session)

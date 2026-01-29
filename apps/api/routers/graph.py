@@ -1,19 +1,24 @@
 """Knowledge graph API endpoints with semantic search and validation."""
 
-from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query
+from neo4j.exceptions import ClientError, DatabaseError, DriverError
 from pydantic import BaseModel
 
 from db.neo4j import get_neo4j_session
 from models.schemas import (
     GraphData,
-    GraphNode,
     GraphEdge,
+    GraphNode,
     SemanticSearchRequest,
     SimilarDecision,
-    RelationshipType,
 )
 from services.embeddings import get_embedding_service
+from utils.logging import get_logger
+from utils.vectors import cosine_similarity
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -194,9 +199,12 @@ async def get_graph(
                 edge_id += 1
 
             return GraphData(nodes=nodes, edges=edges)
-    except Exception as e:
-        print(f"[Graph] Error fetching graph: {e}")
-        return GraphData(nodes=[], edges=[])
+    except DriverError as e:
+        logger.error(f"Database connection error: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    except (ClientError, DatabaseError) as e:
+        logger.error(f"Error fetching graph: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch graph data")
 
 
 @router.get("/validate", response_model=ValidationSummary)
@@ -211,7 +219,7 @@ async def validate_graph():
     - Missing embeddings
     - Invalid relationship configurations
     """
-    from services.validator import get_graph_validator, ValidationIssue
+    from services.validator import get_graph_validator
 
     session = await get_neo4j_session()
     async with session:
@@ -476,7 +484,6 @@ async def get_similar_nodes(
 ):
     """Find semantically similar decisions using embeddings."""
     session = await get_neo4j_session()
-    embedding_service = get_embedding_service()
 
     async with session:
         # Get the node's embedding
@@ -515,8 +522,8 @@ async def get_similar_nodes(
                 threshold=threshold,
                 top_k=top_k,
             )
-        except Exception:
-            # Fall back to manual similarity calculation
+        except (ClientError, DatabaseError):
+            # Fall back to manual similarity calculation (GDS not installed)
             result = await session.run(
                 """
                 MATCH (d:DecisionTrace)
@@ -531,7 +538,7 @@ async def get_similar_nodes(
             similar = []
             async for r in result:
                 other_embedding = r["other_embedding"]
-                similarity = _cosine_similarity(embedding, other_embedding)
+                similarity = cosine_similarity(embedding, other_embedding)
                 if similarity > threshold:
                     similar.append(
                         SimilarDecision(
@@ -588,8 +595,8 @@ async def semantic_search(request: SemanticSearchRequest):
                 top_k=request.top_k,
                 threshold=request.threshold,
             )
-        except Exception:
-            # Fall back to manual search
+        except (ClientError, DatabaseError):
+            # Fall back to manual search (vector index not available)
             result = await session.run(
                 """
                 MATCH (d:DecisionTrace)
@@ -603,7 +610,7 @@ async def semantic_search(request: SemanticSearchRequest):
             similar = []
             async for r in result:
                 other_embedding = r["other_embedding"]
-                similarity = _cosine_similarity(query_embedding, other_embedding)
+                similarity = cosine_similarity(query_embedding, other_embedding)
                 if similarity > request.threshold:
                     similar.append(
                         SimilarDecision(
@@ -772,16 +779,6 @@ async def tag_decision_sources():
     }
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Calculate cosine similarity between two vectors."""
-    dot_product = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot_product / (norm_a * norm_b)
-
-
 @router.post("/enhance")
 async def enhance_graph():
     """
@@ -818,7 +815,7 @@ async def enhance_graph():
         )
 
         decisions_to_enhance = [r async for r in result]
-        print(f"[Enhance] Found {len(decisions_to_enhance)} decisions without embeddings")
+        logger.info(f"Found {len(decisions_to_enhance)} decisions without embeddings")
 
         for dec in decisions_to_enhance:
             try:
@@ -840,9 +837,11 @@ async def enhance_graph():
                     embedding=embedding,
                 )
                 results["decisions_enhanced"] += 1
-                print(f"[Enhance] Added embedding to decision {dec['id'][:8]}...")
-            except Exception as e:
-                print(f"[Enhance] Failed to enhance decision {dec['id']}: {e}")
+                logger.debug(f"Added embedding to decision {dec['id'][:8]}...")
+            except (TimeoutError, ConnectionError) as e:
+                logger.warning(f"Failed to enhance decision {dec['id']}: {e}")
+            except (ClientError, DatabaseError) as e:
+                logger.warning(f"Database error enhancing decision {dec['id']}: {e}")
 
         # 2. Add embeddings to entities without them
         result = await session.run(
@@ -854,7 +853,7 @@ async def enhance_graph():
         )
 
         entities_to_enhance = [r async for r in result]
-        print(f"[Enhance] Found {len(entities_to_enhance)} entities without embeddings")
+        logger.info(f"Found {len(entities_to_enhance)} entities without embeddings")
 
         for ent in entities_to_enhance:
             try:
@@ -870,8 +869,10 @@ async def enhance_graph():
                     embedding=embedding,
                 )
                 results["entities_enhanced"] += 1
-            except Exception as e:
-                print(f"[Enhance] Failed to enhance entity {ent['name']}: {e}")
+            except (TimeoutError, ConnectionError) as e:
+                logger.warning(f"Failed to enhance entity {ent['name']}: {e}")
+            except (ClientError, DatabaseError) as e:
+                logger.warning(f"Database error enhancing entity {ent['name']}: {e}")
 
         # 3. Create SIMILAR_TO edges between similar decisions
         result = await session.run(
@@ -883,12 +884,12 @@ async def enhance_graph():
         )
 
         decisions_with_embeddings = [r async for r in result]
-        print(f"[Enhance] Checking similarity between {len(decisions_with_embeddings)} decisions")
+        logger.info(f"Checking similarity between {len(decisions_with_embeddings)} decisions")
 
         similarity_threshold = 0.75
         for i, d1 in enumerate(decisions_with_embeddings):
             for d2 in decisions_with_embeddings[i + 1:]:
-                similarity = _cosine_similarity(d1["embedding"], d2["embedding"])
+                similarity = cosine_similarity(d1["embedding"], d2["embedding"])
                 if similarity > similarity_threshold:
                     # Create bidirectional SIMILAR_TO edges
                     await session.run(
@@ -903,7 +904,7 @@ async def enhance_graph():
                         score=similarity,
                     )
                     results["similarity_edges_created"] += 1
-                    print(f"[Enhance] Created SIMILAR_TO edge (score: {similarity:.3f})")
+                    logger.debug(f"Created SIMILAR_TO edge (score: {similarity:.3f})")
 
         # 4. Create entity-to-entity relationships using LLM
         result = await session.run(
@@ -914,7 +915,7 @@ async def enhance_graph():
         )
 
         all_entities = [r async for r in result]
-        print(f"[Enhance] Analyzing relationships between {len(all_entities)} entities")
+        logger.info(f"Analyzing relationships between {len(all_entities)} entities")
 
         if len(all_entities) >= 2:
             from models.schemas import Entity
@@ -933,7 +934,7 @@ async def enhance_graph():
 
                 try:
                     relationships = await extractor.extract_entity_relationships(batch)
-                    print(f"[Enhance] Found {len(relationships)} relationships in batch")
+                    logger.debug(f"Found {len(relationships)} relationships in batch")
 
                     for rel in relationships:
                         rel_type = rel.get("type", rel.get("relationship", "RELATED_TO"))
@@ -958,8 +959,10 @@ async def enhance_graph():
                             confidence=confidence,
                         )
                         results["entity_relationships_created"] += 1
-                except Exception as e:
-                    print(f"[Enhance] Error extracting entity relationships: {e}")
+                except (TimeoutError, ConnectionError) as e:
+                    logger.error(f"LLM connection error extracting entity relationships: {e}")
+                except (ClientError, DatabaseError) as e:
+                    logger.error(f"Database error saving entity relationships: {e}")
 
         # 5. Create INFLUENCED_BY temporal chains
         await session.run(

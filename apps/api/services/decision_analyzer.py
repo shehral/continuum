@@ -2,10 +2,13 @@
 
 import itertools
 import json
+from json import JSONDecodeError
 from typing import Optional
 
 from services.llm import get_llm_client
-from models.ontology import RelationType
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DecisionAnalyzer:
@@ -84,8 +87,15 @@ Return ONLY valid JSON, no markdown or explanation."""
                 "reasoning": result.get("reasoning", ""),
             }
 
+        except JSONDecodeError as e:
+            logger.error(f"Failed to parse decision analysis response: {e}")
+            return None
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error during decision analysis: {e}")
+            return None
         except Exception as e:
-            print(f"[DecisionAnalyzer] Error analyzing pair: {e}")
+            # Catch-all for unexpected LLM API errors
+            logger.error(f"Unexpected error analyzing pair: {e}")
             return None
 
     async def analyze_all_pairs(self) -> dict:

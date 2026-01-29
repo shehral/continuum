@@ -7,6 +7,9 @@ from typing import Optional
 from rapidfuzz import fuzz
 
 from models.ontology import CANONICAL_NAMES
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class IssueSeverity(Enum):
@@ -101,7 +104,7 @@ class GraphValidator:
                 ))
 
         except Exception as e:
-            print(f"[Validator] Error checking circular dependencies: {e}")
+            logger.error(f"Error checking circular dependencies: {e}")
 
         return issues
 
@@ -329,7 +332,7 @@ class GraphValidator:
                 severity=IssueSeverity.ERROR,
                 message=f"Entity relationship between decisions: {record['trigger1'][:30]} -{record['rel_type']}-> {record['trigger2'][:30]}",
                 affected_nodes=[record["id1"], record["id2"]],
-                suggested_action=f"Change to a decision relationship (SIMILAR_TO, INFLUENCED_BY, etc.) or remove",
+                suggested_action="Change to a decision relationship (SIMILAR_TO, INFLUENCED_BY, etc.) or remove",
                 details={"relationship": record["rel_type"]},
             ))
 

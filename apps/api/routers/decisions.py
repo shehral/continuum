@@ -1,11 +1,15 @@
+from datetime import UTC, datetime
 from uuid import uuid4
-from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Query
+from neo4j.exceptions import ClientError, DatabaseError, DriverError
 from pydantic import BaseModel
-from typing import Optional
 
 from db.neo4j import get_neo4j_session
-from models.schemas import Decision, Entity, DecisionCreate
+from models.schemas import Decision, DecisionCreate, Entity
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -71,8 +75,12 @@ async def get_decisions(
                 decisions.append(decision)
 
             return decisions
-    except Exception:
-        return []
+    except DriverError as e:
+        logger.error(f"Database connection error: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    except (ClientError, DatabaseError) as e:
+        logger.error(f"Error fetching decisions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch decisions")
 
 
 @router.delete("/{decision_id}")
@@ -175,7 +183,7 @@ async def create_decision(input: ManualDecisionInput):
     else:
         # Manual creation without extraction
         decision_id = str(uuid4())
-        created_at = datetime.utcnow().isoformat()
+        created_at = datetime.now(UTC).isoformat()
 
         session = await get_neo4j_session()
         async with session:

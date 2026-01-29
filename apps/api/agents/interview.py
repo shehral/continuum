@@ -1,11 +1,14 @@
-from typing import AsyncIterator
-from enum import Enum
 import json
+from enum import Enum
+from json import JSONDecodeError
+from typing import AsyncIterator
 
-from config import get_settings
 from models.schemas import Entity
 from services.extractor import DecisionExtractor
 from services.llm import get_llm_client
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class InterviewState(str, Enum):
@@ -124,8 +127,8 @@ Ask follow-up questions when needed to get complete information."""
             # Entities will be extracted when the session is completed
             return response_text, []
 
-        except Exception as e:
-            print(f"Error generating response: {e}")
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error: {e}")
             return self._generate_fallback_response(user_message, history), []
 
     def _generate_fallback_response(
@@ -198,8 +201,8 @@ Ask follow-up questions when needed to get complete information."""
             # Skip entity extraction for faster responses
             yield "", []
 
-        except Exception as e:
-            print(f"Error streaming response: {e}")
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error during streaming: {e}")
             yield self._generate_fallback_response(user_message, history), []
 
     async def synthesize_decision(self, history: list[dict]) -> dict:
@@ -236,6 +239,9 @@ Return ONLY valid JSON."""
 
             return json.loads(text)
 
-        except Exception as e:
-            print(f"Error synthesizing decision: {e}")
+        except JSONDecodeError as e:
+            logger.error(f"Failed to parse synthesized decision: {e}")
+            return {}
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error during synthesis: {e}")
             return {}

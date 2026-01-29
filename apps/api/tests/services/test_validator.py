@@ -12,19 +12,18 @@ Tests all validation checks:
 Target: 85%+ coverage for validator.py
 """
 
+
 import pytest
-from unittest.mock import patch
 
 from services.validator import (
     GraphValidator,
-    get_graph_validator,
-    ValidationIssue,
-    IssueType,
     IssueSeverity,
+    IssueType,
+    ValidationIssue,
+    get_graph_validator,
 )
-from tests.mocks.neo4j_mock import MockNeo4jSession, MockNeo4jResult
-from tests.factories import EntityFactory, DecisionFactory, Neo4jRecordFactory
-
+from tests.factories import EntityFactory, Neo4jRecordFactory
+from tests.mocks.neo4j_mock import MockNeo4jResult, MockNeo4jSession
 
 # ============================================================================
 # Test Fixtures
@@ -362,8 +361,6 @@ class TestValidatorDuplicateEntities:
 
         # postgres -> PostgreSQL is a known canonical mapping
         if issues:
-            # Known aliases get WARNING severity
-            has_warning = any(i.severity == IssueSeverity.WARNING for i in issues)
             # At minimum should detect as duplicate
             assert len(issues) > 0
 

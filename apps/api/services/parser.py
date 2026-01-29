@@ -1,8 +1,12 @@
-import json
 import hashlib
+import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import AsyncIterator, Optional
-from datetime import datetime
+
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class Conversation:
@@ -18,7 +22,7 @@ class Conversation:
         self.messages = messages
         self.file_path = file_path
         self.project_name = project_name
-        self.timestamp = timestamp or datetime.utcnow()
+        self.timestamp = timestamp or datetime.now(UTC)
 
     def get_full_text(self) -> str:
         """Get the full conversation as text."""
@@ -157,9 +161,22 @@ class ClaudeLogParser:
                 )
 
         except Exception as e:
-            print(f"Error parsing {file_path}: {e}")
+            logger.error(f"Error parsing {file_path}: {e}")
 
         return conversations
+
+    async def parse_file(self, file_path: str) -> list[Conversation]:
+        """Parse a single JSONL file into conversations.
+
+        Public async wrapper for _parse_jsonl_file.
+
+        Args:
+            file_path: Path to the JSONL file
+
+        Returns:
+            List of Conversation objects
+        """
+        return self._parse_jsonl_file(Path(file_path))
 
     async def parse_all_logs(
         self,
@@ -173,7 +190,7 @@ class ClaudeLogParser:
             exclude_projects: Exclude these projects (partial match on dir names)
         """
         if not self.logs_path.exists():
-            print(f"Logs path does not exist: {self.logs_path}")
+            logger.warning(f"Logs path does not exist: {self.logs_path}")
             return
 
         exclude_projects = exclude_projects or []
@@ -181,7 +198,7 @@ class ClaudeLogParser:
         # Find all JSONL files
         pattern = "**/*.jsonl"
         files_found = list(self.logs_path.glob(pattern))
-        print(f"Found {len(files_found)} JSONL files in {self.logs_path}")
+        logger.info(f"Found {len(files_found)} JSONL files in {self.logs_path}")
 
         for file_path in files_found:
             # Skip subagent files (they're fragments)

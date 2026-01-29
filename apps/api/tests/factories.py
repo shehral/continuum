@@ -3,10 +3,10 @@
 These factories create realistic test data for unit and integration tests.
 """
 
-from uuid import uuid4
-from datetime import datetime, timedelta
-from typing import Optional
 import random
+from datetime import UTC, datetime, timedelta
+from typing import Optional
+from uuid import uuid4
 
 
 class EntityFactory:
@@ -50,7 +50,7 @@ class EntityFactory:
             "type": entity_type,
             "aliases": aliases or [],
             "embedding": embedding,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
     @classmethod
@@ -108,7 +108,7 @@ class DecisionFactory:
             "options": options,
             "decision": decision,
             "rationale": rationale or f"Rationale for choosing {decision}",
-            "created_at": created_at or datetime.utcnow().isoformat(),
+            "created_at": created_at or datetime.now(UTC).isoformat(),
             "entities": entities or [],
         }
 
@@ -122,8 +122,8 @@ class DecisionFactory:
         if shared_entities is None:
             shared_entities = ["PostgreSQL", "Redis"]
 
-        older_date = datetime.utcnow() - timedelta(days=days_apart)
-        newer_date = datetime.utcnow()
+        older_date = datetime.now(UTC) - timedelta(days=days_apart)
+        newer_date = datetime.now(UTC)
 
         older = cls.create(
             trigger="Initial database decision",
@@ -184,7 +184,7 @@ class RelationshipFactory:
             "target_id": target_id,
             "type": rel_type or random.choice(cls.DECISION_RELATIONSHIPS),
             "confidence": confidence,
-            "reasoning": reasoning or f"Relationship between decisions",
+            "reasoning": reasoning or "Relationship between decisions",
         }
 
 
@@ -241,7 +241,7 @@ class ValidationIssueFactory:
         ids: Optional[list[str]] = None,
     ):
         """Create a circular dependency issue."""
-        from services.validator import ValidationIssue, IssueType, IssueSeverity
+        from services.validator import IssueSeverity, IssueType, ValidationIssue
 
         return ValidationIssue(
             type=IssueType.CIRCULAR_DEPENDENCY,
@@ -255,7 +255,7 @@ class ValidationIssueFactory:
     @classmethod
     def create_orphan_entity(cls, name: str, entity_type: str = "technology"):
         """Create an orphan entity issue."""
-        from services.validator import ValidationIssue, IssueType, IssueSeverity
+        from services.validator import IssueSeverity, IssueType, ValidationIssue
 
         return ValidationIssue(
             type=IssueType.ORPHAN_ENTITY,
@@ -274,7 +274,7 @@ class ValidationIssueFactory:
         similarity: int = 90,
     ):
         """Create a duplicate entity issue."""
-        from services.validator import ValidationIssue, IssueType, IssueSeverity
+        from services.validator import IssueSeverity, IssueType, ValidationIssue
 
         return ValidationIssue(
             type=IssueType.DUPLICATE_ENTITY,

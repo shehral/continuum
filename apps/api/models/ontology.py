@@ -1,7 +1,7 @@
 """Ontology schema definition for knowledge graph entities and relationships."""
 
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
 
 

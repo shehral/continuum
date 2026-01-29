@@ -11,24 +11,14 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api, type Decision, type Entity } from "@/lib/api"
+import { getEntityStyle } from "@/lib/constants"
 
 // Type guard to check if result is a Decision
 function isDecision(result: Decision | Entity): result is Decision {
   return "trigger" in result && "decision" in result
 }
-
-// Entity type styling
-const entityStyles: Record<string, { icon: string; bg: string; text: string; border: string }> = {
-  technology: { icon: "🔧", bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/30" },
-  concept: { icon: "💡", bg: "bg-purple-500/10", text: "text-purple-400", border: "border-purple-500/30" },
-  system: { icon: "⚙️", bg: "bg-green-500/10", text: "text-green-400", border: "border-green-500/30" },
-  pattern: { icon: "🧩", bg: "bg-orange-500/10", text: "text-orange-400", border: "border-orange-500/30" },
-  person: { icon: "👤", bg: "bg-pink-500/10", text: "text-pink-400", border: "border-pink-500/30" },
-  organization: { icon: "🏢", bg: "bg-indigo-500/10", text: "text-indigo-400", border: "border-indigo-500/30" },
-}
-
-const getEntityStyle = (type: string) => entityStyles[type] || entityStyles.concept
 
 export default function SearchPage() {
   const [query, setQuery] = useState("")
@@ -147,9 +137,18 @@ export default function SearchPage() {
                 </CardHeader>
                 <CardContent>
                   {isDecision(result) ? (
-                    <p className="text-sm text-slate-400 line-clamp-2">
-                      {result.decision}
-                    </p>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <p className="text-sm text-slate-400 line-clamp-2 cursor-help">
+                            {result.decision}
+                          </p>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-sm">
+                          <p>{result.decision}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   ) : (
                     <p className="text-sm text-slate-500">
                       Click to view in knowledge graph

@@ -38,6 +38,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api } from "@/lib/api"
 
 type IngestionStatus = "idle" | "running" | "success" | "error"
@@ -325,7 +326,16 @@ export default function AddKnowledgePage() {
                       </Badge>
                       <span className="text-xs text-slate-500">{p.messages} messages</span>
                     </div>
-                    <p className="text-sm text-slate-400 line-clamp-3">{p.preview}</p>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <p className="text-sm text-slate-400 line-clamp-3 cursor-help">{p.preview}</p>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-md">
+                          <p className="whitespace-pre-wrap">{p.preview}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 ))}
               </div>

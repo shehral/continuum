@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: "🏠" },
@@ -39,13 +40,14 @@ export function Sidebar() {
       <Separator className="bg-white/[0.06]" />
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 space-y-1 px-3 py-4" aria-label="Main navigation">
         {navigation.map((item) => {
           const isActive = pathname === item.href
           return (
             <Link
               key={item.name}
               href={item.href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
                 isActive
@@ -53,7 +55,7 @@ export function Sidebar() {
                   : "text-slate-400 hover:bg-white/[0.03] hover:text-slate-200 border border-transparent"
               )}
             >
-              <span className="text-lg">{item.icon}</span>
+              <span className="text-lg" aria-hidden="true">{item.icon}</span>
               {item.name}
             </Link>
           )
@@ -70,13 +72,31 @@ export function Sidebar() {
               {session?.user?.name?.charAt(0).toUpperCase() || "U"}
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1 truncate">
-            <p className="text-sm font-medium text-slate-200">
-              {session?.user?.name || "User"}
-            </p>
-            <p className="text-xs text-slate-500 truncate">
-              {session?.user?.email || ""}
-            </p>
+          <div className="flex-1 min-w-0">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-sm font-medium text-slate-200 truncate cursor-help">
+                    {session?.user?.name || "User"}
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>{session?.user?.name || "User"}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-xs text-slate-500 truncate cursor-help">
+                    {session?.user?.email || ""}
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p>{session?.user?.email || ""}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
 
@@ -86,6 +106,7 @@ export function Sidebar() {
             size="sm"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             className="flex-1 text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]"
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           >
             {theme === "dark" ? "☀️" : "🌙"}
           </Button>
@@ -93,6 +114,7 @@ export function Sidebar() {
             variant="ghost"
             size="sm"
             className="flex-1 text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]"
+            aria-label="Open settings"
           >
             ⚙️
           </Button>
@@ -101,6 +123,7 @@ export function Sidebar() {
             size="sm"
             onClick={() => signOut()}
             className="flex-1 text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]"
+            aria-label="Sign out"
           >
             🚪
           </Button>

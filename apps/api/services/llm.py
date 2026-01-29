@@ -5,8 +5,8 @@ import re
 import time
 from typing import AsyncIterator
 
-from openai import AsyncOpenAI
 import redis.asyncio as redis
+from openai import AsyncOpenAI
 
 from config import get_settings
 

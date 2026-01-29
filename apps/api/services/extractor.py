@@ -1,19 +1,24 @@
 """Decision and entity extraction with embedding-based knowledge graph."""
 
 import json
-from uuid import uuid4
-from datetime import datetime
+from datetime import UTC, datetime
+from json import JSONDecodeError
 from typing import Optional
+from uuid import uuid4
 
-from config import get_settings
+from neo4j.exceptions import ClientError, DatabaseError
+
 from db.neo4j import get_neo4j_session
-from models.schemas import Decision, Entity, DecisionCreate, RelationshipType
-from models.ontology import EntityType, RelationType, get_canonical_name
-from services.parser import Conversation
-from services.llm import get_llm_client
+from models.ontology import get_canonical_name
+from models.schemas import DecisionCreate, Entity
 from services.embeddings import get_embedding_service
 from services.entity_resolver import EntityResolver
+from services.llm import get_llm_client
+from services.parser import Conversation
+from utils.logging import get_logger
+from utils.vectors import cosine_similarity
 
+logger = get_logger(__name__)
 
 # Few-shot entity extraction prompt with Chain-of-Thought reasoning
 ENTITY_EXTRACTION_PROMPT = """Extract technical entities from this decision text.
@@ -259,8 +264,14 @@ Return ONLY valid JSON, no markdown or explanation."""
                 for d in decisions_data
             ]
 
+        except JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response as JSON: {e}")
+            return []
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error: {e}")
+            return []
         except Exception as e:
-            print(f"Error extracting decisions: {e}")
+            logger.error(f"Unexpected error extracting decisions: {e}")
             return []
 
     async def extract_entities(self, text: str) -> list[dict]:
@@ -284,12 +295,15 @@ Return ONLY valid JSON, no markdown or explanation."""
 
             # Log reasoning for debugging
             if result.get("reasoning"):
-                print(f"[Extractor] Entity reasoning: {result['reasoning']}")
+                logger.debug(f"Entity reasoning: {result['reasoning']}")
 
             return entities
 
-        except Exception as e:
-            print(f"Error extracting entities: {e}")
+        except JSONDecodeError as e:
+            logger.error(f"Failed to parse entity extraction response: {e}")
+            return []
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error during entity extraction: {e}")
             return []
 
     async def extract_entity_relationships(
@@ -319,12 +333,15 @@ Return ONLY valid JSON, no markdown or explanation."""
 
             # Log reasoning for debugging
             if result.get("reasoning"):
-                print(f"[Extractor] Relationship reasoning: {result['reasoning']}")
+                logger.debug(f"Relationship reasoning: {result['reasoning']}")
 
             return relationships
 
-        except Exception as e:
-            print(f"Error extracting entity relationships: {e}")
+        except JSONDecodeError as e:
+            logger.error(f"Failed to parse relationship extraction response: {e}")
+            return []
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error during relationship extraction: {e}")
             return []
 
     async def extract_decision_relationship(
@@ -361,18 +378,14 @@ Return ONLY valid JSON, no markdown or explanation."""
                 "reasoning": result.get("reasoning", ""),
             }
 
-        except Exception as e:
-            print(f"Error extracting decision relationship: {e}")
+        except JSONDecodeError as e:
+            logger.error(f"Failed to parse decision relationship response: {e}")
+            return None
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"LLM connection error during decision relationship analysis: {e}")
             return None
 
     async def save_decision(self, decision: DecisionCreate, source: str = "unknown") -> str:
-        import traceback
-        print(f"\n{'='*60}")
-        print(f"[SAVE_DECISION] Source: {source}")
-        print(f"[SAVE_DECISION] Trigger: {decision.trigger[:50]}...")
-        print(f"[SAVE_DECISION] Call stack:")
-        traceback.print_stack(limit=10)
-        print(f"{'='*60}\n")
         """Save a decision to Neo4j with embeddings and rich relationships.
 
         Uses entity resolution to prevent duplicates and canonicalize names.
@@ -382,7 +395,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             source: Where this decision came from ('claude_logs', 'interview', 'manual')
         """
         decision_id = str(uuid4())
-        created_at = datetime.utcnow().isoformat()
+        created_at = datetime.now(UTC).isoformat()
         # Use source from decision if provided, otherwise use parameter
         decision_source = getattr(decision, 'source', None) or source
 
@@ -397,9 +410,12 @@ Return ONLY valid JSON, no markdown or explanation."""
 
         try:
             embedding = await self.embedding_service.embed_decision(decision_dict)
-            print(f"[Extractor] Generated embedding with {len(embedding)} dimensions")
-        except Exception as e:
-            print(f"[Extractor] Embedding generation failed: {e}")
+            logger.debug(f"Generated embedding with {len(embedding)} dimensions")
+        except (TimeoutError, ConnectionError) as e:
+            logger.warning(f"Embedding service connection failed: {e}")
+            embedding = None
+        except ValueError as e:
+            logger.warning(f"Invalid embedding input: {e}")
             embedding = None
 
         session = await get_neo4j_session()
@@ -461,7 +477,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             # Extract entities with enhanced prompt
             full_text = f"{decision.trigger} {decision.context} {decision.decision} {decision.rationale}"
             entities_data = await self.extract_entities(full_text)
-            print(f"[Extractor] Extracted {len(entities_data)} entities")
+            logger.info(f"Extracted {len(entities_data)} entities")
 
             # Create entity resolver for this session
             resolver = EntityResolver(session)
@@ -488,7 +504,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                             "name": resolved.name,
                             "type": resolved.type,
                         })
-                    except Exception:
+                    except (TimeoutError, ConnectionError, ValueError):
                         pass
 
                 # Create or update entity node
@@ -535,7 +551,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                             decision_id=decision_id,
                             confidence=confidence,
                         )
-                    print(f"[Extractor] Created new entity: {resolved.name} ({resolved.type})")
+                    logger.info(f"Created new entity: {resolved.name} ({resolved.type})")
                 else:
                     # Link to existing entity
                     await session.run(
@@ -548,7 +564,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                         decision_id=decision_id,
                         confidence=confidence,
                     )
-                    print(f"[Extractor] Linked to existing entity: {resolved.name} (method: {resolved.match_method})")
+                    logger.info(f"Linked to existing entity: {resolved.name} (method: {resolved.match_method})")
 
             # Extract and create entity-to-entity relationships
             if len(resolved_entities) >= 2:
@@ -556,7 +572,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                     [{"name": e.name, "type": e.type} for e in resolved_entities],
                     context=full_text,
                 )
-                print(f"[Extractor] Extracted {len(entity_rels)} entity relationships")
+                logger.info(f"Extracted {len(entity_rels)} entity relationships")
 
                 for rel in entity_rels:
                     rel_type = rel.get("type", "RELATED_TO")
@@ -642,11 +658,11 @@ Return ONLY valid JSON, no markdown or explanation."""
                     id2=similar_id,
                     score=similarity,
                 )
-                print(f"[Extractor] Linked similar decision {similar_id} (score: {similarity:.3f})")
+                logger.info(f"Linked similar decision {similar_id} (score: {similarity:.3f})")
 
-        except Exception as e:
+        except (ClientError, DatabaseError) as e:
             # GDS library may not be installed, fall back to manual calculation
-            print(f"[Extractor] Vector search failed (GDS may not be installed): {e}")
+            logger.debug(f"Vector search failed (GDS may not be installed): {e}")
             await self._link_similar_decisions_manual(session, decision_id, embedding)
 
     async def _link_similar_decisions_manual(
@@ -673,7 +689,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                 other_embedding = record["other_embedding"]
 
                 # Calculate cosine similarity
-                similarity = self._cosine_similarity(embedding, other_embedding)
+                similarity = cosine_similarity(embedding, other_embedding)
 
                 if similarity > self.similarity_threshold:
                     await session.run(
@@ -687,20 +703,10 @@ Return ONLY valid JSON, no markdown or explanation."""
                         id2=other_id,
                         score=similarity,
                     )
-                    print(f"[Extractor] Linked similar decision {other_id} (score: {similarity:.3f})")
+                    logger.info(f"Linked similar decision {other_id} (score: {similarity:.3f})")
 
-        except Exception as e:
-            print(f"[Extractor] Manual similarity linking failed: {e}")
-
-    @staticmethod
-    def _cosine_similarity(a: list[float], b: list[float]) -> float:
-        """Calculate cosine similarity between two vectors."""
-        dot_product = sum(x * y for x, y in zip(a, b))
-        norm_a = sum(x * x for x in a) ** 0.5
-        norm_b = sum(x * x for x in b) ** 0.5
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot_product / (norm_a * norm_b)
+        except (ClientError, DatabaseError) as e:
+            logger.error(f"Manual similarity linking failed: {e}")
 
     async def _create_temporal_chains(self, session, decision_id: str):
         """Create INFLUENCED_BY edges based on shared entities and temporal order."""
@@ -718,9 +724,9 @@ Return ONLY valid JSON, no markdown or explanation."""
                 """,
                 new_id=decision_id,
             )
-            print(f"[Extractor] Created temporal chains for decision {decision_id}")
-        except Exception as e:
-            print(f"[Extractor] Temporal chain creation failed: {e}")
+            logger.debug(f"Created temporal chains for decision {decision_id}")
+        except (ClientError, DatabaseError) as e:
+            logger.error(f"Temporal chain creation failed: {e}")
 
 
 # Singleton instance

@@ -3,6 +3,7 @@
 from typing import Optional
 from uuid import uuid4
 
+from neo4j.exceptions import ClientError, DatabaseError
 from rapidfuzz import fuzz
 
 from models.ontology import (
@@ -12,6 +13,10 @@ from models.ontology import (
     normalize_entity_name,
 )
 from services.embeddings import get_embedding_service
+from utils.logging import get_logger
+from utils.vectors import cosine_similarity
+
+logger = get_logger(__name__)
 
 
 class EntityResolver:
@@ -121,8 +126,10 @@ class EntityResolver:
                     match_method="embedding",
                     confidence=similar["similarity"],
                 )
-        except Exception as e:
-            print(f"[EntityResolver] Embedding similarity check failed: {e}")
+        except (TimeoutError, ConnectionError) as e:
+            logger.warning(f"Embedding service connection failed: {e}")
+        except (ClientError, DatabaseError) as e:
+            logger.warning(f"Database error during embedding similarity: {e}")
 
         # Stage 6: Create new entity
         final_name = canonical if canonical.lower() != normalized_name else name
@@ -231,8 +238,8 @@ class EntityResolver:
             )
             record = await result.single()
             return dict(record) if record else None
-        except Exception:
-            # Fall back to manual calculation
+        except (ClientError, DatabaseError):
+            # Fall back to manual calculation (GDS not installed)
             return await self._find_by_embedding_similarity_manual(embedding, threshold)
 
     async def _find_by_embedding_similarity_manual(
@@ -252,7 +259,7 @@ class EntityResolver:
 
         async for record in result:
             other_embedding = record["embedding"]
-            similarity = self._cosine_similarity(embedding, other_embedding)
+            similarity = cosine_similarity(embedding, other_embedding)
             if similarity > best_similarity:
                 best_similarity = similarity
                 best_match = {
@@ -263,16 +270,6 @@ class EntityResolver:
                 }
 
         return best_match
-
-    @staticmethod
-    def _cosine_similarity(a: list[float], b: list[float]) -> float:
-        """Calculate cosine similarity between two vectors."""
-        dot_product = sum(x * y for x, y in zip(a, b))
-        norm_a = sum(x * x for x in a) ** 0.5
-        norm_b = sum(x * x for x in b) ** 0.5
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot_product / (norm_a * norm_b)
 
     async def merge_duplicate_entities(self) -> dict:
         """Find and merge duplicate entities based on fuzzy matching.

@@ -9,15 +9,14 @@ Tests:
 Target: 85%+ coverage for decision_analyzer.py
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock
-from uuid import uuid4
 
 from services.decision_analyzer import DecisionAnalyzer, get_decision_analyzer
-from tests.mocks.neo4j_mock import MockNeo4jSession, MockNeo4jResult
+from tests.factories import DecisionFactory
 from tests.mocks.llm_mock import MockLLMClient
-from tests.factories import DecisionFactory, EntityFactory
-
+from tests.mocks.neo4j_mock import MockNeo4jResult, MockNeo4jSession
 
 # ============================================================================
 # Test Fixtures

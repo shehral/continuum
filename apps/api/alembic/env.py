@@ -6,10 +6,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-
 from config import get_settings
 from db.postgres import Base
-from models.postgres import User, CaptureSession, CaptureMessage, ProcessedFile, Drill, DrillAttempt
 
 config = context.config
 

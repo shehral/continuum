@@ -1,7 +1,7 @@
 """Mock implementations for testing."""
 
-from .neo4j_mock import MockNeo4jSession, MockNeo4jResult
-from .llm_mock import MockLLMClient, MockEmbeddingService
+from .llm_mock import MockEmbeddingService, MockLLMClient
+from .neo4j_mock import MockNeo4jResult, MockNeo4jSession
 
 __all__ = [
     "MockNeo4jSession",
