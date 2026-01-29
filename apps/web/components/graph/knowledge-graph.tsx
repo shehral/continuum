@@ -411,7 +411,7 @@ export function KnowledgeGraph({
   const closeDetailPanel = () => setSelectedNode(null)
 
   return (
-    <div className="h-full w-full relative">
+    <div className="h-full w-full relative" role="application" aria-label="Knowledge graph visualization">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -466,6 +466,8 @@ export function KnowledgeGraph({
                 {/* All sources button */}
                 <button
                   onClick={() => onSourceFilterChange?.(null)}
+                  aria-pressed={!sourceFilter}
+                  aria-label="Show all decision sources"
                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
                     !sourceFilter
                       ? "bg-white/10 border border-white/20"
@@ -487,6 +489,8 @@ export function KnowledgeGraph({
                     <button
                       key={key}
                       onClick={() => onSourceFilterChange?.(sourceFilter === key ? null : key)}
+                      aria-pressed={sourceFilter === key}
+                      aria-label={`Filter by ${style.label}`}
                       className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
                         sourceFilter === key
                           ? "bg-white/10 border border-white/20"
@@ -644,6 +648,7 @@ export function KnowledgeGraph({
                 size="icon"
                 onClick={closeDetailPanel}
                 className="h-8 w-8 text-slate-400 hover:text-slate-200 hover:bg-white/10"
+                aria-label="Close details panel"
               >
                 <X className="h-4 w-4" />
               </Button>

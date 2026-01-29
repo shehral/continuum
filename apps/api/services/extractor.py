@@ -1,7 +1,7 @@
 """Decision and entity extraction with embedding-based knowledge graph."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from json import JSONDecodeError
 from typing import Optional
 from uuid import uuid4
@@ -395,7 +395,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             source: Where this decision came from ('claude_logs', 'interview', 'manual')
         """
         decision_id = str(uuid4())
-        created_at = datetime.utcnow().isoformat()
+        created_at = datetime.now(UTC).isoformat()
         # Use source from decision if provided, otherwise use parameter
         decision_source = getattr(decision, 'source', None) or source
 

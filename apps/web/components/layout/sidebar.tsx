@@ -40,13 +40,14 @@ export function Sidebar() {
       <Separator className="bg-white/[0.06]" />
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 space-y-1 px-3 py-4" aria-label="Main navigation">
         {navigation.map((item) => {
           const isActive = pathname === item.href
           return (
             <Link
               key={item.name}
               href={item.href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200",
                 isActive
@@ -54,7 +55,7 @@ export function Sidebar() {
                   : "text-slate-400 hover:bg-white/[0.03] hover:text-slate-200 border border-transparent"
               )}
             >
-              <span className="text-lg">{item.icon}</span>
+              <span className="text-lg" aria-hidden="true">{item.icon}</span>
               {item.name}
             </Link>
           )

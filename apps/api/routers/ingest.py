@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
@@ -136,7 +136,7 @@ async def trigger_ingestion(
             files_processed += 1
 
         ingestion_state["files_processed"] += files_processed
-        ingestion_state["last_run"] = datetime.utcnow()
+        ingestion_state["last_run"] = datetime.now(UTC)
 
         return IngestionResult(
             status="completed",
@@ -173,7 +173,7 @@ async def process_changed_file(file_path: str) -> None:
                 await extractor.save_decision(decision, source="claude_logs")
 
         ingestion_state["files_processed"] += 1
-        ingestion_state["last_run"] = datetime.utcnow()
+        ingestion_state["last_run"] = datetime.now(UTC)
         logger.info(f"Processed {decisions_extracted} decisions from {file_path}")
 
     except Exception as e:

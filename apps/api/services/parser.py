@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
@@ -22,7 +22,7 @@ class Conversation:
         self.messages = messages
         self.file_path = file_path
         self.project_name = project_name
-        self.timestamp = timestamp or datetime.utcnow()
+        self.timestamp = timestamp or datetime.now(UTC)
 
     def get_full_text(self) -> str:
         """Get the full conversation as text."""

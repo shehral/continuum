@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
@@ -183,7 +183,7 @@ async def create_decision(input: ManualDecisionInput):
     else:
         # Manual creation without extraction
         decision_id = str(uuid4())
-        created_at = datetime.utcnow().isoformat()
+        created_at = datetime.now(UTC).isoformat()
 
         session = await get_neo4j_session()
         async with session:

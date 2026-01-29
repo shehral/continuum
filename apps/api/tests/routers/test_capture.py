@@ -1,6 +1,6 @@
 """Tests for the capture router."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -20,9 +20,9 @@ class TestStartCaptureSession:
         # Mock refresh to set timestamp fields
         async def mock_refresh(obj):
             if not hasattr(obj, "created_at") or obj.created_at is None:
-                obj.created_at = datetime.utcnow()
+                obj.created_at = datetime.now(UTC)
             if not hasattr(obj, "updated_at") or obj.updated_at is None:
-                obj.updated_at = datetime.utcnow()
+                obj.updated_at = datetime.now(UTC)
 
         session.refresh = mock_refresh
         return session
@@ -73,8 +73,8 @@ class TestGetCaptureSession:
         mock_session_obj.id = session_id
         mock_session_obj.status = MagicMock()
         mock_session_obj.status.value = "active"
-        mock_session_obj.created_at = datetime.utcnow()
-        mock_session_obj.updated_at = datetime.utcnow()
+        mock_session_obj.created_at = datetime.now(UTC)
+        mock_session_obj.updated_at = datetime.now(UTC)
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none = MagicMock(return_value=mock_session_obj)
@@ -170,7 +170,7 @@ class TestSendCaptureMessage:
         mock_ai_message.id = str(uuid4())
         mock_ai_message.role = "assistant"
         mock_ai_message.content = "AI response"
-        mock_ai_message.timestamp = datetime.utcnow()
+        mock_ai_message.timestamp = datetime.now(UTC)
         mock_ai_message.extracted_entities = []
 
         async def mock_refresh(obj):
@@ -248,8 +248,8 @@ class TestCompleteCaptureSession:
         mock_session_obj = MagicMock()
         mock_session_obj.id = session_id
         mock_session_obj.status = SessionStatus.ACTIVE
-        mock_session_obj.created_at = datetime.utcnow()
-        mock_session_obj.updated_at = datetime.utcnow()
+        mock_session_obj.created_at = datetime.now(UTC)
+        mock_session_obj.updated_at = datetime.now(UTC)
 
         mock_session_result = MagicMock()
         mock_session_result.scalar_one_or_none = MagicMock(return_value=mock_session_obj)
@@ -259,7 +259,7 @@ class TestCompleteCaptureSession:
         mock_message.id = str(uuid4())
         mock_message.role = "user"
         mock_message.content = "Test message"
-        mock_message.timestamp = datetime.utcnow()
+        mock_message.timestamp = datetime.now(UTC)
         mock_message.extracted_entities = []
 
         mock_messages_result = MagicMock()

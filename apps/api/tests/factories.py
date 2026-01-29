@@ -4,7 +4,7 @@ These factories create realistic test data for unit and integration tests.
 """
 
 import random
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 from uuid import uuid4
 
@@ -50,7 +50,7 @@ class EntityFactory:
             "type": entity_type,
             "aliases": aliases or [],
             "embedding": embedding,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
     @classmethod
@@ -108,7 +108,7 @@ class DecisionFactory:
             "options": options,
             "decision": decision,
             "rationale": rationale or f"Rationale for choosing {decision}",
-            "created_at": created_at or datetime.utcnow().isoformat(),
+            "created_at": created_at or datetime.now(UTC).isoformat(),
             "entities": entities or [],
         }
 
@@ -122,8 +122,8 @@ class DecisionFactory:
         if shared_entities is None:
             shared_entities = ["PostgreSQL", "Redis"]
 
-        older_date = datetime.utcnow() - timedelta(days=days_apart)
-        newer_date = datetime.utcnow()
+        older_date = datetime.now(UTC) - timedelta(days=days_apart)
+        newer_date = datetime.now(UTC)
 
         older = cls.create(
             trigger="Initial database decision",

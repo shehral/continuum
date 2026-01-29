@@ -30,7 +30,7 @@ function MessageBubble({ message, isNew = false }: { message: CaptureMessage; is
         isNew && "animate-in fade-in slide-in-from-bottom-2 duration-300"
       )}
     >
-      <Avatar className="h-8 w-8 shrink-0">
+      <Avatar className="h-8 w-8 shrink-0" aria-hidden="true">
         <AvatarFallback className={cn(
           "text-sm font-medium",
           isUser
@@ -75,16 +75,17 @@ function MessageBubble({ message, isNew = false }: { message: CaptureMessage; is
 // Typing indicator with animated dots
 function TypingIndicator() {
   return (
-    <div className="flex gap-3 mb-4 animate-in fade-in duration-300">
-      <Avatar className="h-8 w-8 shrink-0">
+    <div className="flex gap-3 mb-4 animate-in fade-in duration-300" role="status" aria-label="AI is typing">
+      <Avatar className="h-8 w-8 shrink-0" aria-hidden="true">
         <AvatarFallback className="bg-purple-500/20 text-purple-400">🤖</AvatarFallback>
       </Avatar>
       <div className="bg-white/[0.05] border border-white/[0.08] rounded-2xl px-4 py-3">
-        <div className="flex gap-1">
+        <div className="flex gap-1" aria-hidden="true">
           <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
           <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
           <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
         </div>
+        <span className="sr-only">AI is typing a response</span>
       </div>
     </div>
   )
@@ -121,7 +122,7 @@ export function ChatInterface({
   return (
     <div className="flex flex-col h-full bg-slate-900/50">
       {/* Messages */}
-      <ScrollArea ref={scrollRef} className="flex-1 p-6">
+      <ScrollArea ref={scrollRef} className="flex-1 p-6" role="log" aria-label="Chat messages" aria-live="polite">
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-center">
             <div className="animate-in fade-in duration-500">

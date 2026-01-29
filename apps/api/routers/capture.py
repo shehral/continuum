@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -169,7 +169,7 @@ async def complete_capture_session(session_id: str, db: AsyncSession = Depends(g
 
     # Update session status
     session.status = SessionStatus.COMPLETED
-    session.completed_at = datetime.utcnow()
+    session.completed_at = datetime.now(UTC)
 
     # Get all messages
     result = await db.execute(
