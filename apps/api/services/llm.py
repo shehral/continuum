@@ -349,6 +349,39 @@ class LLMClient:
 
         return False
 
+    def _log_token_usage(self, usage, model: str, streaming: bool = False) -> None:
+        """Log token usage for cost monitoring and debugging (ML-QW-1).
+
+        Logs prompt tokens, completion tokens, and total tokens with the model name.
+        Uses structured logging format for easy parsing by log aggregators.
+
+        Args:
+            usage: The usage object from the API response
+            model: The model name/ID used for the request
+            streaming: Whether this was a streaming request
+        """
+        if usage is None:
+            logger.debug("Token usage not available in response")
+            return
+
+        prompt_tokens = getattr(usage, 'prompt_tokens', 0) or 0
+        completion_tokens = getattr(usage, 'completion_tokens', 0) or 0
+        total_tokens = getattr(usage, 'total_tokens', 0) or prompt_tokens + completion_tokens
+
+        logger.info(
+            "LLM token usage",
+            extra={
+                "token_usage": {
+                    "model": model,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens,
+                    "streaming": streaming,
+                }
+            }
+        )
+
+
     async def generate(
         self,
         prompt: str,
@@ -410,6 +443,9 @@ class LLMClient:
                     frequency_penalty=0,
                     presence_penalty=0,
                 )
+
+                # Log token usage for cost monitoring (ML-QW-1)
+                self._log_token_usage(response.usage, self.model, streaming=False)
 
                 content = response.choices[0].message.content or ""
                 return strip_thinking_tags(content)
@@ -504,14 +540,19 @@ class LLMClient:
                     frequency_penalty=0,
                     presence_penalty=0,
                     stream=True,
+                    stream_options={"include_usage": True},  # Request usage in stream (ML-QW-1)
                 )
 
                 # Buffer for thinking tag stripping in streaming mode
                 buffer = ""
                 in_thinking_block = False
+                stream_usage = None  # Track usage from final chunk (ML-QW-1)
 
                 async for chunk in stream:
-                    if chunk.choices[0].delta.content is not None:
+                    # Capture usage from the final chunk (ML-QW-1)
+                    if hasattr(chunk, 'usage') and chunk.usage is not None:
+                        stream_usage = chunk.usage
+                    if chunk.choices and chunk.choices[0].delta.content is not None:
                         content = chunk.choices[0].delta.content
                         buffer += content
 
@@ -552,6 +593,9 @@ class LLMClient:
                 # Yield any remaining content (not in thinking block)
                 if buffer and not in_thinking_block:
                     yield buffer
+
+                # Log token usage for streaming response (ML-QW-1)
+                self._log_token_usage(stream_usage, self.model, streaming=True)
 
                 return  # Success, exit retry loop
 
