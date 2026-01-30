@@ -2,15 +2,17 @@
 
 import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { ErrorState } from "@/components/ui/error-state"
+import { StatCardSkeleton, DecisionCardSkeleton } from "@/components/ui/skeleton"
 import { api, type DashboardStats, type Decision } from "@/lib/api"
-import { entityStyles, getEntityStyle } from "@/lib/constants"
+import { getEntityStyle } from "@/lib/constants"
 
 // Animated number counter for stats
 function AnimatedNumber({ value, duration = 1000 }: { value: number; duration?: number }) {
@@ -65,12 +67,14 @@ function StatCard({
 
   const content = (
     <Card
-      className={`bg-white/[0.03] backdrop-blur-xl border-white/[0.06] transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 ${href ? 'hover:bg-white/[0.06] hover:border-cyan-500/20 hover:scale-[1.02] cursor-pointer' : ''}`}
+      className={`bg-white/[0.03] backdrop-blur-xl border-white/[0.06] transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 ${href ? 'hover:bg-white/[0.06] hover:border-cyan-500/20 hover:scale-[1.02] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900' : ''}`}
       style={{ animationDelay: `${delay}ms`, animationFillMode: 'backwards' }}
+      tabIndex={href ? 0 : undefined}
+      role={href ? "link" : undefined}
     >
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div className="flex items-center gap-2">
-          <span className="text-xl">{icon}</span>
+          <span className="text-xl" aria-hidden="true">{icon}</span>
           <CardTitle className="text-sm font-medium text-slate-400">{title}</CardTitle>
         </div>
       </CardHeader>
@@ -85,7 +89,7 @@ function StatCard({
             className="text-xs text-cyan-400 hover:text-cyan-300 mt-2 inline-flex items-center gap-1 transition-colors group"
           >
             {emptyAction.label}
-            <span className="group-hover:translate-x-1 transition-transform">→</span>
+            <span className="group-hover:translate-x-1 transition-transform" aria-hidden="true">{"\u2192"}</span>
           </Link>
         )}
       </CardContent>
@@ -96,11 +100,22 @@ function StatCard({
 }
 
 function DecisionCard({ decision, index = 0 }: { decision: Decision; index?: number }) {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault()
+      window.location.href = `/decisions?id=${decision.id}`
+    }
+  }, [decision.id])
+
   return (
     <Link href={`/decisions?id=${decision.id}`}>
       <Card
-        className="h-full bg-white/[0.03] backdrop-blur-xl border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.02] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4"
+        className="h-full bg-white/[0.03] backdrop-blur-xl border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.02] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
         style={{ animationDelay: `${400 + index * 100}ms`, animationFillMode: 'backwards' }}
+        tabIndex={0}
+        role="article"
+        aria-label={`Decision: ${decision.trigger}`}
+        onKeyDown={handleKeyDown}
       >
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
@@ -118,14 +133,14 @@ function DecisionCard({ decision, index = 0 }: { decision: Decision; index?: num
                   {decision.decision}
                 </CardDescription>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-sm">
+              <TooltipContent side="bottom" className="max-w-lg">
                 <p>{decision.decision}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5" role="list" aria-label="Related entities">
             {decision.entities.slice(0, 3).map((entity) => {
               const style = getEntityStyle(entity.type)
               return (
@@ -133,6 +148,7 @@ function DecisionCard({ decision, index = 0 }: { decision: Decision; index?: num
                   key={entity.id}
                   variant="outline"
                   className={`text-xs ${style.bg} ${style.text} ${style.border} transition-all hover:scale-105`}
+                  role="listitem"
                 >
                   {style.icon} {entity.name}
                 </Badge>
@@ -151,9 +167,10 @@ function DecisionCard({ decision, index = 0 }: { decision: Decision; index?: num
 }
 
 export default function DashboardPage() {
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading, error, refetch } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: () => api.getDashboardStats(),
+    staleTime: 60 * 1000, // 1 minute
   })
 
   // Fallback data for when API is not available
@@ -171,88 +188,133 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-500">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-100">
-              Welcome back! 👋
+              Welcome back!
             </h1>
             <p className="text-slate-400">
               Your knowledge graph at a glance
             </p>
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              asChild
-              className="bg-white/[0.05] border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 hover:scale-105 transition-all"
-            >
-              <Link href="/graph">🔗 View Graph</Link>
-            </Button>
-            <Button
-              asChild
-              className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)] hover:scale-105 transition-all"
-            >
-              <Link href="/add">🧠 Add Knowledge</Link>
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    asChild
+                    className="bg-white/[0.05] border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 hover:scale-105 transition-all"
+                  >
+                    <Link href="/graph">View Graph</Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Explore your knowledge graph</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    asChild
+                    className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)] hover:scale-105 transition-all"
+                  >
+                    <Link href="/add">Add Knowledge</Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Import or capture new decisions</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            title="Total Decisions"
-            value={displayStats.total_decisions}
-            description="Decision traces captured"
-            icon="📝"
-            href="/decisions"
-            emptyAction={{ label: "Import from Claude logs", href: "/add" }}
-            delay={0}
+        {error ? (
+          <ErrorState
+            title="Failed to load dashboard"
+            message="We couldn't load your dashboard statistics. Please try again."
+            error={error instanceof Error ? error : null}
+            retry={() => refetch()}
           />
-          <StatCard
-            title="Entities"
-            value={displayStats.total_entities}
-            description="Concepts, systems, patterns"
-            icon="🔗"
-            href="/graph"
-            emptyAction={{ label: "Add knowledge", href: "/add" }}
-            delay={100}
-          />
-          <StatCard
-            title="Capture Sessions"
-            value={displayStats.total_sessions}
-            description="AI-guided interviews"
-            icon="💬"
-            href="/capture"
-            emptyAction={{ label: "Start an interview", href: "/capture" }}
-            delay={200}
-          />
-          <StatCard
-            title="Graph Connections"
-            value={displayStats.total_entities * 2}
-            description="Relationships mapped"
-            icon="📊"
-            href="/graph"
-            delay={300}
-          />
-        </div>
+        ) : isLoading ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" aria-live="polite" aria-busy="true">
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <span className="sr-only">Loading dashboard statistics...</span>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              title="Total Decisions"
+              value={displayStats.total_decisions}
+              description="Decision traces captured"
+              icon="\ud83d\udcdd"
+              href="/decisions"
+              emptyAction={{ label: "Import from Claude logs", href: "/add" }}
+              delay={0}
+            />
+            <StatCard
+              title="Entities"
+              value={displayStats.total_entities}
+              description="Concepts, systems, patterns"
+              icon="\ud83d\udd17"
+              href="/graph"
+              emptyAction={{ label: "Add knowledge", href: "/add" }}
+              delay={100}
+            />
+            <StatCard
+              title="Capture Sessions"
+              value={displayStats.total_sessions}
+              description="AI-guided interviews"
+              icon="\ud83d\udcac"
+              href="/capture"
+              emptyAction={{ label: "Start an interview", href: "/capture" }}
+              delay={200}
+            />
+            <StatCard
+              title="Graph Connections"
+              value={displayStats.total_entities * 2}
+              description="Relationships mapped"
+              icon="\ud83d\udcca"
+              href="/graph"
+              delay={300}
+            />
+          </div>
+        )}
 
         {/* Recent Decisions */}
         <Card className="bg-white/[0.03] backdrop-blur-xl border-white/[0.06]">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-xl text-slate-100">Recent Decisions</CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                asChild
-                className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
-              >
-                <Link href="/decisions">View all →</Link>
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      asChild
+                      className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                    >
+                      <Link href="/decisions">{"View all \u2192"}</Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>See all decisions</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           </CardHeader>
           <CardContent>
-            {displayStats.recent_decisions.length === 0 ? (
+            {isLoading ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" aria-live="polite" aria-busy="true">
+                <DecisionCardSkeleton />
+                <DecisionCardSkeleton />
+                <DecisionCardSkeleton />
+                <span className="sr-only">Loading recent decisions...</span>
+              </div>
+            ) : displayStats.recent_decisions.length === 0 ? (
               <div className="py-8 text-center">
                 <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-white/[0.05] flex items-center justify-center">
-                  <span className="text-3xl">📋</span>
+                  <span className="text-3xl" aria-hidden="true">\ud83d\udccb</span>
                 </div>
                 <h3 className="text-lg font-medium mb-1 text-slate-200">No decisions yet</h3>
                 <p className="text-slate-400 mb-4 max-w-md mx-auto">
@@ -262,11 +324,11 @@ export default function DashboardPage() {
                   asChild
                   className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)]"
                 >
-                  <Link href="/add">🧠 Add Knowledge</Link>
+                  <Link href="/add">Add Knowledge</Link>
                 </Button>
               </div>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" role="feed" aria-label="Recent decisions">
                 {displayStats.recent_decisions.map((decision, index) => (
                   <DecisionCard key={decision.id} decision={decision} index={index} />
                 ))}

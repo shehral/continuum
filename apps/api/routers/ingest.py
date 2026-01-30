@@ -1,7 +1,12 @@
+"""Ingestion endpoints with proper error handling (SEC-014).
+
+SEC-014: Replaced silent exception handling with specific exception handling and logging.
+"""
+
 from datetime import UTC, datetime
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,6 +114,8 @@ async def trigger_ingestion(
     - /api/ingest/trigger?project=continuum - Only import from continuum project
     - /api/ingest/trigger?exclude=CS5330,CS6120 - Exclude coursework
     - /api/ingest/trigger?project=continuum&exclude=test - Continuum except test files
+
+    SEC-014: Proper error handling with specific exceptions and error details.
     """
     settings = get_settings()
     parser = ClaudeLogParser(settings.claude_logs_path)
@@ -118,34 +125,80 @@ async def trigger_ingestion(
 
     files_processed = 0
     decisions_extracted = 0
+    errors: list[str] = []
 
     try:
         async for file_path, conversations in parser.parse_all_logs(
             project_filter=project,
             exclude_projects=exclude_list,
         ):
-            for conversation in conversations:
-                # Extract decisions from conversation
-                decisions = await extractor.extract_decisions(conversation)
-                decisions_extracted += len(decisions)
+            try:
+                for conversation in conversations:
+                    # Extract decisions from conversation
+                    try:
+                        decisions = await extractor.extract_decisions(conversation)
+                        decisions_extracted += len(decisions)
 
-                # Save decisions to Neo4j with source tag
-                for decision in decisions:
-                    await extractor.save_decision(decision, source="claude_logs")
+                        # Save decisions to Neo4j with source tag
+                        for decision in decisions:
+                            try:
+                                await extractor.save_decision(decision, source="claude_logs")
+                            except Exception as save_error:
+                                logger.error(
+                                    f"Failed to save decision: {type(save_error).__name__}: {save_error}",
+                                    exc_info=True
+                                )
+                                errors.append(f"save_decision:{file_path}")
+                    except Exception as extract_error:
+                        logger.error(
+                            f"Failed to extract decisions from {file_path}: "
+                            f"{type(extract_error).__name__}: {extract_error}",
+                            exc_info=True
+                        )
+                        errors.append(f"extract:{file_path}")
 
-            files_processed += 1
+                files_processed += 1
+            except Exception as file_error:
+                logger.error(
+                    f"Error processing file {file_path}: {type(file_error).__name__}: {file_error}",
+                    exc_info=True
+                )
+                errors.append(f"file:{file_path}")
 
         ingestion_state["files_processed"] += files_processed
         ingestion_state["last_run"] = datetime.now(UTC)
 
+        # Build status message
+        if errors:
+            status = f"completed with {len(errors)} errors"
+            logger.warning(f"Ingestion completed with errors: {errors}")
+        else:
+            status = "completed"
+
         return IngestionResult(
-            status="completed",
+            status=status,
             processed=files_processed,
             decisions_extracted=decisions_extracted,
         )
+    except FileNotFoundError as e:
+        logger.error(f"Ingestion path not found: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Claude logs path not found: {settings.claude_logs_path}"
+        )
+    except PermissionError as e:
+        logger.error(f"Permission denied accessing logs: {e}")
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied accessing Claude logs directory"
+        )
     except Exception as e:
+        logger.error(
+            f"Unexpected error during ingestion: {type(e).__name__}: {e}",
+            exc_info=True
+        )
         return IngestionResult(
-            status=f"error: {str(e)}",
+            status=f"error: {type(e).__name__}",
             processed=files_processed,
             decisions_extracted=decisions_extracted,
         )
@@ -155,6 +208,8 @@ async def process_changed_file(file_path: str) -> None:
     """Process a changed Claude log file.
 
     This is called by the file watcher when a file changes.
+
+    SEC-014: Proper error handling with specific exceptions and logging.
     """
     logger.info(f"Processing changed file: {file_path}")
 
@@ -166,18 +221,39 @@ async def process_changed_file(file_path: str) -> None:
         decisions_extracted = 0
 
         for conversation in conversations:
-            decisions = await extractor.extract_decisions(conversation)
-            decisions_extracted += len(decisions)
+            try:
+                decisions = await extractor.extract_decisions(conversation)
+                decisions_extracted += len(decisions)
 
-            for decision in decisions:
-                await extractor.save_decision(decision, source="claude_logs")
+                for decision in decisions:
+                    try:
+                        await extractor.save_decision(decision, source="claude_logs")
+                    except Exception as save_error:
+                        logger.error(
+                            f"Failed to save decision from {file_path}: "
+                            f"{type(save_error).__name__}: {save_error}",
+                            exc_info=True
+                        )
+            except Exception as extract_error:
+                logger.error(
+                    f"Failed to extract decisions from {file_path}: "
+                    f"{type(extract_error).__name__}: {extract_error}",
+                    exc_info=True
+                )
 
         ingestion_state["files_processed"] += 1
         ingestion_state["last_run"] = datetime.now(UTC)
         logger.info(f"Processed {decisions_extracted} decisions from {file_path}")
 
+    except FileNotFoundError:
+        logger.warning(f"File not found (may have been deleted): {file_path}")
+    except PermissionError as e:
+        logger.error(f"Permission denied reading file {file_path}: {e}")
     except Exception as e:
-        logger.error(f"Error processing file {file_path}: {e}")
+        logger.error(
+            f"Error processing file {file_path}: {type(e).__name__}: {e}",
+            exc_info=True
+        )
 
 
 @router.post("/watch/start")

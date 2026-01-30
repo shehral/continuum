@@ -20,9 +20,16 @@ dependencies = [
     "python-multipart>=0.0.20",
     "httpx>=0.28.1",
     "bcrypt>=4.2.1",
-    "python-jose[cryptography]>=3.3.0",
+    # SEC-013: python-jose with cryptography for JWT handling
+    # Using version constraint to avoid known vulnerabilities in older versions
+    "python-jose[cryptography]>=3.3.0,<4.0",
     "rapidfuzz>=3.0.0",
     "watchdog>=4.0.0",
+    "prometheus-client>=0.20.0",
+    # SEC-013: Explicit cryptography version for security updates
+    "cryptography>=42.0.0",
+    # SEC-013: Starlette pinned for security (dependency of FastAPI)
+    "starlette>=0.41.0",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +40,9 @@ dev = [
     "pytest-mock>=3.12.0",
     "ruff>=0.8.6",
     "mypy>=1.14.1",
+    # SEC-013: Security audit tools
+    "pip-audit>=2.7.0",
+    "safety>=3.0.0",
 ]
 
 [build-system]
@@ -44,22 +54,25 @@ packages = ["."]
 
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
-ignore = ["E501"]
+ignore = ["E501", "N818"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
-    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "unit: marks tests as unit tests (fast, no I/O)",
+    "integration: marks tests as integration tests (require services)",
+    "e2e: marks tests as end-to-end tests (require full stack)",
+    "slow: marks tests as slow running",
 ]
 
 [tool.coverage.run]
-source = ["services", "routers", "agents"]
+source = ["services", "routers", "agents", "middleware"]
 omit = ["tests/*", ".venv/*"]
 branch = true
 

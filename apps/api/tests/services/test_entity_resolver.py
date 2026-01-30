@@ -148,20 +148,18 @@ class TestEntityResolverCanonicalLookup:
         entity = EntityFactory.create(name="PostgreSQL", entity_type="technology")
         entity_record = Neo4jRecordFactory.create_entity_record(entity)
 
-        # Stage 1: No exact match for "postgres"
-        # Stage 2: Match for canonical "postgresql"
         call_count = [0]
-        original_run = mock_session.run
 
         async def mock_run(query, **params):
             call_count[0] += 1
-            # First call: exact match for "postgres" - no match
-            # Second call: exact match for "postgresql" (canonical) - match
-            if call_count[0] == 1:
+            # User-scoped entity resolver now does 2 queries per lookup:
+            # 1-2: exact match for "postgres" (user entities, then all)
+            # 3-4: exact match for "postgresql" canonical (user entities, then all)
+            if call_count[0] <= 2:  # "postgres" lookup - not found
                 return MockNeo4jResult(single_value=None)
-            elif call_count[0] == 2:
+            elif call_count[0] <= 4:  # "postgresql" canonical lookup
                 return MockNeo4jResult(single_value=entity_record)
-            return await original_run(query, **params)
+            return MockNeo4jResult(single_value=None)
 
         mock_session.run = mock_run
 
@@ -185,9 +183,9 @@ class TestEntityResolverCanonicalLookup:
 
         async def mock_run(query, **params):
             call_count[0] += 1
-            if call_count[0] == 1:  # exact match for "k8s"
+            if call_count[0] <= 2:  # "k8s" lookup - not found
                 return MockNeo4jResult(single_value=None)
-            elif call_count[0] == 2:  # exact match for "kubernetes" (canonical)
+            elif call_count[0] <= 4:  # "kubernetes" canonical lookup
                 return MockNeo4jResult(single_value=entity_record)
             return MockNeo4jResult(single_value=None)
 
@@ -211,9 +209,9 @@ class TestEntityResolverCanonicalLookup:
 
         async def mock_run(query, **params):
             call_count[0] += 1
-            if call_count[0] == 1:  # exact match for "js"
+            if call_count[0] <= 2:  # "js" lookup - not found
                 return MockNeo4jResult(single_value=None)
-            elif call_count[0] == 2:  # exact match for "javascript" (canonical)
+            elif call_count[0] <= 4:  # "javascript" canonical lookup
                 return MockNeo4jResult(single_value=entity_record)
             return MockNeo4jResult(single_value=None)
 
@@ -237,9 +235,9 @@ class TestEntityResolverCanonicalLookup:
 
         async def mock_run(query, **params):
             call_count[0] += 1
-            if call_count[0] == 1:  # exact match for "next"
+            if call_count[0] <= 2:  # "next" lookup - not found
                 return MockNeo4jResult(single_value=None)
-            elif call_count[0] == 2:  # exact match for "next.js" (canonical)
+            elif call_count[0] <= 4:  # "next.js" canonical lookup
                 return MockNeo4jResult(single_value=entity_record)
             return MockNeo4jResult(single_value=None)
 

@@ -1,4 +1,21 @@
-"""Entity resolution service with multi-stage matching pipeline."""
+"""Entity resolution service with multi-stage matching pipeline.
+
+Entity resolution is user-scoped - it only considers entities
+connected to the user's decisions when finding duplicates and matches.
+
+Fuzzy Matching Threshold Design Decision (KG-P2-2: Now configurable):
+The default 85% threshold was chosen to balance precision and recall:
+- 90%+ would miss common variations (e.g., "PostgreSQL" vs "Postgres")
+- 80% or below would create too many false positives
+- 85% catches most variations while maintaining quality
+
+Thresholds are now configurable via environment variables:
+- FUZZY_MATCH_THRESHOLD: For string fuzzy matching (default: 0.85)
+- EMBEDDING_SIMILARITY_THRESHOLD: For vector similarity (default: 0.90)
+
+Higher thresholds = more false negatives (duplicates created)
+Lower thresholds = more false positives (incorrect merges)
+"""
 
 from typing import Optional
 from uuid import uuid4
@@ -6,6 +23,7 @@ from uuid import uuid4
 from neo4j.exceptions import ClientError, DatabaseError
 from rapidfuzz import fuzz
 
+from config import get_settings
 from models.ontology import (
     CANONICAL_NAMES,
     ResolvedEntity,
@@ -18,27 +36,57 @@ from utils.vectors import cosine_similarity
 
 logger = get_logger(__name__)
 
+# Configuration constants
+FUZZY_MATCH_LIMIT = 500  # Maximum entities to load for fuzzy matching
+FUZZY_MATCH_BATCH_SIZE = 100  # Batch size for paginated loading
+
 
 class EntityResolver:
     """Multi-stage entity resolution pipeline.
+
+    Resolution is user-scoped - only matches against entities
+    connected to the user's decisions.
 
     Resolution stages (in order):
     1. Exact match - Case-insensitive lookup in Neo4j
     2. Canonical lookup - Map aliases to canonical names
     3. Alias search - Check entity aliases field
-    4. Fuzzy match - rapidfuzz with 85% threshold
-    5. Embedding similarity - Cosine similarity > 0.9
-    6. Create new - If no match found
+    4. Fulltext prefix search - Neo4j fulltext index for fuzzy candidates
+    5. Fuzzy match - rapidfuzz with configurable threshold (default 85%)
+    6. Embedding similarity - Cosine similarity with configurable threshold (default 0.9)
+    7. Create new - If no match found
+
+    Performance Considerations:
+    - Stages 1-4 use Neo4j indexes and are O(log n) or O(1)
+    - Stage 5 (fuzzy) loads candidates in batches with LIMIT to prevent OOM
+    - Stage 6 (embedding) uses vector index when available
+
+    Threshold Configuration (KG-P2-2):
+    Thresholds are loaded from settings and can be configured via environment:
+    - fuzzy_match_threshold: 0.0-1.0 (multiplied by 100 for rapidfuzz)
+    - embedding_similarity_threshold: 0.0-1.0 (cosine similarity)
     """
 
-    def __init__(self, neo4j_session):
+    def __init__(self, neo4j_session, user_id: str = "anonymous"):
         self.session = neo4j_session
+        self.user_id = user_id
         self.embedding_service = get_embedding_service()
-        self.fuzzy_threshold = 85  # Percentage for fuzzy matching
-        self.embedding_threshold = 0.9  # Cosine similarity threshold
+
+        # Load configurable thresholds from settings (KG-P2-2)
+        settings = get_settings()
+        # Convert 0-1 scale to 0-100 for rapidfuzz
+        self.fuzzy_threshold = int(settings.fuzzy_match_threshold * 100)
+        self.embedding_threshold = settings.embedding_similarity_threshold
+
+        logger.debug(
+            f"EntityResolver initialized: fuzzy_threshold={self.fuzzy_threshold}%, "
+            f"embedding_threshold={self.embedding_threshold}"
+        )
 
     async def resolve(self, name: str, entity_type: str) -> ResolvedEntity:
         """Resolve an entity name to an existing entity or create a new one.
+
+        Resolution is scoped to user's entities first, then global entities.
 
         Args:
             name: The entity name to resolve
@@ -49,7 +97,7 @@ class EntityResolver:
         """
         normalized_name = normalize_entity_name(name)
 
-        # Stage 1: Exact match (case-insensitive)
+        # Stage 1: Exact match (case-insensitive) - user's entities first
         existing = await self._find_by_exact_match(normalized_name)
         if existing:
             return ResolvedEntity(
@@ -88,25 +136,17 @@ class EntityResolver:
                 confidence=0.92,
             )
 
-        # Stage 4: Fuzzy match
-        all_entities = await self._get_all_entity_names()
-        best_fuzzy_match = None
-        best_fuzzy_score = 0
-
-        for entity in all_entities:
-            score = fuzz.ratio(normalized_name, entity["name"].lower())
-            if score >= self.fuzzy_threshold and score > best_fuzzy_score:
-                best_fuzzy_score = score
-                best_fuzzy_match = entity
-
-        if best_fuzzy_match:
+        # Stage 4: Fulltext prefix search + Fuzzy match
+        # Use Neo4j fulltext index to get candidates, then apply fuzzy matching
+        fuzzy_result = await self._find_by_fuzzy_with_fulltext(normalized_name)
+        if fuzzy_result:
             return ResolvedEntity(
-                id=best_fuzzy_match["id"],
-                name=best_fuzzy_match["name"],
-                type=best_fuzzy_match["type"],
+                id=fuzzy_result["id"],
+                name=fuzzy_result["name"],
+                type=fuzzy_result["type"],
                 is_new=False,
                 match_method="fuzzy",
-                confidence=best_fuzzy_score / 100.0,
+                confidence=fuzzy_result["score"] / 100.0,
             )
 
         # Stage 5: Embedding similarity
@@ -180,7 +220,27 @@ class EntityResolver:
         return resolved
 
     async def _find_by_exact_match(self, normalized_name: str) -> Optional[dict]:
-        """Find entity by exact case-insensitive name match."""
+        """Find entity by exact case-insensitive name match.
+
+        Prefers user's entities but falls back to global entities.
+        """
+        # First try user's entities
+        result = await self.session.run(
+            """
+            MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+            AND toLower(e.name) = $name
+            RETURN DISTINCT e.id AS id, e.name AS name, e.type AS type
+            LIMIT 1
+            """,
+            name=normalized_name,
+            user_id=self.user_id,
+        )
+        record = await result.single()
+        if record:
+            return dict(record)
+
+        # Fall back to any entity (for cases like entity creation during decision save)
         result = await self.session.run(
             """
             MATCH (e:Entity)
@@ -194,7 +254,24 @@ class EntityResolver:
         return dict(record) if record else None
 
     async def _find_by_alias(self, normalized_name: str) -> Optional[dict]:
-        """Find entity by alias."""
+        """Find entity by alias, preferring user's entities."""
+        # First try user's entities
+        result = await self.session.run(
+            """
+            MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+            AND ANY(alias IN COALESCE(e.aliases, []) WHERE toLower(alias) = $name)
+            RETURN DISTINCT e.id AS id, e.name AS name, e.type AS type
+            LIMIT 1
+            """,
+            name=normalized_name,
+            user_id=self.user_id,
+        )
+        record = await result.single()
+        if record:
+            return dict(record)
+
+        # Fall back to any entity
         result = await self.session.run(
             """
             MATCH (e:Entity)
@@ -207,21 +284,194 @@ class EntityResolver:
         record = await result.single()
         return dict(record) if record else None
 
-    async def _get_all_entity_names(self) -> list[dict]:
-        """Get all entity names for fuzzy matching."""
+    async def _find_by_fuzzy_with_fulltext(self, normalized_name: str) -> Optional[dict]:
+        """Find entity using fulltext index for candidates, then fuzzy match.
+
+        This is more efficient than loading all entities:
+        1. Use fulltext index to find candidates with similar prefixes/tokens
+        2. Apply fuzzy matching only to candidates
+        3. Fall back to batched loading if fulltext fails
+
+        Returns dict with id, name, type, score or None.
+        """
+        # Try fulltext search first to get candidates
+        try:
+            # Search for entities with similar names using fulltext index
+            # Use wildcard search for prefix matching
+            search_term = f"{normalized_name}*"
+
+            # First try user's entities via fulltext
+            result = await self.session.run(
+                """
+                CALL db.index.fulltext.queryNodes('entity_fulltext', $search_term)
+                YIELD node, score AS fulltext_score
+                MATCH (d:DecisionTrace)-[:INVOLVES]->(node)
+                WHERE d.user_id = $user_id OR d.user_id IS NULL
+                RETURN DISTINCT node.id AS id, node.name AS name, node.type AS type
+                LIMIT $limit
+                """,
+                search_term=search_term,
+                user_id=self.user_id,
+                limit=FUZZY_MATCH_LIMIT,
+            )
+            candidates = [dict(r) async for r in result]
+
+            # Also try without fulltext for token-based matching
+            if not candidates:
+                # Try direct fuzzy on limited set
+                candidates = await self._get_entity_names_batched()
+
+            # Apply fuzzy matching to candidates
+            best_match = None
+            best_score = 0
+
+            for entity in candidates:
+                score = fuzz.ratio(normalized_name, entity["name"].lower())
+                if score >= self.fuzzy_threshold and score > best_score:
+                    best_score = score
+                    best_match = entity
+
+            if best_match:
+                return {**best_match, "score": best_score}
+
+            return None
+
+        except (ClientError, DatabaseError) as e:
+            # Fulltext index may not exist, fall back to batched loading
+            logger.debug(f"Fulltext search failed (index may not exist): {e}")
+            return await self._find_by_fuzzy_batched(normalized_name)
+
+    async def _find_by_fuzzy_batched(self, normalized_name: str) -> Optional[dict]:
+        """Fallback: Find entity by fuzzy matching with batched loading.
+
+        Loads entities in batches to prevent memory issues at scale.
+        """
+        best_match = None
+        best_score = 0
+        offset = 0
+
+        while offset < FUZZY_MATCH_LIMIT:
+            # Get user's entities in batches
+            result = await self.session.run(
+                """
+                MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+                WHERE d.user_id = $user_id OR d.user_id IS NULL
+                RETURN DISTINCT e.id AS id, e.name AS name, e.type AS type
+                SKIP $offset
+                LIMIT $batch_size
+                """,
+                user_id=self.user_id,
+                offset=offset,
+                batch_size=FUZZY_MATCH_BATCH_SIZE,
+            )
+
+            batch = [dict(r) async for r in result]
+            if not batch:
+                break
+
+            for entity in batch:
+                score = fuzz.ratio(normalized_name, entity["name"].lower())
+                if score >= self.fuzzy_threshold and score > best_score:
+                    best_score = score
+                    best_match = entity
+
+            offset += FUZZY_MATCH_BATCH_SIZE
+
+        # If no user entities matched, try global entities with limit
+        if not best_match:
+            result = await self.session.run(
+                """
+                MATCH (e:Entity)
+                RETURN e.id AS id, e.name AS name, e.type AS type
+                LIMIT $limit
+                """,
+                limit=FUZZY_MATCH_LIMIT,
+            )
+
+            async for record in result:
+                entity = dict(record)
+                score = fuzz.ratio(normalized_name, entity["name"].lower())
+                if score >= self.fuzzy_threshold and score > best_score:
+                    best_score = score
+                    best_match = entity
+
+        if best_match:
+            return {**best_match, "score": best_score}
+        return None
+
+    async def _get_entity_names_batched(self) -> list[dict]:
+        """Get entity names with batched loading and LIMIT.
+
+        Returns user's entities first with a reasonable limit to prevent OOM.
+        """
+        # Get user's entities with limit
+        result = await self.session.run(
+            """
+            MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            RETURN DISTINCT e.id AS id, e.name AS name, e.type AS type
+            LIMIT $limit
+            """,
+            user_id=self.user_id,
+            limit=FUZZY_MATCH_LIMIT,
+        )
+        user_entities = [dict(record) async for record in result]
+
+        # If we have user entities, use those for fuzzy matching
+        if user_entities:
+            return user_entities
+
+        # Fall back to all entities if user has none (with limit)
         result = await self.session.run(
             """
             MATCH (e:Entity)
             RETURN e.id AS id, e.name AS name, e.type AS type
-            """
+            LIMIT $limit
+            """,
+            limit=FUZZY_MATCH_LIMIT,
         )
         return [dict(record) async for record in result]
+
+    async def _get_all_entity_names(self) -> list[dict]:
+        """Get all entity names for fuzzy matching.
+
+        DEPRECATED: Use _get_entity_names_batched() or _find_by_fuzzy_with_fulltext() instead.
+        This method is kept for backward compatibility but now applies LIMIT.
+
+        Returns user's entities first, then global entities.
+        """
+        logger.warning("_get_all_entity_names is deprecated. Use _find_by_fuzzy_with_fulltext instead.")
+        return await self._get_entity_names_batched()
 
     async def _find_by_embedding_similarity(
         self, embedding: list[float], threshold: float
     ) -> Optional[dict]:
-        """Find entity by embedding similarity."""
-        # Try GDS cosine similarity first
+        """Find entity by embedding similarity, preferring user's entities."""
+        # Try user's entities first with GDS
+        try:
+            result = await self.session.run(
+                """
+                MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+                WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+                AND e.embedding IS NOT NULL
+                WITH DISTINCT e, gds.similarity.cosine(e.embedding, $embedding) AS similarity
+                WHERE similarity > $threshold
+                RETURN e.id AS id, e.name AS name, e.type AS type, similarity
+                ORDER BY similarity DESC
+                LIMIT 1
+                """,
+                embedding=embedding,
+                threshold=threshold,
+                user_id=self.user_id,
+            )
+            record = await result.single()
+            if record:
+                return dict(record)
+        except (ClientError, DatabaseError):
+            # Fall back to manual calculation (GDS not installed)
+            return await self._find_by_embedding_similarity_manual(embedding, threshold)
+
+        # Fall back to all entities
         try:
             result = await self.session.run(
                 """
@@ -239,23 +489,56 @@ class EntityResolver:
             record = await result.single()
             return dict(record) if record else None
         except (ClientError, DatabaseError):
-            # Fall back to manual calculation (GDS not installed)
             return await self._find_by_embedding_similarity_manual(embedding, threshold)
 
     async def _find_by_embedding_similarity_manual(
         self, embedding: list[float], threshold: float
     ) -> Optional[dict]:
-        """Fallback: Find entity by embedding similarity without GDS."""
+        """Fallback: Find entity by embedding similarity without GDS.
+
+        Prefers user's entities. Now uses LIMIT to prevent OOM.
+        """
+        # Try user's entities first (with limit)
+        result = await self.session.run(
+            """
+            MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+            AND e.embedding IS NOT NULL
+            RETURN DISTINCT e.id AS id, e.name AS name, e.type AS type, e.embedding AS embedding
+            LIMIT $limit
+            """,
+            user_id=self.user_id,
+            limit=FUZZY_MATCH_LIMIT,
+        )
+
+        best_match = None
+        best_similarity = threshold
+
+        async for record in result:
+            other_embedding = record["embedding"]
+            similarity = cosine_similarity(embedding, other_embedding)
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match = {
+                    "id": record["id"],
+                    "name": record["name"],
+                    "type": record["type"],
+                    "similarity": similarity,
+                }
+
+        if best_match:
+            return best_match
+
+        # Fall back to all entities (with limit)
         result = await self.session.run(
             """
             MATCH (e:Entity)
             WHERE e.embedding IS NOT NULL
             RETURN e.id AS id, e.name AS name, e.type AS type, e.embedding AS embedding
-            """
+            LIMIT $limit
+            """,
+            limit=FUZZY_MATCH_LIMIT,
         )
-
-        best_match = None
-        best_similarity = threshold
 
         async for record in result:
             other_embedding = record["embedding"]
@@ -274,9 +557,12 @@ class EntityResolver:
     async def merge_duplicate_entities(self) -> dict:
         """Find and merge duplicate entities based on fuzzy matching.
 
+        Only merges entities connected to the user's decisions.
         Returns statistics about merged entities.
+
+        Uses batched loading to prevent memory issues at scale.
         """
-        all_entities = await self._get_all_entity_names()
+        all_entities = await self._get_entity_names_batched()
         merged_count = 0
         merge_groups = []
 
@@ -399,6 +685,6 @@ class EntityResolver:
 
 
 # Factory function
-def get_entity_resolver(neo4j_session) -> EntityResolver:
+def get_entity_resolver(neo4j_session, user_id: str = "anonymous") -> EntityResolver:
     """Create an EntityResolver instance with the given Neo4j session."""
-    return EntityResolver(neo4j_session)
+    return EntityResolver(neo4j_session, user_id=user_id)

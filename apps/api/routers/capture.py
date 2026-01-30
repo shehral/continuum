@@ -1,4 +1,16 @@
+"""Capture session endpoints with user isolation and WebSocket security.
+
+All capture sessions are isolated by user. Users can only access their own sessions.
+Anonymous users can create and access sessions, but their data is ephemeral and
+not linked to any authenticated account.
+
+SEC-012: WebSocket input validation and rate limiting.
+SEC-009: Per-user rate limiting for LLM calls.
+"""
+
+import time
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -24,13 +36,125 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
+# SEC-012: WebSocket security constants
+MAX_MESSAGE_SIZE = 10000  # 10KB max message size
+MAX_HISTORY_SIZE = 50  # Maximum messages in history
+MAX_MESSAGES_PER_MINUTE = 20  # Rate limit for WebSocket messages
+WEBSOCKET_RATE_WINDOW = 60  # Window in seconds
+
+
+class WebSocketRateLimiter:
+    """Simple in-memory rate limiter for WebSocket messages (SEC-012).
+
+    Uses a sliding window to limit messages per session.
+    """
+
+    def __init__(self, max_messages: int = MAX_MESSAGES_PER_MINUTE, window: int = WEBSOCKET_RATE_WINDOW):
+        self.max_messages = max_messages
+        self.window = window
+        self.timestamps: list[float] = []
+
+    def check(self) -> bool:
+        """Check if a message can be sent. Returns True if allowed."""
+        now = time.time()
+        window_start = now - self.window
+
+        # Remove old timestamps
+        self.timestamps = [t for t in self.timestamps if t > window_start]
+
+        if len(self.timestamps) >= self.max_messages:
+            return False
+
+        self.timestamps.append(now)
+        return True
+
+    def get_retry_after(self) -> float:
+        """Get seconds until the oldest message expires from the window."""
+        if not self.timestamps:
+            return 0
+        now = time.time()
+        oldest = min(self.timestamps)
+        return max(0, oldest + self.window - now)
+
+
+def validate_websocket_message(data: Any) -> tuple[bool, str]:
+    """Validate WebSocket message format and size (SEC-012).
+
+    Args:
+        data: The parsed JSON data from the WebSocket
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # Check if data is a dict
+    if not isinstance(data, dict):
+        return False, "Message must be a JSON object"
+
+    # Check for required 'content' field
+    if "content" not in data:
+        return False, "Message must contain 'content' field"
+
+    content = data.get("content", "")
+
+    # Check if content is a string
+    if not isinstance(content, str):
+        return False, "'content' must be a string"
+
+    # Check message size
+    if len(content) > MAX_MESSAGE_SIZE:
+        return False, f"Message exceeds maximum size of {MAX_MESSAGE_SIZE} characters"
+
+    # Check for empty content
+    if not content.strip():
+        return False, "Message content cannot be empty"
+
+    return True, ""
+
+
+async def _verify_session_ownership(
+    db: AsyncSession,
+    session_id: str,
+    user_id: str,
+) -> CaptureSession:
+    """Verify the user owns the session and return it.
+
+    Args:
+        db: Database session
+        session_id: The session ID to check
+        user_id: The user ID who should own the session
+
+    Returns:
+        The CaptureSession if found and owned by user
+
+    Raises:
+        HTTPException 404 if session not found or not owned by user
+    """
+    result = await db.execute(
+        select(CaptureSession).where(
+            CaptureSession.id == session_id,
+            CaptureSession.user_id == user_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        # Don't reveal whether session exists but belongs to another user
+        # Always return generic "not found" for security
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return session
+
 
 @router.post("/sessions", response_model=CaptureSessionSchema)
 async def start_capture_session(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Start a new capture session."""
+    """Start a new capture session.
+
+    Creates a new capture session linked to the current user.
+    Anonymous users can create sessions, but they won't persist across auth.
+    """
     session = CaptureSession(
         id=str(uuid4()),
         user_id=user_id,
@@ -39,6 +163,8 @@ async def start_capture_session(
     db.add(session)
     await db.commit()
     await db.refresh(session)
+
+    logger.info(f"Created capture session {session.id} for user")
 
     return CaptureSessionSchema(
         id=session.id,
@@ -50,15 +176,17 @@ async def start_capture_session(
 
 
 @router.get("/sessions/{session_id}", response_model=CaptureSessionSchema)
-async def get_capture_session(session_id: str, db: AsyncSession = Depends(get_db)):
-    """Get a capture session by ID."""
-    result = await db.execute(
-        select(CaptureSession).where(CaptureSession.id == session_id)
-    )
-    session = result.scalar_one_or_none()
+async def get_capture_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get a capture session by ID.
 
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    Users can only access their own sessions. Returns 404 if session
+    doesn't exist or belongs to another user.
+    """
+    session = await _verify_session_ownership(db, session_id, user_id)
 
     # Get messages
     result = await db.execute(
@@ -93,16 +221,14 @@ async def send_capture_message(
     session_id: str,
     content: dict,
     db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
 ):
-    """Send a message in a capture session and get AI response."""
-    # Verify session exists and is active
-    result = await db.execute(
-        select(CaptureSession).where(CaptureSession.id == session_id)
-    )
-    session = result.scalar_one_or_none()
+    """Send a message in a capture session and get AI response.
 
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    Users can only send messages to their own sessions.
+    """
+    # Verify session ownership and get session
+    session = await _verify_session_ownership(db, session_id, user_id)
 
     if session.status != SessionStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="Session is not active")
@@ -124,8 +250,8 @@ async def send_capture_message(
     )
     history = result.scalars().all()
 
-    # Generate AI response using interview agent
-    interview_agent = InterviewAgent()
+    # Generate AI response using interview agent with per-user rate limiting (SEC-009)
+    interview_agent = InterviewAgent(user_id=user_id)
     response_content, extracted_entities = await interview_agent.process_message(
         user_message=content.get("content", ""),
         history=[{"role": m.role, "content": m.content} for m in history],
@@ -154,15 +280,18 @@ async def send_capture_message(
 
 
 @router.post("/sessions/{session_id}/complete", response_model=CaptureSessionSchema)
-async def complete_capture_session(session_id: str, db: AsyncSession = Depends(get_db)):
-    """Complete a capture session and save the decision to the graph."""
-    result = await db.execute(
-        select(CaptureSession).where(CaptureSession.id == session_id)
-    )
-    session = result.scalar_one_or_none()
+async def complete_capture_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Complete a capture session and save the decision to the graph.
 
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    Users can only complete their own sessions. The resulting decision
+    will be linked to their user ID for multi-tenant isolation.
+    """
+    # Verify session ownership
+    session = await _verify_session_ownership(db, session_id, user_id)
 
     if session.status != SessionStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="Session is not active")
@@ -179,12 +308,12 @@ async def complete_capture_session(session_id: str, db: AsyncSession = Depends(g
     )
     messages = result.scalars().all()
 
-    # Extract decision from messages and save to Neo4j
-    interview_agent = InterviewAgent()
+    # Extract decision from messages and save to Neo4j with per-user rate limiting (SEC-009)
+    interview_agent = InterviewAgent(user_id=user_id)
     history = [{"role": m.role, "content": m.content} for m in messages]
 
     decision_data = await interview_agent.synthesize_decision(history)
-    logger.debug(f"Synthesized decision: {decision_data}")
+    logger.debug(f"Synthesized decision for session {session_id}")
 
     if decision_data and decision_data.get("trigger"):
         from models.schemas import DecisionCreate
@@ -200,10 +329,15 @@ async def complete_capture_session(session_id: str, db: AsyncSession = Depends(g
             confidence=decision_data.get("confidence", 0.8),
             source="interview",  # Tag as human-captured via interview
         )
-        decision_id = await extractor.save_decision(decision, source="interview")
-        logger.info(f"Decision saved with ID: {decision_id} (source: interview)")
+        # Pass user_id for multi-tenant isolation
+        decision_id = await extractor.save_decision(
+            decision, source="interview", user_id=user_id
+        )
+        logger.info(
+            f"Decision saved with ID: {decision_id} for session {session_id} (source: interview)"
+        )
     else:
-        logger.warning("No valid decision to save - missing trigger or empty data")
+        logger.warning(f"No valid decision to save for session {session_id} - missing trigger or empty data")
 
     await db.commit()
     await db.refresh(session)
@@ -230,35 +364,114 @@ async def complete_capture_session(session_id: str, db: AsyncSession = Depends(g
 
 @router.websocket("/sessions/{session_id}/ws")
 async def capture_websocket(websocket: WebSocket, session_id: str):
-    """WebSocket endpoint for real-time capture sessions."""
+    """WebSocket endpoint for real-time capture sessions with input validation (SEC-012).
+
+    Security features:
+    - Message size validation (max 10KB)
+    - Message format validation
+    - Rate limiting (max 20 messages/minute)
+    - History size limit (max 50 messages)
+
+    Note: WebSocket authentication is complex and typically requires
+    passing tokens in the initial connection or first message.
+    For now, this endpoint operates without strict user verification,
+    but the session_id itself provides some isolation.
+
+    TODO: Implement WebSocket authentication via:
+    - Query parameter token: ws://host/sessions/{id}/ws?token=...
+    - First message authentication handshake
+    - Cookie-based authentication if same-origin
+    """
     await websocket.accept()
 
-    interview_agent = InterviewAgent()
-    history = []
+    # SEC-009: Use anonymous user_id for WebSocket (until auth is implemented)
+    # TODO: Extract user_id from WebSocket query params or first message
+    user_id = "anonymous"
+
+    interview_agent = InterviewAgent(user_id=user_id)
+    history: list[dict] = []
+    rate_limiter = WebSocketRateLimiter()
 
     try:
         while True:
-            data = await websocket.receive_json()
+            try:
+                # Receive and parse message
+                data = await websocket.receive_json()
+            except Exception as parse_error:
+                logger.warning(f"WebSocket parse error: {type(parse_error).__name__}")
+                await websocket.send_json({
+                    "type": "error",
+                    "error": "Invalid JSON format",
+                    "code": "INVALID_JSON",
+                })
+                continue
+
+            # SEC-012: Validate message format and size
+            is_valid, error_message = validate_websocket_message(data)
+            if not is_valid:
+                logger.warning(f"WebSocket validation failed: {error_message}")
+                await websocket.send_json({
+                    "type": "error",
+                    "error": error_message,
+                    "code": "VALIDATION_ERROR",
+                })
+                continue
+
+            # SEC-012: Check rate limit
+            if not rate_limiter.check():
+                retry_after = rate_limiter.get_retry_after()
+                logger.warning(f"WebSocket rate limit exceeded for session {session_id}")
+                await websocket.send_json({
+                    "type": "error",
+                    "error": f"Rate limit exceeded. Please wait {retry_after:.0f} seconds.",
+                    "code": "RATE_LIMITED",
+                    "retry_after": retry_after,
+                })
+                continue
+
             user_message = data.get("content", "")
 
+            # SEC-012: Enforce history size limit
+            if len(history) >= MAX_HISTORY_SIZE:
+                # Trim oldest messages, keeping recent context
+                history = history[-(MAX_HISTORY_SIZE - 2):]
+                logger.info(f"Trimmed history for session {session_id} (exceeded {MAX_HISTORY_SIZE} messages)")
+
             # Stream response
-            async for chunk, entities in interview_agent.stream_response(
-                user_message, history
-            ):
-                await websocket.send_json(
-                    {
-                        "type": "chunk",
-                        "content": chunk,
-                        "entities": [e.model_dump() for e in entities],
-                    }
-                )
+            full_response = ""
+            try:
+                async for chunk, entities in interview_agent.stream_response(
+                    user_message, history
+                ):
+                    full_response += chunk
+                    await websocket.send_json(
+                        {
+                            "type": "chunk",
+                            "content": chunk,
+                            "entities": [e.model_dump() for e in entities],
+                        }
+                    )
+            except Exception as llm_error:
+                logger.error(f"LLM error in WebSocket: {type(llm_error).__name__}")
+                await websocket.send_json({
+                    "type": "error",
+                    "error": "Failed to generate response. Please try again.",
+                    "code": "LLM_ERROR",
+                })
+                continue
 
             # Send completion
             await websocket.send_json({"type": "complete"})
 
             # Update history
             history.append({"role": "user", "content": user_message})
-            history.append({"role": "assistant", "content": chunk})
+            history.append({"role": "assistant", "content": full_response})
 
     except WebSocketDisconnect:
-        pass
+        logger.info(f"WebSocket disconnected for session {session_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for session {session_id}: {type(e).__name__}: {e}")
+        try:
+            await websocket.close(code=1011, reason="Internal server error")
+        except Exception:
+            pass  # Connection may already be closed

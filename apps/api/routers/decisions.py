@@ -1,12 +1,20 @@
+"""Decision endpoints with user isolation.
+
+All decisions are isolated by user. Users can only access their own decisions.
+Anonymous users can create and view decisions, but they are isolated under
+the "anonymous" user_id and not shared across sessions.
+"""
+
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from neo4j.exceptions import ClientError, DatabaseError, DriverError
 from pydantic import BaseModel
 
 from db.neo4j import get_neo4j_session
 from models.schemas import Decision, DecisionCreate, Entity
+from routers.auth import get_current_user_id
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,14 +36,20 @@ class ManualDecisionInput(BaseModel):
 async def get_decisions(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    user_id: str = Depends(get_current_user_id),
 ):
-    """Get all decisions with pagination."""
+    """Get all decisions for the current user with pagination.
+
+    Users can only see their own decisions. For backward compatibility,
+    decisions without a user_id are visible to all users.
+    """
     try:
         session = await get_neo4j_session()
         async with session:
             result = await session.run(
                 """
                 MATCH (d:DecisionTrace)
+                WHERE d.user_id = $user_id OR d.user_id IS NULL
                 OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
                 WITH d, collect(e) as entities
                 ORDER BY d.created_at DESC
@@ -43,6 +57,7 @@ async def get_decisions(
                 LIMIT $limit
                 RETURN d, entities
                 """,
+                user_id=user_id,
                 offset=offset,
                 limit=limit,
             )
@@ -84,49 +99,74 @@ async def get_decisions(
 
 
 @router.delete("/{decision_id}")
-async def delete_decision(decision_id: str):
+async def delete_decision(
+    decision_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
     """Delete a decision by ID.
 
+    Users can only delete their own decisions.
     This removes the decision and all its relationships,
     but preserves the entities it was linked to.
     """
     session = await get_neo4j_session()
     async with session:
-        # Check if decision exists
+        # Check if decision exists AND belongs to the user
         result = await session.run(
-            "MATCH (d:DecisionTrace {id: $id}) RETURN d",
+            """
+            MATCH (d:DecisionTrace {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            RETURN d
+            """,
             id=decision_id,
+            user_id=user_id,
         )
         record = await result.single()
         if not record:
+            # Don't reveal if decision exists but belongs to another user
             raise HTTPException(status_code=404, detail="Decision not found")
 
         # Delete the decision (DETACH DELETE removes relationships but keeps entities)
         await session.run(
-            "MATCH (d:DecisionTrace {id: $id}) DETACH DELETE d",
+            """
+            MATCH (d:DecisionTrace {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            DETACH DELETE d
+            """,
             id=decision_id,
+            user_id=user_id,
         )
 
+    logger.info(f"Deleted decision {decision_id} for user {user_id}")
     return {"status": "deleted", "id": decision_id}
 
 
 @router.get("/{decision_id}", response_model=Decision)
-async def get_decision(decision_id: str):
-    """Get a single decision by ID."""
+async def get_decision(
+    decision_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get a single decision by ID.
+
+    Users can only access their own decisions.
+    """
     session = await get_neo4j_session()
     async with session:
         result = await session.run(
             """
             MATCH (d:DecisionTrace {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
             WITH d, collect(e) as entities
             RETURN d, entities
             """,
             id=decision_id,
+            user_id=user_id,
         )
 
         record = await result.single()
         if not record:
+            # Don't reveal if decision exists but belongs to another user
             raise HTTPException(status_code=404, detail="Decision not found")
 
         d = record["d"]
@@ -155,8 +195,13 @@ async def get_decision(decision_id: str):
 
 
 @router.post("", response_model=Decision)
-async def create_decision(input: ManualDecisionInput):
+async def create_decision(
+    input: ManualDecisionInput,
+    user_id: str = Depends(get_current_user_id),
+):
     """Create a decision with automatic entity extraction.
+
+    The decision is linked to the current user for multi-tenant isolation.
 
     Uses the enhanced extractor with:
     - Few-shot CoT prompts for better entity extraction
@@ -179,7 +224,9 @@ async def create_decision(input: ManualDecisionInput):
     if input.auto_extract:
         # Use the enhanced extractor for automatic entity extraction
         extractor = get_extractor()
-        decision_id = await extractor.save_decision(decision_create, source="manual")
+        decision_id = await extractor.save_decision(
+            decision_create, source="manual", user_id=user_id
+        )
     else:
         # Manual creation without extraction
         decision_id = str(uuid4())
@@ -198,7 +245,8 @@ async def create_decision(input: ManualDecisionInput):
                     rationale: $rationale,
                     confidence: 1.0,
                     created_at: $created_at,
-                    source: 'manual'
+                    source: 'manual',
+                    user_id: $user_id
                 })
                 """,
                 id=decision_id,
@@ -208,6 +256,7 @@ async def create_decision(input: ManualDecisionInput):
                 decision=input.decision,
                 rationale=input.rationale,
                 created_at=created_at,
+                user_id=user_id,
             )
 
             # Create and link manually specified entities
@@ -226,6 +275,8 @@ async def create_decision(input: ManualDecisionInput):
                         name=entity_name.strip(),
                         decision_id=decision_id,
                     )
+
+    logger.info(f"Created decision {decision_id} for user {user_id}")
 
     # Fetch and return the created decision with its entities
     session = await get_neo4j_session()

@@ -1,4 +1,7 @@
-"""Graph validation service for checking knowledge graph integrity."""
+"""Graph validation service for checking knowledge graph integrity.
+
+All validation is user-scoped. Users can only validate their own data.
+"""
 
 from dataclasses import dataclass
 from enum import Enum
@@ -44,6 +47,8 @@ class ValidationIssue:
 class GraphValidator:
     """Validate knowledge graph integrity and consistency.
 
+    All validation is scoped to the user's data only.
+
     Checks for:
     - Circular dependencies in DEPENDS_ON chains
     - Orphan entities with no relationships
@@ -53,12 +58,17 @@ class GraphValidator:
     - Invalid relationship configurations
     """
 
-    def __init__(self, neo4j_session):
+    def __init__(self, neo4j_session, user_id: str = "anonymous"):
         self.session = neo4j_session
+        self.user_id = user_id
         self.fuzzy_threshold = 85
 
+    def _user_filter(self, alias: str = "d") -> str:
+        """Return a Cypher WHERE clause fragment for user isolation."""
+        return f"({alias}.user_id = $user_id OR {alias}.user_id IS NULL)"
+
     async def validate_all(self) -> list[ValidationIssue]:
-        """Run all validation checks.
+        """Run all validation checks on user's data.
 
         Returns:
             List of ValidationIssue objects
@@ -73,21 +83,26 @@ class GraphValidator:
         return issues
 
     async def check_circular_dependencies(self) -> list[ValidationIssue]:
-        """Find circular DEPENDS_ON chains.
+        """Find circular DEPENDS_ON chains in user's entities.
 
         Circular dependencies indicate modeling problems that need resolution.
         """
         issues = []
 
         try:
+            # Only check entities connected to user's decisions
             result = await self.session.run(
                 """
-                MATCH path = (e:Entity)-[:DEPENDS_ON*2..10]->(e)
+                MATCH (d:DecisionTrace)-[:INVOLVES]->(start:Entity)
+                WHERE d.user_id = $user_id OR d.user_id IS NULL
+                WITH DISTINCT start
+                MATCH path = (start)-[:DEPENDS_ON*2..10]->(start)
                 WITH nodes(path) AS cycle_nodes
                 RETURN [n IN cycle_nodes | n.name] AS cycle_names,
                        [n IN cycle_nodes | n.id] AS cycle_ids
                 LIMIT 10
-                """
+                """,
+                user_id=self.user_id,
             )
 
             async for record in result:
@@ -109,18 +124,22 @@ class GraphValidator:
         return issues
 
     async def check_orphan_entities(self) -> list[ValidationIssue]:
-        """Find entities with no relationships.
+        """Find user's entities with no relationships.
 
         Orphan entities may indicate incomplete extraction or stale data.
         """
         issues = []
 
+        # Find entities that are connected to user's decisions but have no other relationships
         result = await self.session.run(
             """
-            MATCH (e:Entity)
-            WHERE NOT (e)-[]-()
+            MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            WITH DISTINCT e
+            WHERE NOT (e)-[:IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO]-()
             RETURN e.id AS id, e.name AS name, e.type AS type
-            """
+            """,
+            user_id=self.user_id,
         )
 
         async for record in result:
@@ -138,7 +157,7 @@ class GraphValidator:
     async def check_low_confidence_relationships(
         self, threshold: float = 0.5
     ) -> list[ValidationIssue]:
-        """Find relationships with low confidence scores.
+        """Find relationships with low confidence scores in user's graph.
 
         Low confidence relationships may need manual verification.
         """
@@ -146,10 +165,11 @@ class GraphValidator:
 
         result = await self.session.run(
             """
-            MATCH (a)-[r]->(b)
-            WHERE r.confidence IS NOT NULL AND r.confidence < $threshold
-            RETURN a.id AS source_id,
-                   COALESCE(a.name, a.trigger) AS source_name,
+            MATCH (d:DecisionTrace)-[r]->(b)
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+            AND r.confidence IS NOT NULL AND r.confidence < $threshold
+            RETURN d.id AS source_id,
+                   COALESCE(d.trigger, 'Decision') AS source_name,
                    b.id AS target_id,
                    COALESCE(b.name, b.trigger) AS target_name,
                    type(r) AS rel_type,
@@ -158,13 +178,14 @@ class GraphValidator:
             LIMIT 50
             """,
             threshold=threshold,
+            user_id=self.user_id,
         )
 
         async for record in result:
             issues.append(ValidationIssue(
                 type=IssueType.LOW_CONFIDENCE_RELATIONSHIP,
                 severity=IssueSeverity.INFO,
-                message=f"Low confidence {record['rel_type']}: {record['source_name']} -> {record['target_name']} ({record['confidence']:.2f})",
+                message=f"Low confidence {record['rel_type']}: {record['source_name'][:30]} -> {record['target_name'][:30] if record['target_name'] else 'unknown'} ({record['confidence']:.2f})",
                 affected_nodes=[record["source_id"], record["target_id"]],
                 suggested_action="Review and verify this relationship or increase confidence",
                 details={
@@ -178,17 +199,20 @@ class GraphValidator:
         return issues
 
     async def check_duplicate_entities(self) -> list[ValidationIssue]:
-        """Find potential duplicate entities via fuzzy matching.
+        """Find potential duplicate entities via fuzzy matching in user's data.
 
         Duplicates fragment the knowledge graph and reduce query accuracy.
         """
         issues = []
 
+        # Get entities connected to user's decisions
         result = await self.session.run(
             """
-            MATCH (e:Entity)
-            RETURN e.id AS id, e.name AS name, e.type AS type
-            """
+            MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            RETURN DISTINCT e.id AS id, e.name AS name, e.type AS type
+            """,
+            user_id=self.user_id,
         )
 
         entities = [dict(record) async for record in result]
@@ -232,25 +256,25 @@ class GraphValidator:
         return issues
 
     async def check_missing_embeddings(self) -> list[ValidationIssue]:
-        """Find nodes missing embeddings.
+        """Find user's nodes missing embeddings.
 
         Missing embeddings reduce semantic search accuracy.
         """
         issues = []
 
-        # Check decisions without embeddings
+        # Check user's decisions without embeddings
         result = await self.session.run(
             """
             MATCH (d:DecisionTrace)
-            WHERE d.embedding IS NULL
-            RETURN d.id AS id, d.trigger AS trigger
-            LIMIT 20
-            """
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+            AND d.embedding IS NULL
+            RETURN count(d) AS count
+            """,
+            user_id=self.user_id,
         )
 
-        decision_count = 0
-        async for record in result:
-            decision_count += 1
+        record = await result.single()
+        decision_count = record["count"] if record else 0
 
         if decision_count > 0:
             issues.append(ValidationIssue(
@@ -262,13 +286,15 @@ class GraphValidator:
                 details={"count": decision_count, "type": "decision"},
             ))
 
-        # Check entities without embeddings
+        # Check entities connected to user's decisions without embeddings
         result = await self.session.run(
             """
-            MATCH (e:Entity)
-            WHERE e.embedding IS NULL
-            RETURN count(e) AS count
-            """
+            MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+            AND e.embedding IS NULL
+            RETURN count(DISTINCT e) AS count
+            """,
+            user_id=self.user_id,
         )
         record = await result.single()
         entity_count = record["count"] if record else 0
@@ -286,7 +312,7 @@ class GraphValidator:
         return issues
 
     async def check_invalid_relationships(self) -> list[ValidationIssue]:
-        """Find invalid relationship configurations.
+        """Find invalid relationship configurations in user's data.
 
         Checks for:
         - Self-referential relationships
@@ -295,21 +321,23 @@ class GraphValidator:
         """
         issues = []
 
-        # Check self-referential relationships
+        # Check self-referential relationships in user's data
         result = await self.session.run(
             """
-            MATCH (n)-[r]->(n)
-            RETURN n.id AS id,
-                   COALESCE(n.name, n.trigger) AS name,
+            MATCH (d:DecisionTrace)-[r]->(d)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            RETURN d.id AS id,
+                   d.trigger AS name,
                    type(r) AS rel_type
-            """
+            """,
+            user_id=self.user_id,
         )
 
         async for record in result:
             issues.append(ValidationIssue(
                 type=IssueType.INVALID_RELATIONSHIP,
                 severity=IssueSeverity.ERROR,
-                message=f"Self-referential relationship: {record['name']} -{record['rel_type']}-> itself",
+                message=f"Self-referential relationship: {record['name'][:30] if record['name'] else 'Decision'} -{record['rel_type']}-> itself",
                 affected_nodes=[record["id"]],
                 suggested_action="Remove this self-referential relationship",
                 details={"relationship": record["rel_type"]},
@@ -319,18 +347,20 @@ class GraphValidator:
         result = await self.session.run(
             """
             MATCH (d1:DecisionTrace)-[r]->(d2:DecisionTrace)
-            WHERE type(r) IN ['IS_A', 'PART_OF', 'DEPENDS_ON', 'ALTERNATIVE_TO']
+            WHERE (d1.user_id = $user_id OR d1.user_id IS NULL)
+            AND type(r) IN ['IS_A', 'PART_OF', 'DEPENDS_ON', 'ALTERNATIVE_TO']
             RETURN d1.id AS id1, d1.trigger AS trigger1,
                    d2.id AS id2, d2.trigger AS trigger2,
                    type(r) AS rel_type
-            """
+            """,
+            user_id=self.user_id,
         )
 
         async for record in result:
             issues.append(ValidationIssue(
                 type=IssueType.INVALID_RELATIONSHIP,
                 severity=IssueSeverity.ERROR,
-                message=f"Entity relationship between decisions: {record['trigger1'][:30]} -{record['rel_type']}-> {record['trigger2'][:30]}",
+                message=f"Entity relationship between decisions: {(record['trigger1'] or 'Decision')[:30]} -{record['rel_type']}-> {(record['trigger2'] or 'Decision')[:30]}",
                 affected_nodes=[record["id1"], record["id2"]],
                 suggested_action="Change to a decision relationship (SIMILAR_TO, INFLUENCED_BY, etc.) or remove",
                 details={"relationship": record["rel_type"]},
@@ -363,7 +393,7 @@ class GraphValidator:
         return summary
 
     async def auto_fix(self, issue_types: Optional[list[IssueType]] = None) -> dict:
-        """Automatically fix certain validation issues.
+        """Automatically fix certain validation issues in user's data.
 
         Only fixes safe, well-defined issues like:
         - Removing self-referential relationships
@@ -380,14 +410,16 @@ class GraphValidator:
             "exact_duplicates_merged": 0,
         }
 
-        # Remove self-referential relationships
+        # Remove self-referential relationships in user's data
         if issue_types is None or IssueType.INVALID_RELATIONSHIP in issue_types:
             result = await self.session.run(
                 """
-                MATCH (n)-[r]->(n)
+                MATCH (d:DecisionTrace)-[r]->(d)
+                WHERE d.user_id = $user_id OR d.user_id IS NULL
                 DELETE r
                 RETURN count(r) AS count
-                """
+                """,
+                user_id=self.user_id,
             )
             record = await result.single()
             stats["self_references_removed"] = record["count"] if record else 0
@@ -396,6 +428,6 @@ class GraphValidator:
 
 
 # Factory function
-def get_graph_validator(neo4j_session) -> GraphValidator:
+def get_graph_validator(neo4j_session, user_id: str = "anonymous") -> GraphValidator:
     """Create a GraphValidator instance with the given Neo4j session."""
-    return GraphValidator(neo4j_session)
+    return GraphValidator(neo4j_session, user_id=user_id)

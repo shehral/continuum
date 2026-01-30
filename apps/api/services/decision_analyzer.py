@@ -1,4 +1,7 @@
-"""Decision analyzer service for detecting SUPERSEDES and CONTRADICTS relationships."""
+"""Decision analyzer service for detecting SUPERSEDES and CONTRADICTS relationships.
+
+All analysis is user-scoped. Users can only analyze their own decisions.
+"""
 
 import itertools
 import json
@@ -14,15 +17,22 @@ logger = get_logger(__name__)
 class DecisionAnalyzer:
     """Analyze decisions for temporal and contradictory relationships.
 
+    All analysis is scoped to the user's decisions only.
+
     Detects:
     - SUPERSEDES: New decision replaces an older one
     - CONTRADICTS: Decisions conflict with each other
     """
 
-    def __init__(self, neo4j_session):
+    def __init__(self, neo4j_session, user_id: str = "anonymous"):
         self.session = neo4j_session
+        self.user_id = user_id
         self.llm = get_llm_client()
         self.min_confidence = 0.6
+
+    def _user_filter(self, alias: str = "d") -> str:
+        """Return a Cypher WHERE clause fragment for user isolation."""
+        return f"({alias}.user_id = $user_id OR {alias}.user_id IS NULL)"
 
     async def analyze_decision_pair(
         self, decision_a: dict, decision_b: dict
@@ -99,7 +109,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             return None
 
     async def analyze_all_pairs(self) -> dict:
-        """Batch analyze all decisions for SUPERSEDES/CONTRADICTS relationships.
+        """Batch analyze all user's decisions for SUPERSEDES/CONTRADICTS relationships.
 
         Groups decisions by shared entities for efficiency, then analyzes pairs.
 
@@ -204,16 +214,20 @@ Return ONLY valid JSON, no markdown or explanation."""
     async def detect_contradictions_for_decision(self, decision_id: str) -> list[dict]:
         """Find decisions that contradict a specific decision.
 
+        Only searches within the user's decisions.
+
         Args:
             decision_id: The decision to check
 
         Returns:
             List of contradicting decisions with confidence scores
         """
-        # First check existing CONTRADICTS relationships
+        # First check existing CONTRADICTS relationships (user-scoped)
         result = await self.session.run(
             """
             MATCH (d:DecisionTrace {id: $id})-[r:CONTRADICTS]-(other:DecisionTrace)
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+            AND (other.user_id = $user_id OR other.user_id IS NULL)
             RETURN other.id AS id,
                    other.trigger AS trigger,
                    other.decision AS decision,
@@ -222,6 +236,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                    r.reasoning AS reasoning
             """,
             id=decision_id,
+            user_id=self.user_id,
         )
 
         existing = [dict(record) async for record in result]
@@ -233,7 +248,7 @@ Return ONLY valid JSON, no markdown or explanation."""
         if not target:
             return []
 
-        # Get decisions with shared entities
+        # Get decisions with shared entities (user-scoped)
         similar = await self._get_decisions_with_shared_entities(decision_id, min_shared=1)
 
         contradictions = []
@@ -268,7 +283,7 @@ Return ONLY valid JSON, no markdown or explanation."""
         return contradictions
 
     async def get_entity_timeline(self, entity_name: str) -> list[dict]:
-        """Get chronological decisions about an entity.
+        """Get chronological decisions about an entity for the current user.
 
         Args:
             entity_name: The entity name to search for
@@ -283,8 +298,11 @@ Return ONLY valid JSON, no markdown or explanation."""
             OR ANY(alias IN COALESCE(e.aliases, []) WHERE toLower(alias) = toLower($name))
             WITH e
             MATCH (d:DecisionTrace)-[:INVOLVES]->(e)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             OPTIONAL MATCH (d)-[sup:SUPERSEDES]->(superseded:DecisionTrace)
+            WHERE superseded.user_id = $user_id OR superseded.user_id IS NULL
             OPTIONAL MATCH (d)-[con:CONTRADICTS]-(conflicting:DecisionTrace)
+            WHERE conflicting.user_id = $user_id OR conflicting.user_id IS NULL
             RETURN d.id AS id,
                    d.trigger AS trigger,
                    d.decision AS decision,
@@ -296,6 +314,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             ORDER BY d.created_at ASC
             """,
             name=entity_name,
+            user_id=self.user_id,
         )
 
         return [dict(record) async for record in result]
@@ -304,13 +323,18 @@ Return ONLY valid JSON, no markdown or explanation."""
         """Get the evolution chain for a decision.
 
         Returns decisions that influenced this one and decisions it supersedes.
+        Only includes user's decisions.
         """
         result = await self.session.run(
             """
             MATCH (d:DecisionTrace {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             OPTIONAL MATCH (d)-[:INFLUENCED_BY]->(influenced_by:DecisionTrace)
+            WHERE influenced_by.user_id = $user_id OR influenced_by.user_id IS NULL
             OPTIONAL MATCH (d)-[:SUPERSEDES]->(supersedes:DecisionTrace)
+            WHERE supersedes.user_id = $user_id OR supersedes.user_id IS NULL
             OPTIONAL MATCH (superseded_by:DecisionTrace)-[:SUPERSEDES]->(d)
+            WHERE superseded_by.user_id = $user_id OR superseded_by.user_id IS NULL
             RETURN d.id AS id,
                    d.trigger AS trigger,
                    d.decision AS decision,
@@ -332,6 +356,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                    }) AS superseded_by
             """,
             id=decision_id,
+            user_id=self.user_id,
         )
 
         record = await result.single()
@@ -357,10 +382,11 @@ Return ONLY valid JSON, no markdown or explanation."""
         }
 
     async def _get_all_decisions_with_entities(self) -> list[dict]:
-        """Get all decisions with their associated entities."""
+        """Get all user's decisions with their associated entities."""
         result = await self.session.run(
             """
             MATCH (d:DecisionTrace)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
             RETURN d.id AS id,
                    d.trigger AS trigger,
@@ -368,15 +394,17 @@ Return ONLY valid JSON, no markdown or explanation."""
                    d.rationale AS rationale,
                    d.created_at AS created_at,
                    collect(e.name) AS entities
-            """
+            """,
+            user_id=self.user_id,
         )
         return [dict(record) async for record in result]
 
     async def _get_decision(self, decision_id: str) -> Optional[dict]:
-        """Get a single decision by ID."""
+        """Get a single decision by ID (user-scoped)."""
         result = await self.session.run(
             """
             MATCH (d:DecisionTrace {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             RETURN d.id AS id,
                    d.trigger AS trigger,
                    d.decision AS decision,
@@ -384,6 +412,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                    d.created_at AS created_at
             """,
             id=decision_id,
+            user_id=self.user_id,
         )
         record = await result.single()
         return dict(record) if record else None
@@ -391,11 +420,12 @@ Return ONLY valid JSON, no markdown or explanation."""
     async def _get_decisions_with_shared_entities(
         self, decision_id: str, min_shared: int = 1
     ) -> list[dict]:
-        """Get decisions that share entities with the given decision."""
+        """Get user's decisions that share entities with the given decision."""
         result = await self.session.run(
             """
             MATCH (d:DecisionTrace {id: $id})-[:INVOLVES]->(e:Entity)<-[:INVOLVES]-(other:DecisionTrace)
             WHERE other.id <> d.id
+            AND (other.user_id = $user_id OR other.user_id IS NULL)
             WITH other, count(DISTINCT e) AS shared_count
             WHERE shared_count >= $min_shared
             RETURN other.id AS id,
@@ -408,6 +438,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             """,
             id=decision_id,
             min_shared=min_shared,
+            user_id=self.user_id,
         )
         return [dict(record) async for record in result]
 
@@ -465,6 +496,6 @@ Return ONLY valid JSON, no markdown or explanation."""
 
 
 # Factory function
-def get_decision_analyzer(neo4j_session) -> DecisionAnalyzer:
+def get_decision_analyzer(neo4j_session, user_id: str = "anonymous") -> DecisionAnalyzer:
     """Create a DecisionAnalyzer instance with the given Neo4j session."""
-    return DecisionAnalyzer(neo4j_session)
+    return DecisionAnalyzer(neo4j_session, user_id=user_id)

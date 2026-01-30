@@ -1,4 +1,4 @@
-"""Comprehensive unit tests for EmbeddingService.
+"""Comprehensive unit tests for EmbeddingService (SEC-007 compliant).
 
 Tests:
 - Single text embedding
@@ -37,16 +37,27 @@ def mock_openai_client():
     return client
 
 
+def create_mock_settings():
+    """Create mock settings with all required attributes."""
+    settings = MagicMock()
+    settings.nvidia_embedding_api_key = MagicMock()
+    settings.get_nvidia_embedding_api_key = MagicMock(return_value="test-key")
+    settings.redis_url = "redis://localhost:6379"
+    settings.embedding_cache_ttl = 86400
+    settings.embedding_cache_min_text_length = 10
+    return settings
+
+
 @pytest.fixture
 def embedding_service(mock_openai_client):
     """Create EmbeddingService with mock client."""
     with patch('services.embeddings.AsyncOpenAI', return_value=mock_openai_client):
         with patch('services.embeddings.get_settings') as mock_settings:
-            mock_settings.return_value = MagicMock(
-                nvidia_embedding_api_key="test-key"
-            )
+            mock_settings.return_value = create_mock_settings()
             service = EmbeddingService()
             service.client = mock_openai_client
+            # Disable Redis caching for tests
+            service._redis = None
             return service
 
 
@@ -130,26 +141,35 @@ class TestEmbedTexts:
     @pytest.mark.asyncio
     async def test_batches_large_requests(self, embedding_service, mock_openai_client):
         """Should batch requests for large text lists."""
-        # Create 25 texts (should be split into 3 batches of 10, 10, 5)
-        texts = [f"Text {i}" for i in range(25)]
+        # Create 25 texts with long enough text for caching logic
+        texts = [f"Text number {i:04d} is long enough for the cache" for i in range(25)]
 
-        response = MagicMock()
-        response.data = [MagicMock(embedding=[0.1] * 2048) for _ in range(10)]
-        mock_openai_client.embeddings.create = AsyncMock(return_value=response)
+        def create_response_with_correct_size(*args, **kwargs):
+            batch_input = kwargs.get('input', [])
+            response = MagicMock()
+            response.data = [MagicMock(embedding=[0.1] * 2048) for _ in range(len(batch_input))]
+            return response
+
+        mock_openai_client.embeddings.create = AsyncMock(side_effect=create_response_with_correct_size)
 
         await embedding_service.embed_texts(texts, batch_size=10)
 
-        # Should have called API 3 times
+        # Should have called API 3 times (batches of 10, 10, 5)
         assert mock_openai_client.embeddings.create.call_count == 3
 
     @pytest.mark.asyncio
     async def test_respects_custom_batch_size(self, embedding_service, mock_openai_client):
         """Should use custom batch size."""
-        texts = [f"Text {i}" for i in range(10)]
+        # Use longer texts to exceed min_text_length threshold
+        texts = [f"Text number {i:04d} is long enough" for i in range(10)]
 
-        response = MagicMock()
-        response.data = [MagicMock(embedding=[0.1] * 2048) for _ in range(5)]
-        mock_openai_client.embeddings.create = AsyncMock(return_value=response)
+        def create_response_with_correct_size(*args, **kwargs):
+            batch_input = kwargs.get('input', [])
+            response = MagicMock()
+            response.data = [MagicMock(embedding=[0.1] * 2048) for _ in range(len(batch_input))]
+            return response
+
+        mock_openai_client.embeddings.create = AsyncMock(side_effect=create_response_with_correct_size)
 
         await embedding_service.embed_texts(texts, batch_size=5)
 
@@ -430,9 +450,7 @@ class TestGetEmbeddingService:
 
         with patch('services.embeddings.AsyncOpenAI'):
             with patch('services.embeddings.get_settings') as mock_settings:
-                mock_settings.return_value = MagicMock(
-                    nvidia_embedding_api_key="test-key"
-                )
+                mock_settings.return_value = create_mock_settings()
                 service = get_embedding_service()
 
         assert isinstance(service, EmbeddingService)
@@ -444,9 +462,7 @@ class TestGetEmbeddingService:
 
         with patch('services.embeddings.AsyncOpenAI'):
             with patch('services.embeddings.get_settings') as mock_settings:
-                mock_settings.return_value = MagicMock(
-                    nvidia_embedding_api_key="test-key"
-                )
+                mock_settings.return_value = create_mock_settings()
                 service1 = get_embedding_service()
                 service2 = get_embedding_service()
 

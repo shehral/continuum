@@ -1,20 +1,25 @@
 "use client"
 
-import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useState, useCallback } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { KnowledgeGraph } from "@/components/graph/knowledge-graph"
 import { Button } from "@/components/ui/button"
+import { ErrorState } from "@/components/ui/error-state"
+import { GraphSkeleton } from "@/components/ui/skeleton"
 import { api } from "@/lib/api"
 import { RefreshCw } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 export default function GraphPage() {
+  const queryClient = useQueryClient()
   const [sourceFilter, setSourceFilter] = useState<string | null>(null)
 
   const {
     data: graphData,
     isLoading,
+    error,
     refetch,
     isFetching,
   } = useQuery({
@@ -26,16 +31,33 @@ export default function GraphPage() {
         include_entity_relations: true,
         source_filter: sourceFilter as "claude_logs" | "interview" | "manual" | "unknown" | undefined,
       }),
+    staleTime: 5 * 60 * 1000, // 5 minutes for graph data (P1-5)
+    gcTime: 10 * 60 * 1000, // 10 minutes garbage collection
   })
 
   const { data: sourceCounts } = useQuery({
     queryKey: ["graph-sources"],
     queryFn: () => api.getDecisionSources(),
+    staleTime: 5 * 60 * 1000,
   })
 
-  const handleSourceFilterChange = (source: string | null) => {
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteDecision(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["graph"] })
+      queryClient.invalidateQueries({ queryKey: ["graph-sources"] })
+      queryClient.invalidateQueries({ queryKey: ["decisions"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
+    },
+  })
+
+  const handleSourceFilterChange = useCallback((source: string | null) => {
     setSourceFilter(source)
-  }
+  }, [])
+
+  const handleDeleteDecision = useCallback(async (decisionId: string) => {
+    await deleteMutation.mutateAsync(decisionId)
+  }, [deleteMutation])
 
   return (
     <AppShell>
@@ -55,40 +77,49 @@ export default function GraphPage() {
               )}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 hover:scale-105 transition-all"
-          >
-            <RefreshCw
-              className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  className="border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 hover:scale-105 transition-all"
+                  aria-label="Refresh graph"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`}
+                    aria-hidden="true"
+                  />
+                  Refresh
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Reload graph data</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
 
         {/* Graph */}
-        <div className="flex-1">
+        <div className="flex-1" role="main" aria-label="Knowledge graph visualization area">
           {isLoading ? (
-            <div className="h-full flex items-center justify-center bg-slate-900/50">
-              <div className="text-center animate-in fade-in zoom-in duration-500">
-                <div className="relative mx-auto mb-4 h-16 w-16">
-                  <div className="absolute inset-0 rounded-full bg-cyan-500/20 animate-ping" />
-                  <div className="relative h-full w-full rounded-full bg-cyan-500/10 flex items-center justify-center">
-                    <RefreshCw className="h-8 w-8 animate-spin text-cyan-400" />
-                  </div>
-                </div>
-                <p className="text-slate-400">Loading knowledge graph...</p>
-              </div>
+            <div aria-live="polite" aria-busy="true" className="h-full">
+              <GraphSkeleton />
             </div>
+          ) : error ? (
+            <ErrorState
+              title="Failed to load graph"
+              message="We couldn't load your knowledge graph. Please try again."
+              error={error instanceof Error ? error : null}
+              retry={() => refetch()}
+            />
           ) : (
             <KnowledgeGraph
               data={graphData}
               sourceFilter={sourceFilter}
               onSourceFilterChange={handleSourceFilterChange}
               sourceCounts={sourceCounts || {}}
+              onDeleteDecision={handleDeleteDecision}
             />
           )}
         </div>

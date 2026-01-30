@@ -1,84 +1,164 @@
-from fastapi import APIRouter, Depends
+"""Dashboard endpoints with proper error handling (SEC-014).
+
+SEC-014: Replaced silent exception handling with specific exception handling and logging.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException
+from neo4j.exceptions import AuthError as Neo4jAuthError
+from neo4j.exceptions import ServiceUnavailable as Neo4jServiceUnavailable
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.neo4j import get_neo4j_session
 from db.postgres import get_db
 from models.postgres import CaptureSession
 from models.schemas import DashboardStats, Decision, Entity
+from utils.logging import get_logger
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 @router.get("/stats", response_model=DashboardStats)
 async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
-    """Get dashboard statistics."""
+    """Get dashboard statistics.
+
+    SEC-014: Proper error handling with specific exceptions and appropriate HTTP responses.
+    """
+    # Track what succeeded for partial responses
+    total_sessions = 0
+    total_decisions = 0
+    total_entities = 0
+    recent_decisions = []
+    errors = []
+
+    # Get session count from PostgreSQL
     try:
-        # Get session count from PostgreSQL
         result = await db.execute(select(func.count(CaptureSession.id)))
         total_sessions = result.scalar() or 0
+    except SQLAlchemyError as e:
+        logger.error(
+            f"PostgreSQL error fetching session count: {type(e).__name__}: {e}",
+            exc_info=True
+        )
+        errors.append("postgres_sessions")
 
+    # Get Neo4j stats
+    try:
         session = await get_neo4j_session()
         async with session:
             # Count decisions
-            result = await session.run("MATCH (d:DecisionTrace) RETURN count(d) as count")
-            record = await result.single()
-            total_decisions = record["count"] if record else 0
+            try:
+                result = await session.run("MATCH (d:DecisionTrace) RETURN count(d) as count")
+                record = await result.single()
+                total_decisions = record["count"] if record else 0
+            except Exception as e:
+                logger.error(
+                    f"Neo4j error counting decisions: {type(e).__name__}: {e}",
+                    exc_info=True
+                )
+                errors.append("neo4j_decisions")
 
             # Count entities
-            result = await session.run("MATCH (e:Entity) RETURN count(e) as count")
-            record = await result.single()
-            total_entities = record["count"] if record else 0
+            try:
+                result = await session.run("MATCH (e:Entity) RETURN count(e) as count")
+                record = await result.single()
+                total_entities = record["count"] if record else 0
+            except Exception as e:
+                logger.error(
+                    f"Neo4j error counting entities: {type(e).__name__}: {e}",
+                    exc_info=True
+                )
+                errors.append("neo4j_entities")
 
             # Get recent decisions
-            result = await session.run(
-                """
-                MATCH (d:DecisionTrace)
-                OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
-                WITH d, collect(e) as entities
-                ORDER BY d.created_at DESC
-                LIMIT 6
-                RETURN d, entities
-                """
-            )
-
-            recent_decisions = []
-            async for record in result:
-                d = record["d"]
-                entities = record["entities"]
-
-                decision = Decision(
-                    id=d["id"],
-                    trigger=d.get("trigger", ""),
-                    context=d.get("context", ""),
-                    options=d.get("options", []),
-                    decision=d.get("decision", ""),
-                    rationale=d.get("rationale", ""),
-                    confidence=d.get("confidence", 0.0),
-                    created_at=d.get("created_at", ""),
-                    entities=[
-                        Entity(
-                            id=e["id"],
-                            name=e["name"],
-                            type=e.get("type", "concept"),
-                        )
-                        for e in entities
-                        if e
-                    ],
+            try:
+                result = await session.run(
+                    """
+                    MATCH (d:DecisionTrace)
+                    OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
+                    WITH d, collect(e) as entities
+                    ORDER BY d.created_at DESC
+                    LIMIT 6
+                    RETURN d, entities
+                    """
                 )
-                recent_decisions.append(decision)
 
-            return DashboardStats(
-                total_decisions=total_decisions,
-                total_entities=total_entities,
-                total_sessions=total_sessions,
-                recent_decisions=recent_decisions,
-            )
-    except Exception:
-        # Return empty stats if databases are not available
-        return DashboardStats(
-            total_decisions=0,
-            total_entities=0,
-            total_sessions=0,
-            recent_decisions=[],
+                async for record in result:
+                    d = record["d"]
+                    entities = record["entities"]
+
+                    decision = Decision(
+                        id=d["id"],
+                        trigger=d.get("trigger", ""),
+                        context=d.get("context", ""),
+                        options=d.get("options", []),
+                        decision=d.get("decision", ""),
+                        rationale=d.get("rationale", ""),
+                        confidence=d.get("confidence", 0.0),
+                        created_at=d.get("created_at", ""),
+                        entities=[
+                            Entity(
+                                id=e["id"],
+                                name=e["name"],
+                                type=e.get("type", "concept"),
+                            )
+                            for e in entities
+                            if e
+                        ],
+                    )
+                    recent_decisions.append(decision)
+            except Exception as e:
+                logger.error(
+                    f"Neo4j error fetching recent decisions: {type(e).__name__}: {e}",
+                    exc_info=True
+                )
+                errors.append("neo4j_recent_decisions")
+
+    except Neo4jServiceUnavailable as e:
+        # Neo4j is not available - this is a critical infrastructure issue
+        logger.error(
+            f"Neo4j service unavailable: {e}",
+            exc_info=True
         )
+        raise HTTPException(
+            status_code=503,
+            detail="Knowledge graph database is currently unavailable. Please try again later."
+        )
+    except Neo4jAuthError as e:
+        # Authentication failed - configuration issue
+        logger.error(
+            f"Neo4j authentication failed: {e}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Knowledge graph database authentication failed. Please contact support."
+        )
+    except Exception as e:
+        # Unexpected Neo4j error - log but don't crash
+        logger.error(
+            f"Unexpected Neo4j error: {type(e).__name__}: {e}",
+            exc_info=True
+        )
+        errors.append("neo4j_connection")
+
+    # If all critical operations failed, return 503
+    if len(errors) >= 3:
+        logger.error(f"Dashboard stats failed with multiple errors: {errors}")
+        raise HTTPException(
+            status_code=503,
+            detail="Multiple database services are unavailable. Please try again later."
+        )
+
+    # Log partial failures for monitoring
+    if errors:
+        logger.warning(f"Dashboard stats returned with partial failures: {errors}")
+
+    return DashboardStats(
+        total_decisions=total_decisions,
+        total_entities=total_entities,
+        total_sessions=total_sessions,
+        recent_decisions=recent_decisions,
+    )

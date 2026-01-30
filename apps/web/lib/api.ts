@@ -130,6 +130,13 @@ class ApiClient {
     return this.fetch<Decision>(`/api/decisions/${id}`)
   }
 
+  async deleteDecision(id: string): Promise<{ status: string; message: string }> {
+    return this.fetch<{ status: string; message: string }>(
+      `/api/decisions/${id}`,
+      { method: "DELETE" }
+    )
+  }
+
   // Graph
   async getGraph(options?: {
     include_similarity?: boolean
@@ -186,6 +193,15 @@ class ApiClient {
   async getRelationshipTypes(): Promise<Record<string, number>> {
     return this.fetch<Record<string, number>>("/api/graph/relationships/types")
   }
+
+  // Entities
+  async deleteEntity(id: string): Promise<{ status: string; message: string }> {
+    return this.fetch<{ status: string; message: string }>(
+      `/api/entities/${id}`,
+      { method: "DELETE" }
+    )
+  }
+
 
   // Capture Sessions
   async startCaptureSession(): Promise<CaptureSession> {

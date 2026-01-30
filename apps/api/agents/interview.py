@@ -1,11 +1,15 @@
-import json
+"""AI-powered interview agent for knowledge capture with stage-specific prompts (ML-P2-1).
+
+SEC-009: Supports per-user rate limiting by passing user_id to LLM calls.
+"""
+
 from enum import Enum
-from json import JSONDecodeError
 from typing import AsyncIterator
 
 from models.schemas import Entity
 from services.extractor import DecisionExtractor
 from services.llm import get_llm_client
+from utils.json_extraction import extract_json_from_response
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,64 +25,286 @@ class InterviewState(str, Enum):
     SUMMARIZING = "summarizing"
 
 
-class InterviewAgent:
-    """AI-powered interview agent for knowledge capture using NVIDIA Llama."""
+# Stage-specific prompts with detailed guidance (ML-P2-1)
+# Each stage has specific goals, focus areas, and example questions
+STAGE_PROMPTS = {
+    InterviewState.OPENING: {
+        "goal": "Understand what decision the user wants to document",
+        "focus": [
+            "Welcome the user warmly",
+            "Ask an open-ended question about what they want to capture",
+            "Be encouraging and make them feel comfortable sharing",
+        ],
+        "questions": [
+            "What decision or choice would you like to document today?",
+            "Tell me about a recent decision you made that you'd like to preserve.",
+            "What technical choice or trade-off is on your mind?",
+        ],
+        "avoid": [
+            "Asking multiple questions at once",
+            "Being too formal or robotic",
+            "Jumping ahead to details before understanding the topic",
+        ],
+    },
+    InterviewState.TRIGGER: {
+        "goal": "Understand what prompted this decision - the problem or need",
+        "focus": [
+            "What problem or need prompted this decision?",
+            "When did this come up? What was the timeline or urgency?",
+            "Who identified the need? What stakeholders were involved?",
+            "How severe or important was the problem?",
+        ],
+        "questions": [
+            "What problem were you trying to solve?",
+            "What prompted this decision? Was there a specific event or deadline?",
+            "How did you first notice this was needed?",
+            "Who brought this issue to your attention?",
+            "How urgent was this decision? What was the timeline?",
+        ],
+        "avoid": [
+            "Moving on without understanding the root cause",
+            "Assuming you understand the problem without clarification",
+            "Skipping the 'why now' question",
+        ],
+    },
+    InterviewState.CONTEXT: {
+        "goal": "Capture the background, constraints, and environment",
+        "focus": [
+            "What was the existing system or situation?",
+            "What constraints existed (time, budget, team skills, tech stack)?",
+            "What requirements or goals had to be met?",
+            "What organizational factors influenced the situation?",
+        ],
+        "questions": [
+            "What was already in place before this decision?",
+            "What constraints did you have to work within?",
+            "Were there any non-negotiable requirements?",
+            "What was the team's experience level with the options?",
+            "Were there budget or timeline constraints?",
+            "What was the technical environment like?",
+        ],
+        "avoid": [
+            "Assuming context from the trigger alone",
+            "Missing important constraints that shaped the decision",
+            "Not asking about organizational or team factors",
+        ],
+    },
+    InterviewState.OPTIONS: {
+        "goal": "Explore ALL alternatives considered, including rejected ones",
+        "focus": [
+            "What alternatives were considered?",
+            "Why were certain options rejected?",
+            "Were there options that seemed obvious but were ruled out?",
+            "What research or evaluation was done?",
+        ],
+        "questions": [
+            "What alternatives did you consider?",
+            "Were there any options you ruled out early? Why?",
+            "Did you do any proof-of-concepts or research?",
+            "What other approaches did the team suggest?",
+            "Was there an obvious option that you decided against?",
+            "Did you consider doing nothing or deferring the decision?",
+        ],
+        "avoid": [
+            "Accepting just 2 options without probing for more",
+            "Not asking why alternatives were rejected",
+            "Missing the 'do nothing' option consideration",
+        ],
+    },
+    InterviewState.DECISION: {
+        "goal": "Clearly capture what was ultimately decided",
+        "focus": [
+            "What was the final decision?",
+            "When was it made and by whom?",
+            "Was there consensus or disagreement?",
+            "What specific choice or implementation was selected?",
+        ],
+        "questions": [
+            "So what did you ultimately decide?",
+            "Can you state the decision clearly in one sentence?",
+            "Was this a team decision or individual?",
+            "Was there disagreement? How was it resolved?",
+            "When did you make the final call?",
+        ],
+        "avoid": [
+            "Conflating the decision with the rationale",
+            "Not getting a clear, quotable decision statement",
+            "Missing who actually made the decision",
+        ],
+    },
+    InterviewState.RATIONALE: {
+        "goal": "Understand why this decision was made over alternatives",
+        "focus": [
+            "Why was this option chosen over others?",
+            "What trade-offs were accepted?",
+            "What risks were considered?",
+            "What would change this decision in the future?",
+        ],
+        "questions": [
+            "Why did you choose this over the alternatives?",
+            "What trade-offs did you accept with this choice?",
+            "What risks did you consider?",
+            "What would make you revisit this decision?",
+            "Was there anything that almost changed your mind?",
+            "What's the biggest downside of this choice?",
+        ],
+        "avoid": [
+            "Accepting vague rationale like 'it was best'",
+            "Not probing for trade-offs and risks",
+            "Missing the conditions for revisiting the decision",
+        ],
+    },
+    InterviewState.SUMMARIZING: {
+        "goal": "Confirm the complete decision trace with the user",
+        "focus": [
+            "Summarize all captured information clearly",
+            "Confirm accuracy with the user",
+            "Ask if anything is missing",
+            "Thank them for their time",
+        ],
+        "questions": [
+            "Let me summarize what I captured. Does this look correct?",
+            "Is there anything I missed or got wrong?",
+            "Any additional context you'd like to add?",
+        ],
+        "avoid": [
+            "Not reading back the captured information",
+            "Ending abruptly without confirmation",
+            "Missing important details in the summary",
+        ],
+    },
+}
 
-    def __init__(self, fast_mode: bool = False):
+
+def _format_stage_guidance(state: InterviewState) -> str:
+    """Format the stage-specific guidance into a prompt section.
+
+    Args:
+        state: The current interview state
+
+    Returns:
+        Formatted guidance string for the LLM
+    """
+    stage_info = STAGE_PROMPTS.get(state, STAGE_PROMPTS[InterviewState.OPENING])
+
+    guidance_parts = [
+        f"CURRENT STAGE: {state.value.upper()}",
+        f"GOAL: {stage_info['goal']}",
+        "",
+        "FOCUS AREAS:",
+    ]
+
+    for focus in stage_info["focus"]:
+        guidance_parts.append(f"  - {focus}")
+
+    guidance_parts.extend([
+        "",
+        "EXAMPLE QUESTIONS (pick ONE that fits the context):",
+    ])
+
+    for question in stage_info["questions"][:3]:  # Limit to avoid prompt bloat
+        guidance_parts.append(f'  - "{question}"')
+
+    guidance_parts.extend([
+        "",
+        "AVOID:",
+    ])
+
+    for avoid in stage_info["avoid"]:
+        guidance_parts.append(f"  - {avoid}")
+
+    return "\n".join(guidance_parts)
+
+
+class InterviewAgent:
+    """AI-powered interview agent for knowledge capture using NVIDIA Llama.
+
+    Features:
+    - Enhanced stage-specific prompts (ML-P2-1) with goals, focus areas,
+      example questions, and anti-patterns to avoid
+    - Per-user rate limiting (SEC-009) via user_id parameter
+    - Fast mode for instant pre-written responses
+    """
+
+    def __init__(self, fast_mode: bool = False, user_id: str | None = None):
         """Initialize the interview agent.
 
         Args:
             fast_mode: If True, uses pre-written responses for faster interaction.
                       If False, uses LLM for each response (slower but more dynamic).
+            user_id: User ID for per-user rate limiting (SEC-009).
         """
         self.llm = get_llm_client()
         self.extractor = DecisionExtractor()
         self.state = InterviewState.OPENING
         self.fast_mode = fast_mode
+        self.user_id = user_id
 
     def _get_system_prompt(self) -> str:
         return """You are a knowledge capture assistant helping engineers document their decisions.
-Your goal is to extract a complete decision trace with:
-1. Trigger - What prompted the decision
-2. Context - Background information
-3. Options - Alternatives considered
-4. Decision - What was chosen
-5. Rationale - Why it was chosen
 
-Guide the conversation naturally. Ask follow-up questions to get complete information.
-Be conversational but focused. When you have enough information for a stage, move to the next.
+Your goal is to extract a complete decision trace with these components:
+1. TRIGGER - What prompted the decision (problem, need, event)
+2. CONTEXT - Background, constraints, environment
+3. OPTIONS - Alternatives considered (including rejected ones)
+4. DECISION - What was ultimately chosen
+5. RATIONALE - Why this choice was made over others
 
-Current conversation state will be provided. Respond appropriately for that state."""
+INTERVIEW GUIDELINES:
+- Ask ONE question at a time (never multiple questions)
+- Keep responses concise (2-3 sentences max)
+- Be conversational and encouraging
+- Listen carefully and reference what the user has said
+- Probe deeper when answers are vague
+- Move to the next stage when you have enough detail
+
+You will receive stage-specific guidance for what to focus on."""
 
     def _get_stage_prompt(self, state: InterviewState) -> str:
-        prompts = {
-            InterviewState.OPENING: "Welcome the user and ask what decision or knowledge they want to capture.",
-            InterviewState.TRIGGER: "Ask about what triggered this decision. What problem were they solving?",
-            InterviewState.CONTEXT: "Ask about the context. What was the situation? What constraints existed?",
-            InterviewState.OPTIONS: "Ask what alternatives were considered. What other approaches were possible?",
-            InterviewState.DECISION: "Ask what was ultimately decided. What did they choose?",
-            InterviewState.RATIONALE: "Ask why this decision was made. What factors influenced the choice?",
-            InterviewState.SUMMARIZING: "Summarize the decision trace and confirm with the user.",
-        }
-        return prompts.get(state, "Continue the conversation naturally.")
+        """Get the detailed prompt guidance for a specific interview stage.
+
+        ML-P2-1: Returns rich guidance including goal, focus areas,
+        example questions, and anti-patterns.
+
+        Args:
+            state: The current interview state
+
+        Returns:
+            Formatted stage guidance string
+        """
+        return _format_stage_guidance(state)
 
     def _determine_next_state(self, history: list[dict]) -> InterviewState:
-        """Determine the next state based on conversation history."""
-        # Count substantial user responses
+        """Determine the next state based on conversation history.
+
+        Uses response count heuristic for state progression.
+        Future improvement (ML-P2-2): Add data quality checks per stage.
+
+        Args:
+            history: List of conversation messages
+
+        Returns:
+            The appropriate next state
+        """
+        # Count substantial user responses (>20 chars indicates real content)
         user_responses = [
             m for m in history
             if m["role"] == "user" and len(m["content"]) > 20
         ]
 
-        if len(user_responses) == 0:
+        # State progression based on response count
+        # This is a simple heuristic; ML-P2-2 will add quality-based progression
+        response_count = len(user_responses)
+
+        if response_count == 0:
             return InterviewState.TRIGGER
-        elif len(user_responses) == 1:
+        elif response_count == 1:
             return InterviewState.CONTEXT
-        elif len(user_responses) == 2:
+        elif response_count == 2:
             return InterviewState.OPTIONS
-        elif len(user_responses) == 3:
+        elif response_count == 3:
             return InterviewState.DECISION
-        elif len(user_responses) == 4:
+        elif response_count == 4:
             return InterviewState.RATIONALE
         else:
             return InterviewState.SUMMARIZING
@@ -88,7 +314,15 @@ Current conversation state will be provided. Respond appropriately for that stat
         user_message: str,
         history: list[dict],
     ) -> tuple[str, list[Entity]]:
-        """Process a user message and generate a response."""
+        """Process a user message and generate a response.
+
+        Args:
+            user_message: The user's message
+            history: Previous conversation history
+
+        Returns:
+            Tuple of (response text, extracted entities)
+        """
         # Determine current state
         self.state = self._determine_next_state(history)
 
@@ -96,31 +330,38 @@ Current conversation state will be provided. Respond appropriately for that stat
         if self.fast_mode:
             return self._generate_fallback_response(user_message, history), []
 
-        # Build prompt
+        # Build prompt with stage-specific guidance (ML-P2-1)
         system_prompt = self._get_system_prompt()
-        stage_prompt = self._get_stage_prompt(self.state)
+        stage_guidance = self._get_stage_prompt(self.state)
 
-        # Format conversation history
+        # Format conversation history (keep last 10 for context)
         history_text = "\n".join(
             f"{m['role'].title()}: {m['content']}" for m in history[-10:]
         )
 
-        prompt = f"""Current stage: {self.state.value}
-Stage guidance: {stage_prompt}
+        prompt = f"""{stage_guidance}
 
-Conversation so far:
+---
+
+CONVERSATION HISTORY:
 {history_text}
 
 User: {user_message}
 
-Respond naturally as the interview assistant. Keep responses concise (2-3 sentences).
-Ask follow-up questions when needed to get complete information."""
+---
+
+Based on the stage guidance above, respond naturally as the interview assistant.
+- Ask only ONE follow-up question relevant to the current stage
+- Keep your response concise (2-3 sentences)
+- Reference something specific the user said to show you're listening"""
 
         try:
+            # SEC-009: Pass user_id for per-user rate limiting
             response_text = await self.llm.generate(
                 prompt,
                 system_prompt=system_prompt,
                 temperature=0.7,
+                user_id=self.user_id,
             )
 
             # Skip entity extraction during chat for faster responses
@@ -136,21 +377,50 @@ Ask follow-up questions when needed to get complete information."""
         user_message: str,
         history: list[dict],
     ) -> str:
-        """Generate a pre-written response for fast interaction."""
+        """Generate a pre-written response for fast interaction.
+
+        Used in fast_mode or when LLM is unavailable.
+
+        Args:
+            user_message: The user's message
+            history: Previous conversation history
+
+        Returns:
+            Pre-written response appropriate for the current stage
+        """
         self.state = self._determine_next_state(history)
 
         responses = {
-            InterviewState.TRIGGER: "Great, that's a good start! Can you tell me more about the context? What was the situation you were in, and what constraints or requirements did you have?",
-            InterviewState.CONTEXT: "I understand the situation better now. What alternatives or options did you consider before making this decision?",
-            InterviewState.OPTIONS: "Those are interesting alternatives. What did you ultimately decide to do? What was your final choice?",
-            InterviewState.DECISION: "Got it. Why did you choose this approach over the other options? What factors influenced your decision?",
-            InterviewState.RATIONALE: "Excellent! I have all the key information now. Let me save this decision trace to your knowledge graph.",
-            InterviewState.SUMMARIZING: "This decision has been captured! You can view it in the Knowledge Graph or start documenting another decision.",
+            InterviewState.TRIGGER: (
+                "Great, that's a good start! Can you tell me more about the context? "
+                "What was the situation you were in, and what constraints or requirements did you have?"
+            ),
+            InterviewState.CONTEXT: (
+                "I understand the situation better now. What alternatives or options "
+                "did you consider before making this decision?"
+            ),
+            InterviewState.OPTIONS: (
+                "Those are interesting alternatives. What did you ultimately decide to do? "
+                "What was your final choice?"
+            ),
+            InterviewState.DECISION: (
+                "Got it. Why did you choose this approach over the other options? "
+                "What factors influenced your decision?"
+            ),
+            InterviewState.RATIONALE: (
+                "Excellent! I have all the key information now. "
+                "Let me save this decision trace to your knowledge graph."
+            ),
+            InterviewState.SUMMARIZING: (
+                "This decision has been captured! You can view it in the Knowledge Graph "
+                "or start documenting another decision."
+            ),
         }
 
         return responses.get(
             self.state,
-            "Thanks for sharing! What decision would you like to document? Tell me what triggered this decision or what problem you were trying to solve.",
+            "Thanks for sharing! What decision would you like to document? "
+            "Tell me what triggered this decision or what problem you were trying to solve.",
         )
 
     async def stream_response(
@@ -158,7 +428,15 @@ Ask follow-up questions when needed to get complete information."""
         user_message: str,
         history: list[dict],
     ) -> AsyncIterator[tuple[str, list[Entity]]]:
-        """Stream a response (for WebSocket use)."""
+        """Stream a response (for WebSocket use).
+
+        Args:
+            user_message: The user's message
+            history: Previous conversation history
+
+        Yields:
+            Tuples of (response chunk, extracted entities)
+        """
         # Determine current state
         self.state = self._determine_next_state(history)
 
@@ -168,32 +446,39 @@ Ask follow-up questions when needed to get complete information."""
             yield response, []
             return
 
-        # Build prompt
+        # Build prompt with stage-specific guidance (ML-P2-1)
         system_prompt = self._get_system_prompt()
-        stage_prompt = self._get_stage_prompt(self.state)
+        stage_guidance = self._get_stage_prompt(self.state)
 
         # Format conversation history
         history_text = "\n".join(
             f"{m['role'].title()}: {m['content']}" for m in history[-10:]
         )
 
-        prompt = f"""Current stage: {self.state.value}
-Stage guidance: {stage_prompt}
+        prompt = f"""{stage_guidance}
 
-Conversation so far:
+---
+
+CONVERSATION HISTORY:
 {history_text}
 
 User: {user_message}
 
-Respond naturally as the interview assistant. Keep responses concise (2-3 sentences).
-Ask follow-up questions when needed to get complete information."""
+---
+
+Based on the stage guidance above, respond naturally as the interview assistant.
+- Ask only ONE follow-up question relevant to the current stage
+- Keep your response concise (2-3 sentences)
+- Reference something specific the user said to show you're listening"""
 
         try:
             full_response = ""
+            # SEC-009: Pass user_id for per-user rate limiting
             async for chunk in self.llm.generate_stream(
                 prompt,
                 system_prompt=system_prompt,
                 temperature=0.7,
+                user_id=self.user_id,
             ):
                 full_response += chunk
                 yield chunk, []
@@ -206,7 +491,14 @@ Ask follow-up questions when needed to get complete information."""
             yield self._generate_fallback_response(user_message, history), []
 
     async def synthesize_decision(self, history: list[dict]) -> dict:
-        """Synthesize a complete decision trace from the conversation."""
+        """Synthesize a complete decision trace from the conversation.
+
+        Args:
+            history: The complete conversation history
+
+        Returns:
+            Decision trace dict with trigger, context, options, decision, rationale, confidence
+        """
         conversation_text = "\n".join(
             f"{m['role'].title()}: {m['content']}" for m in history
         )
@@ -229,19 +521,58 @@ Return a JSON object with:
 Return ONLY valid JSON."""
 
         try:
-            response = await self.llm.generate(prompt, temperature=0.3)
-            text = response.strip()
+            # SEC-009: Pass user_id for per-user rate limiting
+            response = await self.llm.generate(
+                prompt,
+                temperature=0.3,
+                user_id=self.user_id,
+            )
 
-            # Remove markdown code blocks if present
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1]
-                text = text.rsplit("```", 1)[0]
+            # Use robust JSON extraction
+            result = extract_json_from_response(response)
 
-            return json.loads(text)
+            if result is None:
+                logger.warning("Failed to parse synthesized decision from LLM response")
+                return self._create_default_decision(history)
 
-        except JSONDecodeError as e:
-            logger.error(f"Failed to parse synthesized decision: {e}")
-            return {}
+            # Validate required fields and add defaults
+            return {
+                "trigger": result.get("trigger", "Unknown trigger"),
+                "context": result.get("context", ""),
+                "options": result.get("options", []),
+                "decision": result.get("decision", ""),
+                "rationale": result.get("rationale", ""),
+                "confidence": result.get("confidence", 0.5),
+            }
+
         except (TimeoutError, ConnectionError) as e:
             logger.error(f"LLM connection error during synthesis: {e}")
-            return {}
+            return self._create_default_decision(history)
+        except Exception as e:
+            logger.error(f"Unexpected error during synthesis: {e}")
+            return self._create_default_decision(history)
+
+    def _create_default_decision(self, history: list[dict]) -> dict:
+        """Create a default decision structure from conversation history.
+
+        Used as fallback when LLM synthesis fails.
+
+        Args:
+            history: The conversation history
+
+        Returns:
+            Default decision trace dict
+        """
+        # Extract user messages as raw content
+        user_messages = [
+            m["content"] for m in history if m["role"] == "user"
+        ]
+
+        return {
+            "trigger": user_messages[0] if len(user_messages) > 0 else "Unknown trigger",
+            "context": user_messages[1] if len(user_messages) > 1 else "",
+            "options": [],
+            "decision": user_messages[3] if len(user_messages) > 3 else "",
+            "rationale": user_messages[4] if len(user_messages) > 4 else "",
+            "confidence": 0.3,  # Low confidence for fallback
+        }

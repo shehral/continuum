@@ -1,24 +1,118 @@
-"""Decision and entity extraction with embedding-based knowledge graph."""
+"""Decision and entity extraction with embedding-based knowledge graph.
 
+KG-P0-2: LLM response caching to avoid redundant API calls
+KG-P0-3: Relationship type validation before storing
+"""
+
+import hashlib
 import json
 from datetime import UTC, datetime
-from json import JSONDecodeError
 from typing import Optional
 from uuid import uuid4
 
+import redis.asyncio as redis
 from neo4j.exceptions import ClientError, DatabaseError
 
+from config import get_settings
 from db.neo4j import get_neo4j_session
-from models.ontology import get_canonical_name
+from models.ontology import (
+    ENTITY_ONLY_RELATIONSHIPS,
+    get_canonical_name,
+    validate_entity_relationship,
+)
 from models.schemas import DecisionCreate, Entity
 from services.embeddings import get_embedding_service
 from services.entity_resolver import EntityResolver
 from services.llm import get_llm_client
 from services.parser import Conversation
+from utils.json_extraction import extract_json_from_response
 from utils.logging import get_logger
 from utils.vectors import cosine_similarity
 
 logger = get_logger(__name__)
+
+# Few-shot decision extraction prompt with Chain-of-Thought reasoning
+DECISION_EXTRACTION_PROMPT = """Analyze this conversation and extract any technical decisions made.
+
+## What constitutes a decision?
+A decision is a choice made between alternatives that affects the project. It should have:
+- A trigger (problem, requirement, or question that prompted the decision)
+- Context (background information, constraints)
+- Options (alternatives that were considered)
+- The actual decision (what was chosen)
+- Rationale (why this choice was made)
+
+## Examples
+
+### Example 1: Single clear decision
+Conversation:
+"We need to pick a database. I looked at PostgreSQL and MongoDB. PostgreSQL seems better for our relational data needs and the team already knows SQL. Let's go with PostgreSQL."
+
+Output:
+```json
+[
+  {{
+    "trigger": "Need to select a database for the project",
+    "context": "Team has SQL experience, data is relational in nature",
+    "options": ["PostgreSQL", "MongoDB"],
+    "decision": "Use PostgreSQL as the primary database",
+    "rationale": "Better fit for relational data and team already has SQL expertise",
+    "confidence": 0.95
+  }}
+]
+```
+
+### Example 2: Multiple decisions in one conversation
+Conversation:
+"For the frontend, React makes sense since we're already using it elsewhere. For styling, I considered Tailwind vs CSS modules. Tailwind will speed up development, so let's use that."
+
+Output:
+```json
+[
+  {{
+    "trigger": "Need to choose frontend framework",
+    "context": "Team already using React in other projects",
+    "options": ["React"],
+    "decision": "Use React for the frontend",
+    "rationale": "Consistency with existing projects and team familiarity",
+    "confidence": 0.9
+  }},
+  {{
+    "trigger": "Need to choose a styling approach",
+    "context": "Building frontend with React",
+    "options": ["Tailwind CSS", "CSS modules"],
+    "decision": "Use Tailwind CSS for styling",
+    "rationale": "Faster development velocity with utility classes",
+    "confidence": 0.85
+  }}
+]
+```
+
+### Example 3: No decisions (just discussion)
+Conversation:
+"What do you think about microservices? I've heard they can be complex but offer good scalability. We should probably discuss this more with the team before deciding anything."
+
+Output:
+```json
+[]
+```
+
+## Instructions
+For each decision found, provide:
+- trigger: What prompted the decision (be specific)
+- context: Relevant background (constraints, requirements, team situation)
+- options: All alternatives considered (include the chosen one)
+- decision: What was decided (clear statement)
+- rationale: Why this choice (key factors)
+- confidence: 0.0-1.0 (how clear/complete the decision is)
+
+If no clear decisions are found, return an empty array [].
+
+## Conversation to analyze:
+{conversation_text}
+
+Return ONLY valid JSON, no markdown code blocks or explanation."""
+
 
 # Few-shot entity extraction prompt with Chain-of-Thought reasoning
 ENTITY_EXTRACTION_PROMPT = """Extract technical entities from this decision text.
@@ -198,6 +292,86 @@ Analyze the relationship. Return ONLY valid JSON:
 }}"""
 
 
+class LLMResponseCache:
+    """Redis-based cache for LLM extraction responses (KG-P0-2).
+
+    Caches LLM responses keyed by:
+    - Hash of input text
+    - Prompt template version
+    - Extraction type (decision, entity, relationship)
+
+    This avoids redundant API calls when reprocessing the same content.
+    """
+
+    def __init__(self):
+        self._redis: redis.Redis | None = None
+        self._settings = get_settings()
+
+    async def _get_redis(self) -> redis.Redis | None:
+        """Get or create Redis connection for caching."""
+        if self._redis is None:
+            try:
+                self._redis = redis.from_url(
+                    self._settings.redis_url,
+                    encoding="utf-8",
+                    decode_responses=True,
+                )
+                await self._redis.ping()
+            except Exception as e:
+                logger.warning(f"LLM cache Redis connection failed: {e}")
+                self._redis = None
+        return self._redis
+
+    def _get_cache_key(self, text: str, extraction_type: str) -> str:
+        """Generate a cache key for the LLM response.
+
+        Format: llm:{version}:{type}:{hash(text)}
+        """
+        text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
+        version = self._settings.llm_extraction_prompt_version
+        return f"llm:{version}:{extraction_type}:{text_hash}"
+
+    async def get(self, text: str, extraction_type: str) -> dict | list | None:
+        """Get cached LLM response if available."""
+        if not self._settings.llm_cache_enabled:
+            return None
+
+        redis_client = await self._get_redis()
+        if redis_client is None:
+            return None
+
+        try:
+            cache_key = self._get_cache_key(text, extraction_type)
+            cached = await redis_client.get(cache_key)
+            if cached:
+                logger.debug(f"LLM cache hit for {extraction_type}")
+                return json.loads(cached)
+        except Exception as e:
+            logger.warning(f"LLM cache read error: {e}")
+
+        return None
+
+    async def set(self, text: str, extraction_type: str, response: dict | list) -> None:
+        """Cache an LLM response."""
+        if not self._settings.llm_cache_enabled:
+            return
+
+        redis_client = await self._get_redis()
+        if redis_client is None:
+            return
+
+        try:
+            cache_key = self._get_cache_key(text, extraction_type)
+            await redis_client.setex(
+                cache_key,
+                self._settings.llm_cache_ttl,
+                json.dumps(response),
+            )
+            logger.debug(f"LLM cache set for {extraction_type}")
+        except Exception as e:
+            logger.warning(f"LLM cache write error: {e}")
+
+
 class DecisionExtractor:
     """Extract decisions and entities from conversations using LLM.
 
@@ -207,66 +381,87 @@ class DecisionExtractor:
     - ALTERNATIVE_TO relationship detection
     - SUPERSEDES and CONTRADICTS relationship analysis
     - Embedding generation for semantic search
+    - Multi-tenant user isolation via user_id
+    - Robust JSON parsing for LLM responses
+    - Configurable similarity threshold
+    - LLM response caching (KG-P0-2)
+    - Relationship type validation (KG-P0-3)
     """
 
     def __init__(self):
         self.llm = get_llm_client()
         self.embedding_service = get_embedding_service()
-        self.similarity_threshold = 0.75  # Minimum similarity to create edge
+        self.cache = LLMResponseCache()
+        settings = get_settings()
+        self.similarity_threshold = settings.similarity_threshold
+        self.high_confidence_threshold = settings.high_confidence_similarity_threshold
 
-    async def extract_decisions(self, conversation: Conversation) -> list[DecisionCreate]:
-        """Extract decision traces from a conversation."""
-        prompt = f"""Analyze this conversation and extract any technical decisions made.
-For each decision, identify:
-1. Trigger: What prompted the decision (problem, question, requirement)
-2. Context: Relevant background information
-3. Options: What alternatives were considered
-4. Decision: What was decided
-5. Rationale: Why this decision was made
+    async def extract_decisions(
+        self,
+        conversation: Conversation,
+        bypass_cache: bool = False
+    ) -> list[DecisionCreate]:
+        """Extract decision traces from a conversation using few-shot CoT prompt.
 
-Conversation:
-{conversation.get_full_text()}
+        Args:
+            conversation: The conversation to extract decisions from
+            bypass_cache: If True, skip cache lookup and force fresh extraction
+        """
+        conversation_text = conversation.get_full_text()
 
-Return a JSON array of decisions. Each decision should have:
-{{
-  "trigger": "string",
-  "context": "string",
-  "options": ["string"],
-  "decision": "string",
-  "rationale": "string",
-  "confidence": 0.0-1.0
-}}
+        # Check cache first (KG-P0-2)
+        if not bypass_cache:
+            cached = await self.cache.get(conversation_text, "decisions")
+            if cached is not None:
+                logger.info("Using cached decision extraction")
+                return [
+                    DecisionCreate(
+                        trigger=d.get("trigger", "Unknown trigger"),
+                        context=d.get("context", ""),
+                        options=d.get("options", []),
+                        decision=d.get("decision", ""),
+                        rationale=d.get("rationale", ""),
+                        confidence=d.get("confidence", 0.5),
+                    )
+                    for d in cached
+                    if d.get("decision")
+                ]
 
-If no clear decisions are found, return an empty array [].
-Return ONLY valid JSON, no markdown or explanation."""
+        prompt = DECISION_EXTRACTION_PROMPT.format(
+            conversation_text=conversation_text
+        )
 
         try:
             response = await self.llm.generate(prompt, temperature=0.3)
 
-            # Parse JSON response
-            text = response.strip()
-            # Remove markdown code blocks if present
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1]
-                text = text.rsplit("```", 1)[0]
+            # Use robust JSON extraction
+            decisions_data = extract_json_from_response(response)
 
-            decisions_data = json.loads(text)
+            if decisions_data is None:
+                logger.warning("Failed to parse decisions from LLM response")
+                return []
+
+            # Ensure we have a list
+            if not isinstance(decisions_data, list):
+                logger.warning(f"Expected list, got {type(decisions_data)}")
+                return []
+
+            # Cache the result (KG-P0-2)
+            await self.cache.set(conversation_text, "decisions", decisions_data)
 
             return [
                 DecisionCreate(
-                    trigger=d.get("trigger", ""),
+                    trigger=d.get("trigger", "Unknown trigger"),
                     context=d.get("context", ""),
                     options=d.get("options", []),
                     decision=d.get("decision", ""),
                     rationale=d.get("rationale", ""),
-                    confidence=d.get("confidence", 0.8),
+                    confidence=d.get("confidence", 0.5),
                 )
                 for d in decisions_data
+                if d.get("decision")  # Skip entries without a decision
             ]
 
-        except JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM response as JSON: {e}")
-            return []
         except (TimeoutError, ConnectionError) as e:
             logger.error(f"LLM connection error: {e}")
             return []
@@ -274,74 +469,158 @@ Return ONLY valid JSON, no markdown or explanation."""
             logger.error(f"Unexpected error extracting decisions: {e}")
             return []
 
-    async def extract_entities(self, text: str) -> list[dict]:
+    async def extract_entities(
+        self,
+        text: str,
+        bypass_cache: bool = False
+    ) -> list[dict]:
         """Extract entities from text using few-shot CoT prompt.
+
+        Args:
+            text: The text to extract entities from
+            bypass_cache: If True, skip cache lookup and force fresh extraction
 
         Returns list of dicts with name, type, and confidence.
         """
+        # Check cache first (KG-P0-2)
+        if not bypass_cache:
+            cached = await self.cache.get(text, "entities")
+            if cached is not None:
+                logger.info("Using cached entity extraction")
+                return cached
+
         prompt = ENTITY_EXTRACTION_PROMPT.format(decision_text=text)
 
         try:
             response = await self.llm.generate(prompt, temperature=0.3)
 
-            # Parse JSON response
-            result_text = response.strip()
-            if result_text.startswith("```"):
-                result_text = result_text.split("\n", 1)[1]
-                result_text = result_text.rsplit("```", 1)[0]
+            # Use robust JSON extraction
+            result = extract_json_from_response(response)
 
-            result = json.loads(result_text)
+            if result is None:
+                logger.warning("Failed to parse entity extraction response")
+                return []
+
             entities = result.get("entities", [])
 
             # Log reasoning for debugging
             if result.get("reasoning"):
                 logger.debug(f"Entity reasoning: {result['reasoning']}")
 
+            # Cache the result (KG-P0-2)
+            await self.cache.set(text, "entities", entities)
+
             return entities
 
-        except JSONDecodeError as e:
-            logger.error(f"Failed to parse entity extraction response: {e}")
-            return []
         except (TimeoutError, ConnectionError) as e:
             logger.error(f"LLM connection error during entity extraction: {e}")
             return []
+        except Exception as e:
+            logger.error(f"Unexpected error during entity extraction: {e}")
+            return []
 
     async def extract_entity_relationships(
-        self, entities: list[Entity], context: str = ""
+        self,
+        entities: list[Entity],
+        context: str = "",
+        bypass_cache: bool = False
     ) -> list[dict]:
-        """Extract relationships between entities using few-shot CoT prompt."""
+        """Extract relationships between entities using few-shot CoT prompt.
+
+        Includes relationship type validation (KG-P0-3).
+        """
         if len(entities) < 2:
             return []
 
+        import json as json_module
         entity_names = [e.name if hasattr(e, 'name') else e.get('name', '') for e in entities]
 
+        # Build entity type lookup for validation
+        entity_types = {}
+        for e in entities:
+            name = e.name if hasattr(e, 'name') else e.get('name', '')
+            etype = e.type if hasattr(e, 'type') else e.get('type', 'concept')
+            entity_types[name.lower()] = etype
+
+        # Cache key includes entities and context
+        cache_text = f"{json_module.dumps(sorted(entity_names))}|{context}"
+
+        # Check cache first (KG-P0-2)
+        if not bypass_cache:
+            cached = await self.cache.get(cache_text, "relationships")
+            if cached is not None:
+                logger.info("Using cached relationship extraction")
+                return cached
+
         prompt = ENTITY_RELATIONSHIP_PROMPT.format(
-            entities=json.dumps(entity_names),
+            entities=json_module.dumps(entity_names),
             context=context or "General technical discussion",
         )
 
         try:
             response = await self.llm.generate(prompt, temperature=0.3)
 
-            text = response.strip()
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1]
-                text = text.rsplit("```", 1)[0]
+            # Use robust JSON extraction
+            result = extract_json_from_response(response)
 
-            result = json.loads(text)
+            if result is None:
+                logger.warning("Failed to parse relationship extraction response")
+                return []
+
             relationships = result.get("relationships", [])
 
             # Log reasoning for debugging
             if result.get("reasoning"):
                 logger.debug(f"Relationship reasoning: {result['reasoning']}")
 
-            return relationships
+            # Validate and filter relationships (KG-P0-3)
+            validated_relationships = []
+            for rel in relationships:
+                rel_type = rel.get("type", "RELATED_TO")
+                from_name = rel.get("from", "")
+                to_name = rel.get("to", "")
+                confidence = rel.get("confidence", 0.8)
 
-        except JSONDecodeError as e:
-            logger.error(f"Failed to parse relationship extraction response: {e}")
-            return []
+                # Get entity types for validation
+                from_type = entity_types.get(from_name.lower(), "concept")
+                to_type = entity_types.get(to_name.lower(), "concept")
+
+                # Validate the relationship (KG-P0-3)
+                is_valid, error_msg = validate_entity_relationship(
+                    rel_type, from_type, to_type
+                )
+
+                if is_valid:
+                    validated_relationships.append(rel)
+                else:
+                    # Log invalid relationship for review
+                    logger.warning(
+                        f"Invalid relationship skipped: {from_name} ({from_type}) "
+                        f"-[{rel_type}]-> {to_name} ({to_type}). Reason: {error_msg}"
+                    )
+                    # Try to suggest a valid alternative
+                    if rel_type in ENTITY_ONLY_RELATIONSHIPS:
+                        # Fall back to RELATED_TO if the specific type doesn't work
+                        validated_relationships.append({
+                            "from": from_name,
+                            "to": to_name,
+                            "type": "RELATED_TO",
+                            "confidence": confidence * 0.8,  # Lower confidence for fallback
+                        })
+                        logger.info(
+                            f"Fell back to RELATED_TO for: {from_name} -> {to_name}"
+                        )
+
+            # Cache the validated result (KG-P0-2)
+            await self.cache.set(cache_text, "relationships", validated_relationships)
+
+            return validated_relationships
+
         except (TimeoutError, ConnectionError) as e:
             logger.error(f"LLM connection error during relationship extraction: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error during relationship extraction: {e}")
             return []
 
     async def extract_decision_relationship(
@@ -362,12 +641,12 @@ Return ONLY valid JSON, no markdown or explanation."""
         try:
             response = await self.llm.generate(prompt, temperature=0.3)
 
-            text = response.strip()
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1]
-                text = text.rsplit("```", 1)[0]
+            # Use robust JSON extraction
+            result = extract_json_from_response(response)
 
-            result = json.loads(text)
+            if result is None:
+                logger.warning("Failed to parse decision relationship response")
+                return None
 
             if result.get("relationship") is None:
                 return None
@@ -378,21 +657,31 @@ Return ONLY valid JSON, no markdown or explanation."""
                 "reasoning": result.get("reasoning", ""),
             }
 
-        except JSONDecodeError as e:
-            logger.error(f"Failed to parse decision relationship response: {e}")
-            return None
         except (TimeoutError, ConnectionError) as e:
             logger.error(f"LLM connection error during decision relationship analysis: {e}")
             return None
+        except Exception as e:
+            logger.error(f"Unexpected error during decision relationship analysis: {e}")
+            return None
 
-    async def save_decision(self, decision: DecisionCreate, source: str = "unknown") -> str:
+    async def save_decision(
+        self,
+        decision: DecisionCreate,
+        source: str = "unknown",
+        user_id: str = "anonymous",
+    ) -> str:
         """Save a decision to Neo4j with embeddings and rich relationships.
 
         Uses entity resolution to prevent duplicates and canonicalize names.
+        Includes user_id for multi-tenant data isolation.
 
         Args:
             decision: The decision to save
             source: Where this decision came from ('claude_logs', 'interview', 'manual')
+            user_id: The user ID for multi-tenant isolation (default: "anonymous")
+
+        Returns:
+            The ID of the created decision
         """
         decision_id = str(uuid4())
         created_at = datetime.now(UTC).isoformat()
@@ -420,7 +709,7 @@ Return ONLY valid JSON, no markdown or explanation."""
 
         session = await get_neo4j_session()
         async with session:
-            # Create decision node with embedding
+            # Create decision node with embedding and user_id
             if embedding:
                 await session.run(
                     """
@@ -434,6 +723,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                         confidence: $confidence,
                         created_at: $created_at,
                         source: $source,
+                        user_id: $user_id,
                         embedding: $embedding
                     })
                     """,
@@ -446,6 +736,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                     confidence=decision.confidence,
                     created_at=created_at,
                     source=decision_source,
+                    user_id=user_id,
                     embedding=embedding,
                 )
             else:
@@ -460,7 +751,8 @@ Return ONLY valid JSON, no markdown or explanation."""
                         rationale: $rationale,
                         confidence: $confidence,
                         created_at: $created_at,
-                        source: $source
+                        source: $source,
+                        user_id: $user_id
                     })
                     """,
                     id=decision_id,
@@ -472,7 +764,10 @@ Return ONLY valid JSON, no markdown or explanation."""
                     confidence=decision.confidence,
                     created_at=created_at,
                     source=decision_source,
+                    user_id=user_id,
                 )
+
+            logger.info(f"Created decision {decision_id} for user {user_id}")
 
             # Extract entities with enhanced prompt
             full_text = f"{decision.trigger} {decision.context} {decision.decision} {decision.rationale}"
@@ -580,7 +875,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                     from_name = rel.get("from")
                     to_name = rel.get("to")
 
-                    # Validate relationship type
+                    # Validate relationship type (already done in extract_entity_relationships)
                     valid_types = ["IS_A", "PART_OF", "RELATED_TO", "DEPENDS_ON", "ALTERNATIVE_TO"]
                     if rel_type not in valid_types:
                         rel_type = "RELATED_TO"
@@ -609,11 +904,13 @@ Return ONLY valid JSON, no markdown or explanation."""
                         )
 
             # Find and link similar decisions (if embedding exists)
+            # Only compare with decisions from the same user for isolation
             if embedding:
-                await self._link_similar_decisions(session, decision_id, embedding)
+                await self._link_similar_decisions(session, decision_id, embedding, user_id)
 
             # Create temporal chains (INFLUENCED_BY)
-            await self._create_temporal_chains(session, decision_id)
+            # Only within the same user's decisions
+            await self._create_temporal_chains(session, decision_id, user_id)
 
         return decision_id
 
@@ -622,14 +919,20 @@ Return ONLY valid JSON, no markdown or explanation."""
         session,
         decision_id: str,
         embedding: list[float],
+        user_id: str,
     ):
-        """Find semantically similar decisions and create SIMILAR_TO edges."""
+        """Find semantically similar decisions and create SIMILAR_TO edges.
+
+        Only compares within the same user's decisions for multi-tenant isolation.
+        Uses configurable similarity threshold from settings.
+        """
         try:
-            # Use Neo4j vector search to find similar decisions
+            # Use Neo4j vector search to find similar decisions within user scope
             result = await session.run(
                 """
                 MATCH (d:DecisionTrace)
                 WHERE d.id <> $id AND d.embedding IS NOT NULL
+                  AND (d.user_id = $user_id OR d.user_id IS NULL)
                 WITH d, gds.similarity.cosine(d.embedding, $embedding) AS similarity
                 WHERE similarity > $threshold
                 RETURN d.id AS similar_id, similarity
@@ -639,6 +942,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                 id=decision_id,
                 embedding=embedding,
                 threshold=self.similarity_threshold,
+                user_id=user_id,
             )
 
             records = [r async for r in result]
@@ -647,39 +951,49 @@ Return ONLY valid JSON, no markdown or explanation."""
                 similar_id = record["similar_id"]
                 similarity = record["similarity"]
 
+                # Determine confidence tier
+                confidence_tier = "high" if similarity >= self.high_confidence_threshold else "moderate"
+
                 await session.run(
                     """
                     MATCH (d1:DecisionTrace {id: $id1})
                     MATCH (d2:DecisionTrace {id: $id2})
                     MERGE (d1)-[r:SIMILAR_TO]->(d2)
-                    SET r.score = $score
+                    SET r.score = $score, r.confidence_tier = $tier
                     """,
                     id1=decision_id,
                     id2=similar_id,
                     score=similarity,
+                    tier=confidence_tier,
                 )
-                logger.info(f"Linked similar decision {similar_id} (score: {similarity:.3f})")
+                logger.info(f"Linked similar decision {similar_id} (score: {similarity:.3f}, tier: {confidence_tier})")
 
         except (ClientError, DatabaseError) as e:
             # GDS library may not be installed, fall back to manual calculation
             logger.debug(f"Vector search failed (GDS may not be installed): {e}")
-            await self._link_similar_decisions_manual(session, decision_id, embedding)
+            await self._link_similar_decisions_manual(session, decision_id, embedding, user_id)
 
     async def _link_similar_decisions_manual(
         self,
         session,
         decision_id: str,
         embedding: list[float],
+        user_id: str,
     ):
-        """Fallback: Calculate similarity manually without GDS."""
+        """Fallback: Calculate similarity manually without GDS.
+
+        Only compares within the same user's decisions.
+        """
         try:
             result = await session.run(
                 """
                 MATCH (d:DecisionTrace)
                 WHERE d.id <> $id AND d.embedding IS NOT NULL
+                  AND (d.user_id = $user_id OR d.user_id IS NULL)
                 RETURN d.id AS other_id, d.embedding AS other_embedding
-                """
-                , id=decision_id
+                """,
+                id=decision_id,
+                user_id=user_id,
             )
 
             records = [r async for r in result]
@@ -692,37 +1006,46 @@ Return ONLY valid JSON, no markdown or explanation."""
                 similarity = cosine_similarity(embedding, other_embedding)
 
                 if similarity > self.similarity_threshold:
+                    # Determine confidence tier
+                    confidence_tier = "high" if similarity >= self.high_confidence_threshold else "moderate"
+
                     await session.run(
                         """
                         MATCH (d1:DecisionTrace {id: $id1})
                         MATCH (d2:DecisionTrace {id: $id2})
                         MERGE (d1)-[r:SIMILAR_TO]->(d2)
-                        SET r.score = $score
+                        SET r.score = $score, r.confidence_tier = $tier
                         """,
                         id1=decision_id,
                         id2=other_id,
                         score=similarity,
+                        tier=confidence_tier,
                     )
-                    logger.info(f"Linked similar decision {other_id} (score: {similarity:.3f})")
+                    logger.info(f"Linked similar decision {other_id} (score: {similarity:.3f}, tier: {confidence_tier})")
 
         except (ClientError, DatabaseError) as e:
             logger.error(f"Manual similarity linking failed: {e}")
 
-    async def _create_temporal_chains(self, session, decision_id: str):
-        """Create INFLUENCED_BY edges based on shared entities and temporal order."""
+    async def _create_temporal_chains(self, session, decision_id: str, user_id: str):
+        """Create INFLUENCED_BY edges based on shared entities and temporal order.
+
+        Only creates chains within the same user's decisions.
+        """
         try:
-            # Find older decisions that share entities with this one
+            # Find older decisions that share entities with this one (within user scope)
             await session.run(
                 """
                 MATCH (d_new:DecisionTrace {id: $new_id})
                 MATCH (d_old:DecisionTrace)-[:INVOLVES]->(e:Entity)<-[:INVOLVES]-(d_new)
                 WHERE d_old.id <> d_new.id AND d_old.created_at < d_new.created_at
+                  AND (d_old.user_id = $user_id OR d_old.user_id IS NULL)
                 WITH d_new, d_old, count(DISTINCT e) AS shared_count
                 WHERE shared_count >= 2
                 MERGE (d_new)-[r:INFLUENCED_BY]->(d_old)
                 SET r.shared_entities = shared_count
                 """,
                 new_id=decision_id,
+                user_id=user_id,
             )
             logger.debug(f"Created temporal chains for decision {decision_id}")
         except (ClientError, DatabaseError) as e:

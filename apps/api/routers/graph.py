@@ -1,8 +1,12 @@
-"""Knowledge graph API endpoints with semantic search and validation."""
+"""Knowledge graph API endpoints with semantic search and validation.
+
+All graph operations are user-isolated. Users can only access nodes
+and relationships belonging to their own data.
+"""
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from neo4j.exceptions import ClientError, DatabaseError, DriverError
 from pydantic import BaseModel
 
@@ -11,9 +15,12 @@ from models.schemas import (
     GraphData,
     GraphEdge,
     GraphNode,
+    HybridSearchRequest,
+    HybridSearchResult,
     SemanticSearchRequest,
     SimilarDecision,
 )
+from routers.auth import get_current_user_id
 from services.embeddings import get_embedding_service
 from utils.logging import get_logger
 from utils.vectors import cosine_similarity
@@ -68,6 +75,14 @@ class AnalyzeRelationshipsResponse(BaseModel):
     contradicts_created: int
 
 
+def _user_filter_clause(alias: str = "d") -> str:
+    """Return a Cypher WHERE clause for user isolation.
+
+    Includes backward compatibility for data without user_id.
+    """
+    return f"({alias}.user_id = $user_id OR {alias}.user_id IS NULL)"
+
+
 @router.get("", response_model=GraphData)
 async def get_graph(
     include_similarity: bool = Query(True, description="Include SIMILAR_TO edges"),
@@ -77,33 +92,42 @@ async def get_graph(
     include_supersessions: bool = Query(False, description="Include SUPERSEDES edges"),
     source_filter: Optional[str] = Query(None, description="Filter by source: claude_logs, interview, manual, unknown"),
     min_confidence: float = Query(0.0, ge=0.0, le=1.0, description="Minimum confidence for relationships"),
+    user_id: str = Depends(get_current_user_id),
 ):
-    """Get the full knowledge graph with all relationship types."""
+    """Get the user's knowledge graph with all relationship types.
+
+    Users can only see their own decisions and related entities.
+    """
     try:
         session = await get_neo4j_session()
         async with session:
             nodes = []
             edges = []
+            decision_ids = set()  # Track which decisions belong to user
 
-            # Build decision query with optional source filter
+            # Build decision query with user isolation and optional source filter
             if source_filter:
                 decision_query = """
                     MATCH (d:DecisionTrace)
-                    WHERE d.source = $source OR (d.source IS NULL AND $source = 'unknown')
+                    WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+                    AND (d.source = $source OR (d.source IS NULL AND $source = 'unknown'))
                     RETURN d, d.embedding IS NOT NULL AS has_embedding
                 """
-                result = await session.run(decision_query, source=source_filter)
+                result = await session.run(decision_query, source=source_filter, user_id=user_id)
             else:
                 result = await session.run(
                     """
                     MATCH (d:DecisionTrace)
+                    WHERE d.user_id = $user_id OR d.user_id IS NULL
                     RETURN d, d.embedding IS NOT NULL AS has_embedding
-                    """
+                    """,
+                    user_id=user_id,
                 )
 
             async for record in result:
                 d = record["d"]
                 has_embedding = record["has_embedding"]
+                decision_ids.add(d["id"])
                 nodes.append(
                     GraphNode(
                         id=d["id"],
@@ -123,17 +147,22 @@ async def get_graph(
                     )
                 )
 
-            # Get all entity nodes
+            # Get entities connected to user's decisions only
             result = await session.run(
                 """
-                MATCH (e:Entity)
+                MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+                WHERE d.user_id = $user_id OR d.user_id IS NULL
+                WITH DISTINCT e
                 RETURN e, e.embedding IS NOT NULL AS has_embedding
-                """
+                """,
+                user_id=user_id,
             )
 
+            entity_ids = set()
             async for record in result:
                 e = record["e"]
                 has_embedding = record["has_embedding"]
+                entity_ids.add(e["id"])
                 nodes.append(
                     GraphNode(
                         id=e["id"],
@@ -161,7 +190,9 @@ async def get_graph(
             if include_supersessions:
                 rel_types.append("SUPERSEDES")
 
-            # Get all relationships with confidence filtering
+            # Get relationships only between user's nodes
+            # For decision-decision relationships, both must belong to user
+            # For decision-entity relationships, the decision must belong to user
             result = await session.run(
                 """
                 MATCH (a)-[r]->(b)
@@ -169,16 +200,38 @@ async def get_graph(
                 AND type(r) IN $rel_types
                 AND (r.confidence IS NULL OR r.confidence >= $min_confidence)
                 AND (r.score IS NULL OR r.score >= $min_confidence)
+                // User isolation: at least one endpoint must be user's decision
+                AND (
+                    (a:DecisionTrace AND (a.user_id = $user_id OR a.user_id IS NULL))
+                    OR (b:DecisionTrace AND (b.user_id = $user_id OR b.user_id IS NULL))
+                    OR (a:Entity AND b:Entity)
+                )
+                // For entity-entity edges, ensure both entities connect to user's decisions
+                WITH a, b, r
+                WHERE NOT (a:Entity AND b:Entity)
+                   OR EXISTS {
+                       MATCH (d:DecisionTrace)-[:INVOLVES]->(a)
+                       WHERE d.user_id = $user_id OR d.user_id IS NULL
+                   }
                 RETURN a.id as source, b.id as target, type(r) as relationship,
                        r.weight as weight, r.score as score, r.confidence as confidence,
                        r.shared_entities as shared_entities, r.reasoning as reasoning
                 """,
                 rel_types=rel_types,
                 min_confidence=min_confidence,
+                user_id=user_id,
             )
 
             edge_id = 0
             async for record in result:
+                # Only include edges where both nodes are in user's graph
+                source_id = record["source"]
+                target_id = record["target"]
+                if source_id not in decision_ids and source_id not in entity_ids:
+                    continue
+                if target_id not in decision_ids and target_id not in entity_ids:
+                    continue
+
                 # Determine edge weight from various properties
                 weight = (
                     record.get("weight")
@@ -190,8 +243,8 @@ async def get_graph(
                 edges.append(
                     GraphEdge(
                         id=f"edge-{edge_id}",
-                        source=record["source"],
-                        target=record["target"],
+                        source=source_id,
+                        target=target_id,
                         relationship=record["relationship"],
                         weight=weight,
                     )
@@ -208,8 +261,10 @@ async def get_graph(
 
 
 @router.get("/validate", response_model=ValidationSummary)
-async def validate_graph():
-    """Run validation checks on the knowledge graph.
+async def validate_graph(
+    user_id: str = Depends(get_current_user_id),
+):
+    """Run validation checks on the user's knowledge graph.
 
     Checks for:
     - Circular dependencies in DEPENDS_ON chains
@@ -223,7 +278,7 @@ async def validate_graph():
 
     session = await get_neo4j_session()
     async with session:
-        validator = get_graph_validator(session)
+        validator = get_graph_validator(session, user_id=user_id)
         issues = await validator.validate_all()
 
         # Convert to response format
@@ -259,17 +314,35 @@ async def validate_graph():
 
 
 @router.get("/decisions/{decision_id}/contradictions", response_model=list[ContradictionResponse])
-async def get_contradictions(decision_id: str):
+async def get_contradictions(
+    decision_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
     """Get decisions that contradict this one.
 
     First checks existing CONTRADICTS relationships, then analyzes
     similar decisions if no existing relationships found.
+
+    Users can only see contradictions within their own decisions.
     """
     from services.decision_analyzer import get_decision_analyzer
 
     session = await get_neo4j_session()
     async with session:
-        analyzer = get_decision_analyzer(session)
+        # Verify the decision belongs to the user
+        result = await session.run(
+            """
+            MATCH (d:DecisionTrace {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            RETURN d
+            """,
+            id=decision_id,
+            user_id=user_id,
+        )
+        if not await result.single():
+            raise HTTPException(status_code=404, detail="Decision not found")
+
+        analyzer = get_decision_analyzer(session, user_id=user_id)
         contradictions = await analyzer.detect_contradictions_for_decision(decision_id)
 
         return [
@@ -286,8 +359,11 @@ async def get_contradictions(decision_id: str):
 
 
 @router.get("/entities/timeline/{entity_name}", response_model=list[TimelineEntry])
-async def get_entity_timeline(entity_name: str):
-    """Get chronological decisions about an entity.
+async def get_entity_timeline(
+    entity_name: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get chronological decisions about an entity for the current user.
 
     Returns all decisions that involve the specified entity,
     ordered by creation date, with information about supersessions
@@ -297,7 +373,7 @@ async def get_entity_timeline(entity_name: str):
 
     session = await get_neo4j_session()
     async with session:
-        analyzer = get_decision_analyzer(session)
+        analyzer = get_decision_analyzer(session, user_id=user_id)
         timeline = await analyzer.get_entity_timeline(entity_name)
 
         if not timeline:
@@ -322,17 +398,21 @@ async def get_entity_timeline(entity_name: str):
 
 
 @router.post("/analyze-relationships", response_model=AnalyzeRelationshipsResponse)
-async def analyze_relationships():
+async def analyze_relationships(
+    user_id: str = Depends(get_current_user_id),
+):
     """Trigger batch analysis for SUPERSEDES/CONTRADICTS relationships.
 
     Analyzes all decision pairs that share entities and creates
     SUPERSEDES and CONTRADICTS relationships where detected.
+
+    Only analyzes the current user's decisions.
     """
     from services.decision_analyzer import get_decision_analyzer
 
     session = await get_neo4j_session()
     async with session:
-        analyzer = get_decision_analyzer(session)
+        analyzer = get_decision_analyzer(session, user_id=user_id)
 
         # Analyze all pairs
         analysis = await analyzer.analyze_all_pairs()
@@ -350,16 +430,33 @@ async def analyze_relationships():
 
 
 @router.get("/decisions/{decision_id}/evolution")
-async def get_decision_evolution(decision_id: str):
+async def get_decision_evolution(
+    decision_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
     """Get the evolution chain for a decision.
 
     Returns decisions that influenced this one and decisions it supersedes.
+    Users can only see evolution within their own decisions.
     """
     from services.decision_analyzer import get_decision_analyzer
 
     session = await get_neo4j_session()
     async with session:
-        analyzer = get_decision_analyzer(session)
+        # Verify the decision belongs to the user
+        result = await session.run(
+            """
+            MATCH (d:DecisionTrace {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            RETURN d
+            """,
+            id=decision_id,
+            user_id=user_id,
+        )
+        if not await result.single():
+            raise HTTPException(status_code=404, detail="Decision not found")
+
+        analyzer = get_decision_analyzer(session, user_id=user_id)
         evolution = await analyzer.get_decision_evolution(decision_id)
 
         if not evolution:
@@ -372,17 +469,21 @@ async def get_decision_evolution(decision_id: str):
 
 
 @router.post("/entities/merge-duplicates")
-async def merge_duplicate_entities():
+async def merge_duplicate_entities(
+    user_id: str = Depends(get_current_user_id),
+):
     """Find and merge duplicate entities based on fuzzy matching.
 
     Uses the entity resolver to find similar entity names and
     merges them, transferring all relationships to the primary entity.
+
+    Only merges entities connected to the current user's decisions.
     """
     from services.entity_resolver import get_entity_resolver
 
     session = await get_neo4j_session()
     async with session:
-        resolver = get_entity_resolver(session)
+        resolver = get_entity_resolver(session, user_id=user_id)
         stats = await resolver.merge_duplicate_entities()
 
         return {
@@ -393,17 +494,26 @@ async def merge_duplicate_entities():
 
 
 @router.get("/nodes/{node_id}", response_model=GraphNode)
-async def get_node_details(node_id: str):
-    """Get details for a specific node including its connections."""
+async def get_node_details(
+    node_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get details for a specific node including its connections.
+
+    Users can only access their own decisions and entities connected to them.
+    """
     session = await get_neo4j_session()
     async with session:
-        # Try to find as decision
+        # Try to find as decision (with user isolation)
         result = await session.run(
             """
             MATCH (d:DecisionTrace {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
             OPTIONAL MATCH (d)-[:SUPERSEDES]->(superseded:DecisionTrace)
+            WHERE superseded.user_id = $user_id OR superseded.user_id IS NULL
             OPTIONAL MATCH (d)-[:CONTRADICTS]-(conflicting:DecisionTrace)
+            WHERE conflicting.user_id = $user_id OR conflicting.user_id IS NULL
             RETURN d,
                    collect(DISTINCT e.name) as entities,
                    collect(DISTINCT superseded.id) as supersedes,
@@ -411,6 +521,7 @@ async def get_node_details(node_id: str):
                    d.embedding IS NOT NULL AS has_embedding
             """,
             id=node_id,
+            user_id=user_id,
         )
 
         record = await result.single()
@@ -439,18 +550,29 @@ async def get_node_details(node_id: str):
                 },
             )
 
-        # Try to find as entity
+        # Try to find as entity (only if connected to user's decisions)
         result = await session.run(
             """
             MATCH (e:Entity {id: $id})
+            // Verify entity is connected to user's decisions
+            WHERE EXISTS {
+                MATCH (d:DecisionTrace)-[:INVOLVES]->(e)
+                WHERE d.user_id = $user_id OR d.user_id IS NULL
+            }
             OPTIONAL MATCH (d:DecisionTrace)-[:INVOLVES]->(e)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             OPTIONAL MATCH (e)-[r]->(related:Entity)
+            WHERE EXISTS {
+                MATCH (d2:DecisionTrace)-[:INVOLVES]->(related)
+                WHERE d2.user_id = $user_id OR d2.user_id IS NULL
+            }
             RETURN e,
                    collect(DISTINCT d.trigger) as decisions,
                    collect(DISTINCT {name: related.name, rel: type(r)}) as related_entities,
                    e.embedding IS NOT NULL AS has_embedding
             """,
             id=node_id,
+            user_id=user_id,
         )
 
         record = await result.single()
@@ -481,18 +603,24 @@ async def get_similar_nodes(
     node_id: str,
     top_k: int = Query(5, ge=1, le=20),
     threshold: float = Query(0.5, ge=0.0, le=1.0),
+    user_id: str = Depends(get_current_user_id),
 ):
-    """Find semantically similar decisions using embeddings."""
+    """Find semantically similar decisions using embeddings.
+
+    Only finds similar decisions within the user's own data.
+    """
     session = await get_neo4j_session()
 
     async with session:
-        # Get the node's embedding
+        # Get the node's embedding (verify ownership)
         result = await session.run(
             """
             MATCH (d:DecisionTrace {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             RETURN d.embedding as embedding, d.trigger as trigger
             """,
             id=node_id,
+            user_id=user_id,
         )
 
         record = await result.single()
@@ -503,12 +631,13 @@ async def get_similar_nodes(
         if not embedding:
             raise HTTPException(status_code=400, detail="Decision has no embedding")
 
-        # Find similar decisions (try GDS first, fall back to manual)
+        # Find similar decisions within user's data (try GDS first, fall back to manual)
         try:
             result = await session.run(
                 """
                 MATCH (d:DecisionTrace)
                 WHERE d.id <> $id AND d.embedding IS NOT NULL
+                AND (d.user_id = $user_id OR d.user_id IS NULL)
                 WITH d, gds.similarity.cosine(d.embedding, $embedding) AS similarity
                 WHERE similarity > $threshold
                 OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
@@ -521,6 +650,7 @@ async def get_similar_nodes(
                 embedding=embedding,
                 threshold=threshold,
                 top_k=top_k,
+                user_id=user_id,
             )
         except (ClientError, DatabaseError):
             # Fall back to manual similarity calculation (GDS not installed)
@@ -528,11 +658,13 @@ async def get_similar_nodes(
                 """
                 MATCH (d:DecisionTrace)
                 WHERE d.id <> $id AND d.embedding IS NOT NULL
+                AND (d.user_id = $user_id OR d.user_id IS NULL)
                 OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
                 RETURN d.id as id, d.trigger as trigger, d.decision as decision,
                        d.embedding as other_embedding, collect(e.name) as shared_entities
                 """,
                 id=node_id,
+                user_id=user_id,
             )
 
             similar = []
@@ -568,9 +700,319 @@ async def get_similar_nodes(
         return similar
 
 
+
+
+@router.post("/search/hybrid", response_model=list[HybridSearchResult])
+async def hybrid_search(
+    request: HybridSearchRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Perform hybrid search combining lexical (fulltext) and semantic (vector) search.
+
+    Hybrid search improves recall by combining:
+    - Lexical search: Good for exact keyword matches, specific terms
+    - Semantic search: Good for conceptual similarity, paraphrases
+
+    The final score is computed as:
+    combined_score = alpha * lexical_score + (1 - alpha) * semantic_score
+
+    Default alpha=0.3 weights semantic search higher (70%) since it better
+    captures meaning, while lexical helps with specific technical terms.
+
+    Only searches within the user's own data.
+    """
+    embedding_service = get_embedding_service()
+
+    # Generate embedding for semantic search
+    try:
+        query_embedding = await embedding_service.embed_text(
+            request.query, input_type="query"
+        )
+    except (TimeoutError, ConnectionError) as e:
+        logger.warning(f"Embedding service unavailable, falling back to lexical only: {e}")
+        query_embedding = None
+
+    session = await get_neo4j_session()
+    results = []
+
+    async with session:
+        # Collect lexical results
+        lexical_results = {}  # id -> (score, type, data, matched_fields)
+
+        if request.search_decisions:
+            try:
+                # Fulltext search on decisions
+                result = await session.run(
+                    """
+                    CALL db.index.fulltext.queryNodes('decision_fulltext', $query)
+                    YIELD node, score AS fulltext_score
+                    WHERE node.user_id = $user_id OR node.user_id IS NULL
+                    RETURN node.id AS id, 'decision' AS type,
+                           node.trigger AS trigger, node.decision AS decision,
+                           node.context AS context, node.rationale AS rationale,
+                           node.created_at AS created_at, node.source AS source,
+                           fulltext_score
+                    ORDER BY fulltext_score DESC
+                    LIMIT $limit
+                    """,
+                    query=request.query,
+                    user_id=user_id,
+                    limit=request.top_k * 2,  # Get more for merging
+                )
+
+                async for r in result:
+                    # Normalize fulltext score to 0-1 range (Lucene scores can exceed 1)
+                    normalized_score = min(r["fulltext_score"] / 10.0, 1.0)
+                    matched_fields = []
+                    query_lower = request.query.lower()
+                    if r["trigger"] and query_lower in r["trigger"].lower():
+                        matched_fields.append("trigger")
+                    if r["decision"] and query_lower in r["decision"].lower():
+                        matched_fields.append("decision")
+                    if r["context"] and query_lower in r["context"].lower():
+                        matched_fields.append("context")
+                    if r["rationale"] and query_lower in r["rationale"].lower():
+                        matched_fields.append("rationale")
+
+                    lexical_results[r["id"]] = {
+                        "score": normalized_score,
+                        "type": "decision",
+                        "label": (r["trigger"] or "Decision")[:50],
+                        "data": {
+                            "trigger": r["trigger"] or "",
+                            "decision": r["decision"] or "",
+                            "context": r["context"] or "",
+                            "rationale": r["rationale"] or "",
+                            "created_at": r["created_at"] or "",
+                            "source": r["source"] or "unknown",
+                        },
+                        "matched_fields": matched_fields,
+                    }
+            except (ClientError, DatabaseError) as e:
+                logger.debug(f"Fulltext search failed (index may not exist): {e}")
+
+        if request.search_entities:
+            try:
+                # Fulltext search on entities (connected to user's decisions)
+                result = await session.run(
+                    """
+                    CALL db.index.fulltext.queryNodes('entity_fulltext', $query)
+                    YIELD node, score AS fulltext_score
+                    WHERE EXISTS {
+                        MATCH (d:DecisionTrace)-[:INVOLVES]->(node)
+                        WHERE d.user_id = $user_id OR d.user_id IS NULL
+                    }
+                    RETURN node.id AS id, 'entity' AS type,
+                           node.name AS name, node.type AS entity_type,
+                           node.aliases AS aliases,
+                           fulltext_score
+                    ORDER BY fulltext_score DESC
+                    LIMIT $limit
+                    """,
+                    query=request.query,
+                    user_id=user_id,
+                    limit=request.top_k * 2,
+                )
+
+                async for r in result:
+                    normalized_score = min(r["fulltext_score"] / 10.0, 1.0)
+                    lexical_results[r["id"]] = {
+                        "score": normalized_score,
+                        "type": "entity",
+                        "label": r["name"] or "Entity",
+                        "data": {
+                            "name": r["name"] or "",
+                            "type": r["entity_type"] or "concept",
+                            "aliases": r["aliases"] or [],
+                        },
+                        "matched_fields": ["name"],
+                    }
+            except (ClientError, DatabaseError) as e:
+                logger.debug(f"Entity fulltext search failed: {e}")
+
+        # Collect semantic results
+        semantic_results = {}  # id -> score
+
+        if query_embedding:
+            if request.search_decisions:
+                try:
+                    # Try vector index first
+                    result = await session.run(
+                        """
+                        CALL db.index.vector.queryNodes('decision_embedding', $top_k, $embedding)
+                        YIELD node, score
+                        WHERE node.user_id = $user_id OR node.user_id IS NULL
+                        RETURN node.id AS id, score AS semantic_score,
+                               'decision' AS type,
+                               node.trigger AS trigger, node.decision AS decision,
+                               node.context AS context, node.rationale AS rationale,
+                               node.created_at AS created_at, node.source AS source
+                        """,
+                        embedding=query_embedding,
+                        top_k=request.top_k * 2,
+                        user_id=user_id,
+                    )
+
+                    async for r in result:
+                        semantic_results[r["id"]] = r["semantic_score"]
+                        # Add to results if not already from lexical
+                        if r["id"] not in lexical_results:
+                            lexical_results[r["id"]] = {
+                                "score": 0.0,  # No lexical match
+                                "type": "decision",
+                                "label": (r["trigger"] or "Decision")[:50],
+                                "data": {
+                                    "trigger": r["trigger"] or "",
+                                    "decision": r["decision"] or "",
+                                    "context": r["context"] or "",
+                                    "rationale": r["rationale"] or "",
+                                    "created_at": r["created_at"] or "",
+                                    "source": r["source"] or "unknown",
+                                },
+                                "matched_fields": [],
+                            }
+                except (ClientError, DatabaseError) as e:
+                    # Fall back to manual calculation
+                    logger.debug(f"Vector index not available, falling back to manual: {e}")
+                    result = await session.run(
+                        """
+                        MATCH (d:DecisionTrace)
+                        WHERE d.embedding IS NOT NULL
+                        AND (d.user_id = $user_id OR d.user_id IS NULL)
+                        RETURN d.id AS id, d.embedding AS embedding,
+                               d.trigger AS trigger, d.decision AS decision,
+                               d.context AS context, d.rationale AS rationale,
+                               d.created_at AS created_at, d.source AS source
+                        """,
+                        user_id=user_id,
+                    )
+
+                    async for r in result:
+                        similarity = cosine_similarity(query_embedding, r["embedding"])
+                        if similarity > 0.3:  # Minimum threshold for consideration
+                            semantic_results[r["id"]] = similarity
+                            if r["id"] not in lexical_results:
+                                lexical_results[r["id"]] = {
+                                    "score": 0.0,
+                                    "type": "decision",
+                                    "label": (r["trigger"] or "Decision")[:50],
+                                    "data": {
+                                        "trigger": r["trigger"] or "",
+                                        "decision": r["decision"] or "",
+                                        "context": r["context"] or "",
+                                        "rationale": r["rationale"] or "",
+                                        "created_at": r["created_at"] or "",
+                                        "source": r["source"] or "unknown",
+                                    },
+                                    "matched_fields": [],
+                                }
+
+            if request.search_entities:
+                try:
+                    # Try vector index for entities
+                    result = await session.run(
+                        """
+                        CALL db.index.vector.queryNodes('entity_embedding', $top_k, $embedding)
+                        YIELD node, score
+                        WHERE EXISTS {
+                            MATCH (d:DecisionTrace)-[:INVOLVES]->(node)
+                            WHERE d.user_id = $user_id OR d.user_id IS NULL
+                        }
+                        RETURN node.id AS id, score AS semantic_score,
+                               'entity' AS type,
+                               node.name AS name, node.type AS entity_type,
+                               node.aliases AS aliases
+                        """,
+                        embedding=query_embedding,
+                        top_k=request.top_k * 2,
+                        user_id=user_id,
+                    )
+
+                    async for r in result:
+                        semantic_results[r["id"]] = r["semantic_score"]
+                        if r["id"] not in lexical_results:
+                            lexical_results[r["id"]] = {
+                                "score": 0.0,
+                                "type": "entity",
+                                "label": r["name"] or "Entity",
+                                "data": {
+                                    "name": r["name"] or "",
+                                    "type": r["entity_type"] or "concept",
+                                    "aliases": r["aliases"] or [],
+                                },
+                                "matched_fields": [],
+                            }
+                except (ClientError, DatabaseError):
+                    # Fall back to manual calculation for entities
+                    result = await session.run(
+                        """
+                        MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+                        WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+                        AND e.embedding IS NOT NULL
+                        RETURN DISTINCT e.id AS id, e.embedding AS embedding,
+                               e.name AS name, e.type AS entity_type,
+                               e.aliases AS aliases
+                        """,
+                        user_id=user_id,
+                    )
+
+                    async for r in result:
+                        similarity = cosine_similarity(query_embedding, r["embedding"])
+                        if similarity > 0.3:
+                            semantic_results[r["id"]] = similarity
+                            if r["id"] not in lexical_results:
+                                lexical_results[r["id"]] = {
+                                    "score": 0.0,
+                                    "type": "entity",
+                                    "label": r["name"] or "Entity",
+                                    "data": {
+                                        "name": r["name"] or "",
+                                        "type": r["entity_type"] or "concept",
+                                        "aliases": r["aliases"] or [],
+                                    },
+                                    "matched_fields": [],
+                                }
+
+        # Combine scores and create results
+        for node_id, data in lexical_results.items():
+            lexical_score = data["score"]
+            semantic_score = semantic_results.get(node_id, 0.0)
+
+            # Hybrid score formula
+            combined_score = (
+                request.alpha * lexical_score +
+                (1 - request.alpha) * semantic_score
+            )
+
+            # Apply threshold
+            if combined_score >= request.threshold:
+                results.append(
+                    HybridSearchResult(
+                        id=node_id,
+                        type=data["type"],
+                        label=data["label"],
+                        lexical_score=lexical_score,
+                        semantic_score=semantic_score,
+                        combined_score=combined_score,
+                        data=data["data"],
+                        matched_fields=data["matched_fields"],
+                    )
+                )
+
+        # Sort by combined score and limit
+        results.sort(key=lambda x: x.combined_score, reverse=True)
+        return results[:request.top_k]
+
+
 @router.post("/search/semantic", response_model=list[SimilarDecision])
-async def semantic_search(request: SemanticSearchRequest):
-    """Search for decisions semantically similar to a query."""
+async def semantic_search(
+    request: SemanticSearchRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Search for decisions semantically similar to a query.
+
+    Only searches within the user's own decisions.
+    """
     embedding_service = get_embedding_service()
 
     # Generate embedding for the query
@@ -580,13 +1022,16 @@ async def semantic_search(request: SemanticSearchRequest):
 
     session = await get_neo4j_session()
     async with session:
-        # Try vector index search first
+        # Try vector index search first (with user filtering)
         try:
             result = await session.run(
                 """
-                CALL db.index.vector.queryNodes('decision_embedding', $top_k, $embedding)
+                CALL db.index.vector.queryNodes('decision_embedding', $top_k * 2, $embedding)
                 YIELD node, score
                 WHERE score > $threshold
+                AND (node.user_id = $user_id OR node.user_id IS NULL)
+                WITH node, score
+                LIMIT $top_k
                 OPTIONAL MATCH (node)-[:INVOLVES]->(e:Entity)
                 RETURN node.id as id, node.trigger as trigger, node.decision as decision,
                        score as similarity, collect(e.name) as shared_entities
@@ -594,6 +1039,7 @@ async def semantic_search(request: SemanticSearchRequest):
                 embedding=query_embedding,
                 top_k=request.top_k,
                 threshold=request.threshold,
+                user_id=user_id,
             )
         except (ClientError, DatabaseError):
             # Fall back to manual search (vector index not available)
@@ -601,10 +1047,12 @@ async def semantic_search(request: SemanticSearchRequest):
                 """
                 MATCH (d:DecisionTrace)
                 WHERE d.embedding IS NOT NULL
+                AND (d.user_id = $user_id OR d.user_id IS NULL)
                 OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
                 RETURN d.id as id, d.trigger as trigger, d.decision as decision,
                        d.embedding as other_embedding, collect(e.name) as shared_entities
-                """
+                """,
+                user_id=user_id,
             )
 
             similar = []
@@ -641,24 +1089,34 @@ async def semantic_search(request: SemanticSearchRequest):
 
 
 @router.get("/stats")
-async def get_graph_stats():
-    """Get statistics about the knowledge graph."""
+async def get_graph_stats(
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get statistics about the user's knowledge graph."""
     session = await get_neo4j_session()
     async with session:
         result = await session.run(
             """
             MATCH (d:DecisionTrace)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             WITH count(d) as total_decisions,
                  count(CASE WHEN d.embedding IS NOT NULL THEN 1 END) as decisions_with_embeddings
-            MATCH (e:Entity)
+
+            // Get entities connected to user's decisions
+            OPTIONAL MATCH (d2:DecisionTrace)-[:INVOLVES]->(e:Entity)
+            WHERE d2.user_id = $user_id OR d2.user_id IS NULL
             WITH total_decisions, decisions_with_embeddings,
-                 count(e) as total_entities,
-                 count(CASE WHEN e.embedding IS NOT NULL THEN 1 END) as entities_with_embeddings
-            MATCH ()-[r]->()
+                 count(DISTINCT e) as total_entities,
+                 count(DISTINCT CASE WHEN e.embedding IS NOT NULL THEN e END) as entities_with_embeddings
+
+            // Count relationships involving user's data
+            OPTIONAL MATCH (d3:DecisionTrace)-[r]->()
+            WHERE d3.user_id = $user_id OR d3.user_id IS NULL
             RETURN total_decisions, decisions_with_embeddings,
                    total_entities, entities_with_embeddings,
                    count(r) as total_relationships
-            """
+            """,
+            user_id=user_id,
         )
 
         record = await result.single()
@@ -683,16 +1141,20 @@ async def get_graph_stats():
 
 
 @router.get("/relationships/types")
-async def get_relationship_types():
-    """Get all relationship types and their counts."""
+async def get_relationship_types(
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get all relationship types and their counts for the user's graph."""
     session = await get_neo4j_session()
     async with session:
         result = await session.run(
             """
-            MATCH ()-[r]->()
+            MATCH (d:DecisionTrace)-[r]->()
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             RETURN type(r) as relationship_type, count(r) as count
             ORDER BY count DESC
-            """
+            """,
+            user_id=user_id,
         )
 
         types = {}
@@ -703,44 +1165,65 @@ async def get_relationship_types():
 
 
 @router.delete("/reset")
-async def reset_graph(confirm: bool = Query(False, description="Must be true to confirm deletion")):
-    """Clear all data from the knowledge graph.
+async def reset_graph(
+    confirm: bool = Query(False, description="Must be true to confirm deletion"),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Clear the user's data from the knowledge graph.
 
-    WARNING: This permanently deletes all decisions, entities, and relationships.
-    Pass confirm=true to execute.
+    WARNING: This permanently deletes all of the user's decisions,
+    and orphaned entities. Pass confirm=true to execute.
     """
     if not confirm:
         return {
             "status": "aborted",
-            "message": "Pass confirm=true to delete all graph data"
+            "message": "Pass confirm=true to delete your graph data"
         }
 
     session = await get_neo4j_session()
     async with session:
-        # Delete all relationships first
-        await session.run("MATCH ()-[r]->() DELETE r")
-        # Delete all nodes
-        await session.run("MATCH (n) DELETE n")
+        # Delete user's decisions and their relationships
+        await session.run(
+            """
+            MATCH (d:DecisionTrace)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            DETACH DELETE d
+            """,
+            user_id=user_id,
+        )
+
+        # Clean up orphaned entities (entities with no remaining connections)
+        await session.run(
+            """
+            MATCH (e:Entity)
+            WHERE NOT (e)<-[:INVOLVES]-(:DecisionTrace)
+            DETACH DELETE e
+            """
+        )
 
     return {
         "status": "completed",
-        "message": "All graph data has been deleted"
+        "message": "Your graph data has been deleted"
     }
 
 
 @router.get("/sources")
-async def get_decision_sources():
-    """Get decision counts by source type."""
+async def get_decision_sources(
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get decision counts by source type for the user."""
     session = await get_neo4j_session()
     async with session:
         result = await session.run(
             """
             MATCH (d:DecisionTrace)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
             RETURN
                 COALESCE(d.source, 'unknown') as source,
                 count(d) as count
             ORDER BY count DESC
-            """
+            """,
+            user_id=user_id,
         )
 
         sources = {}
@@ -751,24 +1234,27 @@ async def get_decision_sources():
 
 
 @router.post("/tag-sources")
-async def tag_decision_sources():
+async def tag_decision_sources(
+    user_id: str = Depends(get_current_user_id),
+):
     """
     Tag existing decisions with their source based on heuristics.
-    - Decisions created before the ingestion feature are likely 'interview' or 'manual'
-    - This is a one-time migration helper
+    Only tags the user's own decisions.
     """
     session = await get_neo4j_session()
     results = {"tagged": 0}
 
     async with session:
-        # Tag decisions without source as 'unknown' (legacy)
+        # Tag user's decisions without source as 'unknown' (legacy)
         result = await session.run(
             """
             MATCH (d:DecisionTrace)
-            WHERE d.source IS NULL
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+            AND d.source IS NULL
             SET d.source = 'unknown'
             RETURN count(d) as count
-            """
+            """,
+            user_id=user_id,
         )
         record = await result.single()
         results["tagged"] = record["count"] if record else 0
@@ -780,9 +1266,13 @@ async def tag_decision_sources():
 
 
 @router.post("/enhance")
-async def enhance_graph():
+async def enhance_graph(
+    user_id: str = Depends(get_current_user_id),
+):
     """
     Backfill embeddings and relationships for existing nodes.
+    Only enhances the user's own data.
+
     This enhances the graph by:
     1. Adding embeddings to decisions without them
     2. Adding embeddings to entities without them
@@ -803,19 +1293,21 @@ async def enhance_graph():
     }
 
     async with session:
-        # 1. Add embeddings to decisions without them
+        # 1. Add embeddings to user's decisions without them
         result = await session.run(
             """
             MATCH (d:DecisionTrace)
             WHERE d.embedding IS NULL
+            AND (d.user_id = $user_id OR d.user_id IS NULL)
             RETURN d.id as id, d.trigger as trigger, d.context as context,
                    d.decision as decision, d.rationale as rationale,
                    d.options as options
-            """
+            """,
+            user_id=user_id,
         )
 
         decisions_to_enhance = [r async for r in result]
-        logger.info(f"Found {len(decisions_to_enhance)} decisions without embeddings")
+        logger.info(f"Found {len(decisions_to_enhance)} decisions without embeddings for user {user_id}")
 
         for dec in decisions_to_enhance:
             try:
@@ -843,17 +1335,19 @@ async def enhance_graph():
             except (ClientError, DatabaseError) as e:
                 logger.warning(f"Database error enhancing decision {dec['id']}: {e}")
 
-        # 2. Add embeddings to entities without them
+        # 2. Add embeddings to entities connected to user's decisions
         result = await session.run(
             """
-            MATCH (e:Entity)
-            WHERE e.embedding IS NULL
-            RETURN e.id as id, e.name as name, e.type as type
-            """
+            MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+            AND e.embedding IS NULL
+            RETURN DISTINCT e.id as id, e.name as name, e.type as type
+            """,
+            user_id=user_id,
         )
 
         entities_to_enhance = [r async for r in result]
-        logger.info(f"Found {len(entities_to_enhance)} entities without embeddings")
+        logger.info(f"Found {len(entities_to_enhance)} entities without embeddings for user {user_id}")
 
         for ent in entities_to_enhance:
             try:
@@ -874,13 +1368,15 @@ async def enhance_graph():
             except (ClientError, DatabaseError) as e:
                 logger.warning(f"Database error enhancing entity {ent['name']}: {e}")
 
-        # 3. Create SIMILAR_TO edges between similar decisions
+        # 3. Create SIMILAR_TO edges between similar user decisions
         result = await session.run(
             """
             MATCH (d:DecisionTrace)
             WHERE d.embedding IS NOT NULL
+            AND (d.user_id = $user_id OR d.user_id IS NULL)
             RETURN d.id as id, d.embedding as embedding
-            """
+            """,
+            user_id=user_id,
         )
 
         decisions_with_embeddings = [r async for r in result]
@@ -906,12 +1402,14 @@ async def enhance_graph():
                     results["similarity_edges_created"] += 1
                     logger.debug(f"Created SIMILAR_TO edge (score: {similarity:.3f})")
 
-        # 4. Create entity-to-entity relationships using LLM
+        # 4. Create entity-to-entity relationships using LLM (for user's entities)
         result = await session.run(
             """
-            MATCH (e:Entity)
-            RETURN e.id as id, e.name as name, e.type as type
-            """
+            MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            RETURN DISTINCT e.id as id, e.name as name, e.type as type
+            """,
+            user_id=user_id,
         )
 
         all_entities = [r async for r in result]
@@ -964,17 +1462,21 @@ async def enhance_graph():
                 except (ClientError, DatabaseError) as e:
                     logger.error(f"Database error saving entity relationships: {e}")
 
-        # 5. Create INFLUENCED_BY temporal chains
+        # 5. Create INFLUENCED_BY temporal chains (within user's data)
         await session.run(
             """
             MATCH (d_new:DecisionTrace)
+            WHERE d_new.user_id = $user_id OR d_new.user_id IS NULL
             MATCH (d_old:DecisionTrace)-[:INVOLVES]->(e:Entity)<-[:INVOLVES]-(d_new)
-            WHERE d_old.id <> d_new.id AND d_old.created_at < d_new.created_at
+            WHERE d_old.id <> d_new.id
+            AND d_old.created_at < d_new.created_at
+            AND (d_old.user_id = $user_id OR d_old.user_id IS NULL)
             WITH d_new, d_old, count(DISTINCT e) AS shared_count
             WHERE shared_count >= 2
             MERGE (d_new)-[r:INFLUENCED_BY]->(d_old)
             SET r.shared_entities = shared_count
-            """
+            """,
+            user_id=user_id,
         )
 
     return {

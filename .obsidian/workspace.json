@@ -1,0 +1,218 @@
+{
+  "main": {
+    "id": "6f5e9599abad9118",
+    "type": "split",
+    "children": [
+      {
+        "id": "aad37c0a4f7c31d7",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "0ee39d083c4f850b",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "docs/planning/CONTINUUM_IMPLEMENTATION_GUIDE.md",
+                "mode": "preview",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "CONTINUUM_IMPLEMENTATION_GUIDE"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "3ada5e9e6691e404",
+    "type": "split",
+    "children": [
+      {
+        "id": "23396e80b9b2f39d",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "7f7eee1b34d68465",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "fd79cd344a912a4a",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "f3a4e10538ac7b98",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "right": {
+    "id": "832d7c15a1d003e1",
+    "type": "split",
+    "children": [
+      {
+        "id": "6b4e8a913a5fad73",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "676c30c8abfdcd99",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "docs/planning/CONTINUUM_IMPLEMENTATION_GUIDE.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for CONTINUUM_IMPLEMENTATION_GUIDE"
+            }
+          },
+          {
+            "id": "67171aa7f42d444a",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "docs/planning/CONTINUUM_IMPLEMENTATION_GUIDE.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from CONTINUUM_IMPLEMENTATION_GUIDE"
+            }
+          },
+          {
+            "id": "f77d6146d01e1380",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "475cbd434fed32f4",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "4a8b8ef2ac5e9cc4",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "docs/planning/CONTINUUM_IMPLEMENTATION_GUIDE.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of CONTINUUM_IMPLEMENTATION_GUIDE"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "0ee39d083c4f850b",
+  "lastOpenFiles": [
+    "apps/api/utils/__pycache__/sanitize.cpython-312.pyc",
+    "apps/api/tests/utils/__pycache__/test_sanitize.cpython-312-pytest-9.0.2.pyc",
+    "apps/api/tests/utils/__pycache__",
+    "apps/api/tests/utils/test_sanitize.py",
+    "apps/api/tests/utils",
+    "apps/api/models/__pycache__/errors.cpython-312.pyc",
+    "apps/api/utils/__pycache__/retry.cpython-312.pyc",
+    "apps/api/tests/services/__pycache__/test_file_watcher.cpython-312-pytest-9.0.2.pyc",
+    "apps/api/utils/__pycache__/circuit_breaker.cpython-312.pyc",
+    "apps/api/tests/integration/__pycache__/test_error_handling.cpython-312-pytest-9.0.2.pyc",
+    "apps/api/tests/integration/__pycache__/test_data_integrity.cpython-312-pytest-9.0.2.pyc",
+    "docs/reviews/CTO-COORDINATION-PLAN.md",
+    "docs/reviews/EXECUTION-STATUS.md",
+    "docs/reviews/system-design-review-2026-01-29.md",
+    "docs/reviews/EXPERT-REVIEW-SUMMARY-2026-01-29.md",
+    "docs/planning/CONTINUUM_IMPLEMENTATION_GUIDE.md",
+    "docs/reviews/knowledge-graph-ai-tasks.md",
+    "docs/reviews/knowledge-graph-ai-review-2026-01-29.md",
+    "docs/reviews/frontend-ux-review-2026-01-29.md",
+    "docs/reviews/product-manager-review-2026-01-29.md",
+    "docs/reviews/devops-sre-tasks.md",
+    "docs/reviews/devops-sre-review-2026-01-29.md",
+    "docs/reviews/security-tasks.md",
+    "docs/reviews/product-tasks.md",
+    "docs/reviews/qa-test-tasks.md",
+    "docs/reviews/system-design-tasks.md",
+    "docs/reviews/frontend-ux-tasks.md",
+    "docs/reviews/ml-ai-tasks.md"
+  ]
+}

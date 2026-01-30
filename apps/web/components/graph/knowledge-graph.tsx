@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ReactFlow,
   Node,
@@ -16,6 +16,8 @@ import {
   Position,
   MarkerType,
   BackgroundVariant,
+  useReactFlow,
+  ReactFlowProvider,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 
@@ -24,8 +26,33 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { X, Sparkles, GitBranch, ArrowRight, Link2, Bot, User, FileText } from "lucide-react"
+import { X, Sparkles, GitBranch, Bot, User, FileText, Trash2 } from "lucide-react"
 import { type GraphData, type Decision, type Entity } from "@/lib/api"
+import { DeleteConfirmDialog } from "@/components/ui/confirm-dialog"
+
+// Pre-computed style objects for source badges (P1-3)
+const SOURCE_BADGE_STYLES = {
+  claude_logs: {
+    backgroundColor: "rgba(168,85,247,0.2)",
+    color: "#c084fc",
+    borderColor: "rgba(168,85,247,0.3)",
+  },
+  interview: {
+    backgroundColor: "rgba(16,185,129,0.2)",
+    color: "#34d399",
+    borderColor: "rgba(16,185,129,0.3)",
+  },
+  manual: {
+    backgroundColor: "rgba(245,158,11,0.2)",
+    color: "#fbbf24",
+    borderColor: "rgba(245,158,11,0.3)",
+  },
+  unknown: {
+    backgroundColor: "rgba(34,211,238,0.2)",
+    color: "#22d3ee",
+    borderColor: "rgba(34,211,238,0.3)",
+  },
+} as const
 
 // Decision source configuration
 const SOURCE_STYLES: Record<string, {
@@ -65,7 +92,7 @@ const SOURCE_STYLES: Record<string, {
   },
 }
 
-// Relationship type styling configuration
+// Relationship type styling configuration with accessibility patterns (P2-4)
 const RELATIONSHIP_STYLES: Record<string, {
   color: string
   label: string
@@ -76,201 +103,233 @@ const RELATIONSHIP_STYLES: Record<string, {
   INVOLVES: {
     color: "#22D3EE",
     label: "Involves",
-    icon: "🔗",
+    icon: "links",
     strokeDasharray: "5,5",
     animated: true,
   },
   SIMILAR_TO: {
     color: "#A78BFA",
     label: "Similar To",
-    icon: "✨",
+    icon: "sparkles",
     animated: true,
   },
   INFLUENCED_BY: {
     color: "#F59E0B",
     label: "Influenced By",
-    icon: "⏳",
+    icon: "clock",
     strokeDasharray: "10,5",
   },
   IS_A: {
     color: "#10B981",
     label: "Is A",
-    icon: "↗️",
+    icon: "arrow-up-right",
   },
   PART_OF: {
     color: "#3B82F6",
     label: "Part Of",
-    icon: "📦",
+    icon: "box",
   },
   RELATED_TO: {
     color: "#EC4899",
     label: "Related To",
-    icon: "🔄",
+    icon: "refresh",
     strokeDasharray: "3,3",
   },
   DEPENDS_ON: {
     color: "#EF4444",
     label: "Depends On",
-    icon: "⚡",
+    icon: "zap",
   },
 }
 
-// Custom node component for decisions
-function DecisionNode({ data, selected }: NodeProps) {
-  const nodeData = data as { label: string; decision?: Decision & { source?: string }; hasEmbedding?: boolean }
-  const source = nodeData.decision?.source || "unknown"
-  const sourceStyle = SOURCE_STYLES[source] || SOURCE_STYLES.unknown
-
-  return (
-    <div
-      className={`
-        px-5 py-4 rounded-2xl min-w-[220px] max-w-[320px]
-        bg-gradient-to-br ${sourceStyle.color}
-        backdrop-blur-xl
-        border-2 transition-all duration-200
-        ${selected
-          ? "border-white shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-          : `${sourceStyle.borderColor} hover:border-white/50 shadow-[0_4px_20px_rgba(0,0,0,0.3)]`
-        }
-      `}
-    >
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="!w-3 !h-3 !bg-white/80 !border-2 !border-slate-800"
-      />
-      <div className="flex items-center gap-2 mb-2">
-        {sourceStyle.icon}
-        <Badge
-          className="text-[10px]"
-          style={{
-            backgroundColor: source === "claude_logs" ? "rgba(168,85,247,0.2)" :
-                            source === "interview" ? "rgba(16,185,129,0.2)" :
-                            source === "manual" ? "rgba(245,158,11,0.2)" :
-                            "rgba(34,211,238,0.2)",
-            color: source === "claude_logs" ? "#c084fc" :
-                   source === "interview" ? "#34d399" :
-                   source === "manual" ? "#fbbf24" :
-                   "#22d3ee",
-            borderColor: source === "claude_logs" ? "rgba(168,85,247,0.3)" :
-                         source === "interview" ? "rgba(16,185,129,0.3)" :
-                         source === "manual" ? "rgba(245,158,11,0.3)" :
-                         "rgba(34,211,238,0.3)",
-          }}
-        >
-          {sourceStyle.label}
-        </Badge>
-        {nodeData.hasEmbedding && (
-          <span title="Has semantic embedding">
-            <Sparkles className="h-3 w-3 text-purple-400" />
-          </span>
-        )}
-      </div>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="font-semibold text-sm text-slate-100 line-clamp-2 cursor-help">
-              {nodeData.label}
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-sm">
-            <p>{nodeData.label}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="text-xs text-slate-400 mt-2 line-clamp-2 cursor-help">
-              {nodeData.decision?.decision || "Decision trace"}
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-sm">
-            <p>{nodeData.decision?.decision || "Decision trace"}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!w-3 !h-3 !bg-white/80 !border-2 !border-slate-800"
-      />
-    </div>
-  )
+// Pre-computed entity type config (moved outside component)
+const ENTITY_TYPE_CONFIG: Record<string, { color: string; icon: string; bg: string }> = {
+  concept: {
+    color: "border-blue-400",
+    icon: "crystal",
+    bg: "from-blue-500/20 to-blue-600/10",
+  },
+  system: {
+    color: "border-green-400",
+    icon: "gear",
+    bg: "from-green-500/20 to-green-600/10",
+  },
+  person: {
+    color: "border-purple-400",
+    icon: "person",
+    bg: "from-purple-500/20 to-purple-600/10",
+  },
+  technology: {
+    color: "border-orange-400",
+    icon: "wrench",
+    bg: "from-orange-500/20 to-orange-600/10",
+  },
+  pattern: {
+    color: "border-pink-400",
+    icon: "target",
+    bg: "from-pink-500/20 to-pink-600/10",
+  },
 }
 
-// Custom node component for entities
-function EntityNode({ data, selected }: NodeProps) {
-  const nodeData = data as { label: string; entity?: Entity; hasEmbedding?: boolean }
+// Custom node component for decisions - memoized (P1-1)
+const DecisionNode = React.memo(
+  function DecisionNode({ data, selected }: NodeProps) {
+    const nodeData = data as { label: string; decision?: Decision & { source?: string }; hasEmbedding?: boolean; isFocused?: boolean }
+    const source = nodeData.decision?.source || "unknown"
+    const sourceStyle = SOURCE_STYLES[source] || SOURCE_STYLES.unknown
+    const badgeStyle = SOURCE_BADGE_STYLES[source as keyof typeof SOURCE_BADGE_STYLES] || SOURCE_BADGE_STYLES.unknown
+    const isFocused = nodeData.isFocused
 
-  const typeConfig: Record<string, { color: string; icon: string; bg: string }> = {
-    concept: {
-      color: "border-blue-400",
-      icon: "🔮",
-      bg: "from-blue-500/20 to-blue-600/10",
-    },
-    system: {
-      color: "border-green-400",
-      icon: "⚙️",
-      bg: "from-green-500/20 to-green-600/10",
-    },
-    person: {
-      color: "border-purple-400",
-      icon: "👤",
-      bg: "from-purple-500/20 to-purple-600/10",
-    },
-    technology: {
-      color: "border-orange-400",
-      icon: "🔧",
-      bg: "from-orange-500/20 to-orange-600/10",
-    },
-    pattern: {
-      color: "border-pink-400",
-      icon: "🎯",
-      bg: "from-pink-500/20 to-pink-600/10",
-    },
+    return (
+      <div
+        className={`
+          px-5 py-4 rounded-2xl min-w-[220px] max-w-[320px]
+          bg-gradient-to-br ${sourceStyle.color}
+          backdrop-blur-xl
+          border-2 transition-all duration-200
+          ${selected
+            ? "border-white shadow-[0_0_30px_rgba(255,255,255,0.2)]"
+            : `${sourceStyle.borderColor} hover:border-white/50 shadow-[0_4px_20px_rgba(0,0,0,0.3)]`
+          }
+          ${isFocused
+            ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-slate-900"
+            : ""
+          }
+        `}
+        role="button"
+        aria-label={`Decision node: ${nodeData.label}`}
+        aria-pressed={selected}
+      >
+        <Handle
+          type="target"
+          position={Position.Top}
+          className="!w-3 !h-3 !bg-white/80 !border-2 !border-slate-800"
+        />
+        <div className="flex items-center gap-2 mb-2">
+          {sourceStyle.icon}
+          <Badge
+            className="text-[10px]"
+            style={badgeStyle}
+          >
+            {sourceStyle.label}
+          </Badge>
+          {nodeData.hasEmbedding && (
+            <span title="Has semantic embedding" aria-label="Has semantic embedding">
+              <Sparkles className="h-3 w-3 text-purple-400" aria-hidden="true" />
+            </span>
+          )}
+        </div>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="font-semibold text-sm text-slate-100 line-clamp-2 cursor-help">
+                {nodeData.label}
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-lg">
+              <p>{nodeData.label}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="text-xs text-slate-400 mt-2 line-clamp-2 cursor-help">
+                {nodeData.decision?.decision || "Decision trace"}
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-lg">
+              <p>{nodeData.decision?.decision || "Decision trace"}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          className="!w-3 !h-3 !bg-white/80 !border-2 !border-slate-800"
+        />
+      </div>
+    )
+  },
+  // Custom comparison function for memoization (P1-1)
+  (prev, next) => {
+    const prevData = prev.data as { decision?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean }
+    const nextData = next.data as { decision?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean }
+    return prev.selected === next.selected && 
+      prevData?.decision?.id === nextData?.decision?.id &&
+      prevData?.hasEmbedding === nextData?.hasEmbedding &&
+      prevData?.isFocused === nextData?.isFocused
   }
+)
 
-  const config = typeConfig[nodeData.entity?.type || "concept"] || typeConfig.concept
-  const selectedClass = selected
-    ? `shadow-[0_0_25px_rgba(59,130,246,0.4)] scale-105`
-    : "hover:scale-105"
+// Custom node component for entities - memoized (P1-1)
+const EntityNode = React.memo(
+  function EntityNode({ data, selected }: NodeProps) {
+    const nodeData = data as { label: string; entity?: Entity; hasEmbedding?: boolean; isFocused?: boolean }
+    const entityType = nodeData.entity?.type || "concept"
+    const config = ENTITY_TYPE_CONFIG[entityType] || ENTITY_TYPE_CONFIG.concept
+    const isFocused = nodeData.isFocused
+    const selectedClass = selected
+      ? `shadow-[0_0_25px_rgba(59,130,246,0.4)] scale-105`
+      : "hover:scale-105"
 
-  return (
-    <div
-      className={`
-        px-4 py-3 rounded-full
-        bg-gradient-to-br ${config.bg}
-        backdrop-blur-xl
-        border-2 ${config.color}
-        transition-all duration-200
-        ${selectedClass}
-      `}
-    >
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="!w-2 !h-2 !bg-slate-400 !border-slate-700"
-      />
-      <div className="flex items-center gap-2">
-        <span className="text-base">{config.icon}</span>
-        <span className="font-medium text-sm text-slate-200 whitespace-nowrap">
-          {nodeData.label}
-        </span>
-        {nodeData.hasEmbedding && (
-          <span title="Has semantic embedding">
-            <Sparkles className="h-3 w-3 text-purple-400" />
+    return (
+      <div
+        className={`
+          px-4 py-3 rounded-full
+          bg-gradient-to-br ${config.bg}
+          backdrop-blur-xl
+          border-2 ${config.color}
+          transition-all duration-200
+          ${selectedClass}
+          ${isFocused
+            ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-slate-900"
+            : ""
+          }
+        `}
+        role="button"
+        aria-label={`Entity node: ${nodeData.label}, type: ${entityType}`}
+        aria-pressed={selected}
+      >
+        <Handle
+          type="target"
+          position={Position.Top}
+          className="!w-2 !h-2 !bg-slate-400 !border-slate-700"
+        />
+        <div className="flex items-center gap-2">
+          <span className="text-base" aria-hidden="true">
+            {entityType === "concept" ? "crystal-ball" :
+             entityType === "system" ? "gear" :
+             entityType === "person" ? "person" :
+             entityType === "technology" ? "wrench" : "target"}
           </span>
-        )}
+          <span className="font-medium text-sm text-slate-200 whitespace-nowrap">
+            {nodeData.label}
+          </span>
+          {nodeData.hasEmbedding && (
+            <span title="Has semantic embedding" aria-label="Has semantic embedding">
+              <Sparkles className="h-3 w-3 text-purple-400" aria-hidden="true" />
+            </span>
+          )}
+        </div>
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          className="!w-2 !h-2 !bg-slate-400 !border-slate-700"
+        />
       </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!w-2 !h-2 !bg-slate-400 !border-slate-700"
-      />
-    </div>
-  )
-}
+    )
+  },
+  // Custom comparison function for memoization (P1-1)
+  (prev, next) => {
+    const prevData = prev.data as { entity?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean }
+    const nextData = next.data as { entity?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean }
+    return prev.selected === next.selected && 
+      prevData?.entity?.id === nextData?.entity?.id &&
+      prevData?.hasEmbedding === nextData?.hasEmbedding &&
+      prevData?.isFocused === nextData?.isFocused
+  }
+)
 
 const nodeTypes = {
   decision: DecisionNode,
@@ -283,18 +342,25 @@ interface KnowledgeGraphProps {
   sourceFilter?: string | null
   onSourceFilterChange?: (source: string | null) => void
   sourceCounts?: Record<string, number>
+  onDeleteDecision?: (decisionId: string) => Promise<void>
 }
 
-export function KnowledgeGraph({
+// Inner component that uses useReactFlow hook (P0-3: Keyboard navigation)
+function KnowledgeGraphInner({
   data,
   onNodeClick,
   sourceFilter,
   onSourceFilterChange,
   sourceCounts = {},
+  onDeleteDecision,
 }: KnowledgeGraphProps) {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
   const [showRelationshipLegend, setShowRelationshipLegend] = useState(true)
   const [showSourceLegend, setShowSourceLegend] = useState(true)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const { setCenter, getZoom } = useReactFlow()
 
   // Convert graph data to React Flow format with better layout
   const initialNodes: Node[] = useMemo(() => {
@@ -318,6 +384,7 @@ export function KnowledgeGraph({
           label: node.label,
           decision: node.data,
           hasEmbedding: node.has_embedding,
+          isFocused: false,
         },
       })
     })
@@ -338,6 +405,7 @@ export function KnowledgeGraph({
           label: node.label,
           entity: node.data,
           hasEmbedding: node.has_embedding,
+          isFocused: false,
         },
       })
     })
@@ -388,8 +456,21 @@ export function KnowledgeGraph({
     })
   }, [data])
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes)
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, , onEdgesChange] = useEdgesState(initialEdges)
+
+  // Update nodes when focusedNodeId changes to add focus indicator (P0-3)
+  useEffect(() => {
+    setNodes((prevNodes) =>
+      prevNodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          isFocused: node.id === focusedNodeId,
+        },
+      }))
+    )
+  }, [focusedNodeId, setNodes])
 
   // Count relationships by type
   const relationshipCounts = useMemo(() => {
@@ -400,18 +481,236 @@ export function KnowledgeGraph({
     }, {} as Record<string, number>)
   }, [data])
 
+  // Find the nearest node in a given direction (P0-3: Keyboard navigation)
+  const findNearestNode = useCallback(
+    (currentNode: Node, direction: "up" | "down" | "left" | "right"): Node | null => {
+      if (nodes.length === 0) return null
+
+      const currentPos = currentNode.position
+      let nearestNode: Node | null = null
+      let nearestDistance = Infinity
+
+      for (const node of nodes) {
+        if (node.id === currentNode.id) continue
+
+        const nodePos = node.position
+        const dx = nodePos.x - currentPos.x
+        const dy = nodePos.y - currentPos.y
+
+        // Check if node is in the correct direction
+        let isInDirection = false
+        switch (direction) {
+          case "up":
+            isInDirection = dy < -20 && Math.abs(dx) < Math.abs(dy) * 2
+            break
+          case "down":
+            isInDirection = dy > 20 && Math.abs(dx) < Math.abs(dy) * 2
+            break
+          case "left":
+            isInDirection = dx < -20 && Math.abs(dy) < Math.abs(dx) * 2
+            break
+          case "right":
+            isInDirection = dx > 20 && Math.abs(dy) < Math.abs(dx) * 2
+            break
+        }
+
+        if (isInDirection) {
+          const distance = Math.sqrt(dx * dx + dy * dy)
+          if (distance < nearestDistance) {
+            nearestDistance = distance
+            nearestNode = node
+          }
+        }
+      }
+
+      return nearestNode
+    },
+    [nodes]
+  )
+
+  // Center view on a node (P0-3: Keyboard navigation)
+  const centerOnNode = useCallback(
+    (node: Node) => {
+      const zoom = getZoom()
+      setCenter(node.position.x + 100, node.position.y + 50, { zoom, duration: 200 })
+    },
+    [setCenter, getZoom]
+  )
+
+  // Keyboard navigation handler (P0-3)
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      // Ignore if user is typing in an input
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement
+      ) {
+        return
+      }
+
+      switch (event.key) {
+        case "ArrowUp":
+        case "ArrowDown":
+        case "ArrowLeft":
+        case "ArrowRight": {
+          event.preventDefault()
+          const direction = event.key.replace("Arrow", "").toLowerCase() as
+            | "up"
+            | "down"
+            | "left"
+            | "right"
+
+          // If no node is focused, focus the first node
+          if (!focusedNodeId) {
+            const firstNode = nodes[0]
+            if (firstNode) {
+              setFocusedNodeId(firstNode.id)
+              centerOnNode(firstNode)
+            }
+            return
+          }
+
+          // Find the currently focused node
+          const currentNode = nodes.find((n) => n.id === focusedNodeId)
+          if (!currentNode) return
+
+          // Find and focus the nearest node in the direction
+          const nearestNode = findNearestNode(currentNode, direction)
+          if (nearestNode) {
+            setFocusedNodeId(nearestNode.id)
+            centerOnNode(nearestNode)
+          }
+          break
+        }
+
+        case "Enter":
+        case " ": {
+          event.preventDefault()
+          // Select the focused node (open detail panel)
+          if (focusedNodeId) {
+            const node = nodes.find((n) => n.id === focusedNodeId)
+            if (node) {
+              setSelectedNode(node)
+              onNodeClick?.(node)
+            }
+          }
+          break
+        }
+
+        case "Escape": {
+          event.preventDefault()
+          // Deselect node and clear focus
+          if (selectedNode) {
+            setSelectedNode(null)
+          } else if (focusedNodeId) {
+            setFocusedNodeId(null)
+          }
+          break
+        }
+
+        case "Tab": {
+          // Let Tab work naturally for focus management
+          // but if we are inside the graph, move to next node
+          if (!event.shiftKey && focusedNodeId) {
+            const currentIndex = nodes.findIndex((n) => n.id === focusedNodeId)
+            const nextIndex = (currentIndex + 1) % nodes.length
+            const nextNode = nodes[nextIndex]
+            if (nextNode) {
+              event.preventDefault()
+              setFocusedNodeId(nextNode.id)
+              centerOnNode(nextNode)
+            }
+          } else if (event.shiftKey && focusedNodeId) {
+            const currentIndex = nodes.findIndex((n) => n.id === focusedNodeId)
+            const prevIndex = currentIndex === 0 ? nodes.length - 1 : currentIndex - 1
+            const prevNode = nodes[prevIndex]
+            if (prevNode) {
+              event.preventDefault()
+              setFocusedNodeId(prevNode.id)
+              centerOnNode(prevNode)
+            }
+          }
+          break
+        }
+
+        case "Home": {
+          event.preventDefault()
+          // Focus first node
+          const firstNode = nodes[0]
+          if (firstNode) {
+            setFocusedNodeId(firstNode.id)
+            centerOnNode(firstNode)
+          }
+          break
+        }
+
+        case "End": {
+          event.preventDefault()
+          // Focus last node
+          const lastNode = nodes[nodes.length - 1]
+          if (lastNode) {
+            setFocusedNodeId(lastNode.id)
+            centerOnNode(lastNode)
+          }
+          break
+        }
+      }
+    },
+    [focusedNodeId, nodes, selectedNode, findNearestNode, centerOnNode, onNodeClick]
+  )
+
+  // Memoized event handlers (P1-4)
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       setSelectedNode(node)
+      setFocusedNodeId(node.id)
       onNodeClick?.(node)
     },
     [onNodeClick]
   )
 
-  const closeDetailPanel = () => setSelectedNode(null)
+  const closeDetailPanel = useCallback(() => setSelectedNode(null), [])
+
+  const handleDeleteClick = useCallback((id: string, name: string) => {
+    setDeleteTarget({ id, name })
+  }, [])
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (deleteTarget && onDeleteDecision) {
+      await onDeleteDecision(deleteTarget.id)
+      setDeleteTarget(null)
+      setSelectedNode(null)
+    }
+  }, [deleteTarget, onDeleteDecision])
+
+  const handleSourceFilterClick = useCallback((source: string | null) => {
+    onSourceFilterChange?.(source)
+  }, [onSourceFilterChange])
+
+  // Handle focus on container click
+  const handleContainerFocus = useCallback(() => {
+    if (!focusedNodeId && nodes.length > 0) {
+      setFocusedNodeId(nodes[0].id)
+    }
+  }, [focusedNodeId, nodes])
 
   return (
-    <div className="h-full w-full relative" role="application" aria-label="Knowledge graph visualization">
+    <div
+      ref={containerRef}
+      className="h-full w-full relative focus:outline-none"
+      role="application"
+      aria-label="Knowledge graph visualization. Use arrow keys to navigate between nodes, Enter to select, Escape to deselect."
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      onFocus={handleContainerFocus}
+    >
+      {/* Screen reader instructions */}
+      <div className="sr-only" aria-live="polite">
+        {focusedNodeId
+          ? `Focused on node: ${nodes.find((n) => n.id === focusedNodeId)?.data?.label || "unknown"}. Press Enter to view details, arrow keys to navigate.`
+          : "Press Tab or arrow keys to start navigating the graph."}
+      </div>
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -429,6 +728,7 @@ export function KnowledgeGraph({
       >
         <Controls
           className="!bg-slate-800/80 !border-white/10 !rounded-xl [&>button]:!bg-slate-700/50 [&>button]:!border-white/10 [&>button]:!text-slate-300 [&>button:hover]:!bg-slate-600/50"
+          aria-label="Graph controls"
         />
         <MiniMap
           nodeColor={(node) =>
@@ -436,6 +736,7 @@ export function KnowledgeGraph({
           }
           maskColor="rgba(15, 23, 42, 0.8)"
           className="!bg-slate-800/80 !border-white/10 !rounded-xl"
+          aria-label="Graph minimap"
         />
         <Background
           variant={BackgroundVariant.Dots}
@@ -450,22 +751,29 @@ export function KnowledgeGraph({
             <Card className="w-56 bg-slate-800/90 backdrop-blur-xl border-white/10">
               <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
-                  <Bot className="h-4 w-4" /> Decision Sources
+                  <Bot className="h-4 w-4" aria-hidden="true" /> Decision Sources
                 </CardTitle>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowSourceLegend(false)}
-                  className="h-6 w-6 text-slate-400 hover:text-slate-200"
-                  aria-label="Close source legend"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowSourceLegend(false)}
+                        className="h-6 w-6 text-slate-400 hover:text-slate-200"
+                        aria-label="Close source legend"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Close panel</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </CardHeader>
               <CardContent className="py-2 px-4 space-y-1.5">
                 {/* All sources button */}
                 <button
-                  onClick={() => onSourceFilterChange?.(null)}
+                  onClick={() => handleSourceFilterClick(null)}
                   aria-pressed={!sourceFilter}
                   aria-label="Show all decision sources"
                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
@@ -474,7 +782,7 @@ export function KnowledgeGraph({
                       : "hover:bg-white/5"
                   }`}
                 >
-                  <div className="w-4 h-4 rounded bg-gradient-to-br from-slate-600 to-slate-700 border border-white/20" />
+                  <div className="w-4 h-4 rounded bg-gradient-to-br from-slate-600 to-slate-700 border border-white/20" aria-hidden="true" />
                   <span className="text-xs text-slate-300 flex-1 text-left">All Sources</span>
                   <Badge className="text-[9px] px-1.5 py-0 bg-slate-700 text-slate-300 border-slate-600">
                     {Object.values(sourceCounts).reduce((a, b) => a + b, 0)}
@@ -485,10 +793,11 @@ export function KnowledgeGraph({
                 {Object.entries(SOURCE_STYLES).map(([key, style]) => {
                   const count = sourceCounts[key] || 0
                   if (count === 0 && key !== "unknown") return null
+                  const badgeStyle = SOURCE_BADGE_STYLES[key as keyof typeof SOURCE_BADGE_STYLES] || SOURCE_BADGE_STYLES.unknown
                   return (
                     <button
                       key={key}
-                      onClick={() => onSourceFilterChange?.(sourceFilter === key ? null : key)}
+                      onClick={() => handleSourceFilterClick(sourceFilter === key ? null : key)}
                       aria-pressed={sourceFilter === key}
                       aria-label={`Filter by ${style.label}`}
                       className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
@@ -502,14 +811,8 @@ export function KnowledgeGraph({
                       <Badge
                         className="text-[9px] px-1.5 py-0"
                         style={{
-                          backgroundColor: key === "claude_logs" ? "rgba(168,85,247,0.2)" :
-                                          key === "interview" ? "rgba(16,185,129,0.2)" :
-                                          key === "manual" ? "rgba(245,158,11,0.2)" :
-                                          "rgba(100,116,139,0.2)",
-                          color: key === "claude_logs" ? "#c084fc" :
-                                 key === "interview" ? "#34d399" :
-                                 key === "manual" ? "#fbbf24" :
-                                 "#94a3b8",
+                          backgroundColor: badgeStyle.backgroundColor,
+                          color: badgeStyle.color,
                           borderColor: "transparent",
                         }}
                       >
@@ -532,32 +835,32 @@ export function KnowledgeGraph({
         )}
 
         {/* Node Type Legend */}
-        <Panel position="top-left" className="m-4" style={{ marginTop: showSourceLegend ? '280px' : '0' }}>
+        <Panel position="top-left" className="m-4" style={{ marginTop: showSourceLegend ? "280px" : "0" }}>
           <Card className="w-52 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Entity types legend">
             <CardHeader className="py-3 px-4">
               <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
-                <span role="img" aria-label="Chart icon">📊</span> Entity Types
+                <span aria-hidden="true">chart</span> Entity Types
               </CardTitle>
             </CardHeader>
             <CardContent className="py-2 px-4 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-blue-500/20 border-2 border-blue-400" />
-                <span className="text-xs text-slate-300">🔮 Concept</span>
+                <div className="w-5 h-5 rounded-full bg-blue-500/20 border-2 border-blue-400" aria-hidden="true" />
+                <span className="text-xs text-slate-300">crystal-ball Concept</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-green-500/20 border-2 border-green-400" />
-                <span className="text-xs text-slate-300">⚙️ System</span>
+                <div className="w-5 h-5 rounded-full bg-green-500/20 border-2 border-green-400" aria-hidden="true" />
+                <span className="text-xs text-slate-300">gear System</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-orange-500/20 border-2 border-orange-400" />
-                <span className="text-xs text-slate-300">🔧 Technology</span>
+                <div className="w-5 h-5 rounded-full bg-orange-500/20 border-2 border-orange-400" aria-hidden="true" />
+                <span className="text-xs text-slate-300">wrench Technology</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-purple-500/20 border-2 border-purple-400" />
-                <span className="text-xs text-slate-300">👤 Person</span>
+                <div className="w-5 h-5 rounded-full bg-purple-500/20 border-2 border-purple-400" aria-hidden="true" />
+                <span className="text-xs text-slate-300">person Person</span>
               </div>
               <div className="flex items-center gap-2 pt-1 border-t border-white/10 mt-2">
-                <Sparkles className="h-4 w-4 text-purple-400" />
+                <Sparkles className="h-4 w-4 text-purple-400" aria-hidden="true" />
                 <span className="text-xs text-slate-400">= Has embedding</span>
               </div>
             </CardContent>
@@ -570,17 +873,24 @@ export function KnowledgeGraph({
             <Card className="w-56 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Relationship types legend">
               <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
-                  <GitBranch className="h-4 w-4" /> Relationships
+                  <GitBranch className="h-4 w-4" aria-hidden="true" /> Relationships
                 </CardTitle>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowRelationshipLegend(false)}
-                  className="h-6 w-6 text-slate-400 hover:text-slate-200"
-                  aria-label="Close relationship legend"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowRelationshipLegend(false)}
+                        className="h-6 w-6 text-slate-400 hover:text-slate-200"
+                        aria-label="Close relationship legend"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Close panel</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </CardHeader>
               <CardContent className="py-2 px-4 space-y-1.5">
                 {Object.entries(RELATIONSHIP_STYLES).map(([key, style]) => {
@@ -594,6 +904,7 @@ export function KnowledgeGraph({
                           backgroundColor: style.color,
                           opacity: count > 0 ? 1 : 0.3,
                         }}
+                        aria-hidden="true"
                       />
                       <span className="text-xs text-slate-300 flex-1">
                         {style.icon} {style.label}
@@ -618,40 +929,73 @@ export function KnowledgeGraph({
           </Panel>
         )}
 
-        {/* Tip Panel */}
+        {/* Keyboard Navigation Help Panel */}
         <Panel position="bottom-left" className="m-4">
-          <div className="px-3 py-2 rounded-lg bg-slate-800/80 backdrop-blur-xl border border-white/10 text-xs text-slate-400">
-            💡 Click and drag to pan • Scroll to zoom • Click nodes for details
+          <div className="px-3 py-2 rounded-lg bg-slate-800/80 backdrop-blur-xl border border-white/10 text-xs text-slate-400 space-y-1">
+            <div>Arrow keys: Navigate | Enter: Select | Esc: Deselect</div>
+            <div>Click and drag to pan | Scroll to zoom</div>
           </div>
         </Panel>
 
         {/* Stats Panel */}
         <Panel position="bottom-right" className="m-4">
           <div className="px-3 py-2 rounded-lg bg-slate-800/80 backdrop-blur-xl border border-white/10 text-xs text-slate-400 flex gap-4">
-            <span>📍 {data?.nodes?.length || 0} nodes</span>
-            <span>🔗 {data?.edges?.length || 0} edges</span>
+            <span>pin {data?.nodes?.length || 0} nodes</span>
+            <span>link {data?.edges?.length || 0} edges</span>
           </div>
         </Panel>
       </ReactFlow>
 
       {/* Detail Panel */}
       {selectedNode && (
-        <div className="absolute top-4 right-4 w-80 z-10" style={{ marginTop: showRelationshipLegend ? '220px' : '0' }}>
+        <div className="absolute top-4 right-4 w-80 z-10" style={{ marginTop: showRelationshipLegend ? "220px" : "0" }}>
           <Card className="bg-slate-800/95 backdrop-blur-xl border-white/10 shadow-2xl">
             <CardHeader className="flex flex-row items-center justify-between py-3 border-b border-white/10">
               <CardTitle className="text-base text-slate-100 flex items-center gap-2">
-                {selectedNode.type === "decision" ? "💡" : "🔮"}
+                {selectedNode.type === "decision" ? "lightbulb" : "crystal-ball"}
                 {selectedNode.type === "decision" ? "Decision" : "Entity"} Details
               </CardTitle>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={closeDetailPanel}
-                className="h-8 w-8 text-slate-400 hover:text-slate-200 hover:bg-white/10"
-                aria-label="Close details panel"
-              >
-                <X className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-1">
+                {selectedNode.type === "decision" && onDeleteDecision && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            const decisionData = selectedNode.data as { decision?: Decision }
+                            if (decisionData.decision) {
+                              handleDeleteClick(decisionData.decision.id, decisionData.decision.trigger)
+                            }
+                          }}
+                          className="h-8 w-8 text-slate-400 hover:text-red-400 hover:bg-red-500/10"
+                          aria-label="Delete decision"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Delete this decision</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={closeDetailPanel}
+                        className="h-8 w-8 text-slate-400 hover:text-slate-200 hover:bg-white/10"
+                        aria-label="Close details panel"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Close panel</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </CardHeader>
             <CardContent className="pt-4">
               <ScrollArea className="h-[320px] pr-2">
@@ -663,7 +1007,7 @@ export function KnowledgeGraph({
                     <div className="space-y-4">
                       {decisionData.hasEmbedding && (
                         <div className="flex items-center gap-2 text-xs text-purple-400 bg-purple-500/10 rounded-lg px-3 py-2">
-                          <Sparkles className="h-3 w-3" />
+                          <Sparkles className="h-3 w-3" aria-hidden="true" />
                           <span>Semantic search enabled</span>
                         </div>
                       )}
@@ -695,14 +1039,15 @@ export function KnowledgeGraph({
                         <h4 className="text-xs font-medium text-cyan-400 uppercase tracking-wider mb-2">
                           Related Entities
                         </h4>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2" role="list" aria-label="Related entities">
                           {(decision.entities ?? []).length > 0 ? (
                             decision.entities.map((entity) => (
                               <Badge
                                 key={entity.id}
                                 className="bg-blue-500/20 text-blue-400 border-blue-500/30"
+                                role="listitem"
                               >
-                                ⚙️ {entity.name}
+                                gear {entity.name}
                               </Badge>
                             ))
                           ) : (
@@ -721,7 +1066,7 @@ export function KnowledgeGraph({
                     <div className="space-y-4">
                       {entityData.hasEmbedding && (
                         <div className="flex items-center gap-2 text-xs text-purple-400 bg-purple-500/10 rounded-lg px-3 py-2">
-                          <Sparkles className="h-3 w-3" />
+                          <Sparkles className="h-3 w-3" aria-hidden="true" />
                           <span>Semantic search enabled</span>
                         </div>
                       )}
@@ -747,6 +1092,24 @@ export function KnowledgeGraph({
           </Card>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        itemType="Decision"
+        itemName={deleteTarget?.name}
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
+  )
+}
+
+// Wrapper component with ReactFlowProvider (P0-3: Keyboard navigation requires useReactFlow hook)
+export function KnowledgeGraph(props: KnowledgeGraphProps) {
+  return (
+    <ReactFlowProvider>
+      <KnowledgeGraphInner {...props} />
+    </ReactFlowProvider>
   )
 }

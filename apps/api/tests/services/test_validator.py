@@ -146,7 +146,7 @@ class TestValidatorOrphanEntities:
         """Should detect entity with no relationships."""
         entity = EntityFactory.create(name="OrphanTech", entity_type="technology")
         mock_session.set_response(
-            "NOT (e)-[]-()",
+            "IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO",
             records=[Neo4jRecordFactory.create_entity_record(entity)],
         )
 
@@ -160,7 +160,7 @@ class TestValidatorOrphanEntities:
     @pytest.mark.asyncio
     async def test_no_orphans_returns_empty(self, validator, mock_session):
         """Should return empty list when all entities have relationships."""
-        mock_session.set_response("NOT (e)-[]-()", records=[])
+        mock_session.set_response("IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO", records=[])
 
         issues = await validator.check_orphan_entities()
 
@@ -175,7 +175,7 @@ class TestValidatorOrphanEntities:
             EntityFactory.create(name="Orphan3", entity_type="pattern"),
         ]
         mock_session.set_response(
-            "NOT (e)-[]-()",
+            "IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO",
             records=[Neo4jRecordFactory.create_entity_record(e) for e in entities],
         )
 
@@ -189,7 +189,7 @@ class TestValidatorOrphanEntities:
         """Should include entity type in issue message."""
         entity = EntityFactory.create(name="LonelyPattern", entity_type="pattern")
         mock_session.set_response(
-            "NOT (e)-[]-()",
+            "IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO",
             records=[Neo4jRecordFactory.create_entity_record(entity)],
         )
 
@@ -376,15 +376,11 @@ class TestValidatorMissingEmbeddings:
     @pytest.mark.asyncio
     async def test_detects_decisions_without_embeddings(self, validator, mock_session):
         """Should detect decisions missing embeddings."""
-        call_count = [0]
-
         async def mock_run(query, **params):
-            call_count[0] += 1
             if "DecisionTrace" in query and "embedding IS NULL" in query:
-                # Return some decisions without embeddings
-                decisions = [{"id": "d1", "trigger": "Decision 1"}]
-                return MockNeo4jResult(records=decisions)
-            if "Entity" in query and "count(e)" in query:
+                # Return count of decisions without embeddings
+                return MockNeo4jResult(single_value={"count": 5})
+            if "Entity" in query:
                 return MockNeo4jResult(single_value={"count": 0})
             return MockNeo4jResult(records=[])
 
@@ -394,7 +390,7 @@ class TestValidatorMissingEmbeddings:
 
         assert any(i.type == IssueType.MISSING_EMBEDDING for i in issues)
         decision_issue = next(
-            (i for i in issues if "decision" in i.details.get("type", "")),
+            (i for i in issues if i.details.get("type") == "decision"),
             None
         )
         assert decision_issue is not None
@@ -402,13 +398,12 @@ class TestValidatorMissingEmbeddings:
     @pytest.mark.asyncio
     async def test_detects_entities_without_embeddings(self, validator, mock_session):
         """Should detect entities missing embeddings."""
-        call_count = [0]
-
         async def mock_run(query, **params):
-            call_count[0] += 1
-            if "DecisionTrace" in query:
-                return MockNeo4jResult(records=[])
-            if "Entity" in query and "count(e)" in query:
+            # Decision query: "d.embedding IS NULL" and "count(d)"
+            if "d.embedding IS NULL" in query:
+                return MockNeo4jResult(single_value={"count": 0})
+            # Entity query: "e.embedding IS NULL" and "count(DISTINCT e)"
+            if "e.embedding IS NULL" in query:
                 return MockNeo4jResult(single_value={"count": 5})
             return MockNeo4jResult(records=[])
 
@@ -427,11 +422,8 @@ class TestValidatorMissingEmbeddings:
     async def test_no_missing_embeddings_returns_empty(self, validator, mock_session):
         """Should return empty list when all nodes have embeddings."""
         async def mock_run(query, **params):
-            if "DecisionTrace" in query:
-                return MockNeo4jResult(records=[])
-            if "count(e)" in query:
-                return MockNeo4jResult(single_value={"count": 0})
-            return MockNeo4jResult(records=[])
+            # All queries return count of 0
+            return MockNeo4jResult(single_value={"count": 0})
 
         mock_session.run = mock_run
 
@@ -444,8 +436,8 @@ class TestValidatorMissingEmbeddings:
         """Should suggest running enhance endpoint."""
         async def mock_run(query, **params):
             if "DecisionTrace" in query:
-                return MockNeo4jResult(records=[{"id": "d1", "trigger": "Test"}])
-            if "count(e)" in query:
+                return MockNeo4jResult(single_value={"count": 3})
+            if "Entity" in query:
                 return MockNeo4jResult(single_value={"count": 0})
             return MockNeo4jResult(records=[])
 
@@ -453,8 +445,8 @@ class TestValidatorMissingEmbeddings:
 
         issues = await validator.check_missing_embeddings()
 
-        if issues:
-            assert any("enhance" in (i.suggested_action or "").lower() for i in issues)
+        assert len(issues) > 0
+        assert any("enhance" in (i.suggested_action or "").lower() for i in issues)
 
 
 # ============================================================================
@@ -475,7 +467,7 @@ class TestValidatorInvalidRelationships:
         }
 
         async def mock_run(query, **params):
-            if "(n)-[r]->(n)" in query:
+            if "(d:DecisionTrace)-[r]->(d)" in query:
                 return MockNeo4jResult(records=[self_ref_record])
             return MockNeo4jResult(records=[])
 
@@ -609,7 +601,7 @@ class TestValidatorSummary:
                     Neo4jRecordFactory.create_cycle_record(["A", "B", "A"], ["1", "2", "1"])
                 ])
             # Orphan entity check
-            if "NOT (e)-[]-()" in query:
+            if "IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO" in query:
                 return MockNeo4jResult(records=[
                     {"id": "orphan1", "name": "Orphan", "type": "tech"}
                 ])
@@ -617,7 +609,7 @@ class TestValidatorSummary:
             if "count(e)" in query:
                 return MockNeo4jResult(single_value={"count": 0})
             # Self-referential check
-            if "(n)-[r]->(n)" in query:
+            if "(d:DecisionTrace)-[r]->(d)" in query:
                 return MockNeo4jResult(records=[])
             # Decision-decision entity relationship check
             if "(d1:DecisionTrace)-[r]->(d2:DecisionTrace)" in query:
@@ -626,7 +618,7 @@ class TestValidatorSummary:
             if "r.confidence" in query:
                 return MockNeo4jResult(records=[])
             # Missing decision embeddings
-            if "DecisionTrace" in query and "embedding IS NULL" in query:
+            if "DecisionTrace" in query and "embedding IS NULL" in query and "count(d)" in query:
                 return MockNeo4jResult(records=[])
             # Duplicate entity check
             if "MATCH (e:Entity)" in query and "RETURN e.id" in query:
