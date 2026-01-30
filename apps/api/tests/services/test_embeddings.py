@@ -45,6 +45,7 @@ def create_mock_settings():
     settings.redis_url = "redis://localhost:6379"
     settings.embedding_cache_ttl = 86400
     settings.embedding_cache_min_text_length = 10
+    settings.embedding_batch_size = 32  # SD-QW-002: Default batch size
     return settings
 
 

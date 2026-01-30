@@ -116,7 +116,7 @@ class MockEmbeddingService:
         self,
         texts: list[str],
         input_type: str = "passage",
-        batch_size: int = 10,
+        batch_size: int | None = None,  # SD-QW-002: Default is 32 via settings
     ) -> list[list[float]]:
         """Generate embeddings for multiple texts."""
         self._call_history.append({

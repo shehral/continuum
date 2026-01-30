@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # Embedding cache settings (ML-P1-2)
     embedding_cache_ttl: int = 86400 * 30  # 30 days in seconds
     embedding_cache_min_text_length: int = 10  # Minimum text length to cache
+    # SD-QW-002: Embedding batch size for bulk operations
+    # Tradeoff: Larger batches = fewer API calls but more memory per request
+    # NVIDIA NIM embedding API supports up to ~256 texts per batch
+    # Default 32 balances throughput with memory usage and rate limit (30 req/min)
+    embedding_batch_size: int = 32
 
     # Rate limiting
     rate_limit_requests: int = 30  # requests per minute

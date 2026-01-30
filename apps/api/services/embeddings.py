@@ -4,6 +4,7 @@ Features:
 - SEC-007: API keys accessed via SecretStr.get_secret_value()
 - ML-P1-2: Redis caching with configurable TTL
 - SD-006: Circuit breaker pattern for resilience
+- SD-QW-002: Configurable batch size (default 32) for improved throughput
 """
 
 import hashlib
@@ -177,7 +178,7 @@ class EmbeddingService:
         self,
         texts: List[str],
         input_type: str = "passage",
-        batch_size: int = 10
+        batch_size: int | None = None
     ) -> List[List[float]]:
         """
         Generate embeddings for multiple texts with batch-aware caching and circuit breaker.
@@ -185,7 +186,10 @@ class EmbeddingService:
         Args:
             texts: List of texts to embed
             input_type: "query" for search queries, "passage" for documents
-            batch_size: Number of texts per API call
+            batch_size: Number of texts per API call (default: settings.embedding_batch_size=32)
+                        SD-QW-002: Increased from 10 to 32 for better throughput.
+                        Tradeoff: Larger batches reduce API calls (helpful with 30 req/min limit)
+                        but increase memory per request. NVIDIA NIM supports up to ~256 texts.
 
         Returns:
             List of embedding vectors
@@ -193,6 +197,9 @@ class EmbeddingService:
         Raises:
             CircuitBreakerOpen: If the embedding service circuit is open
         """
+        # SD-QW-002: Use configurable batch size from settings (default 32)
+        if batch_size is None:
+            batch_size = self._settings.embedding_batch_size
         # Check cache for all texts
         results: List[List[float] | None] = [None] * len(texts)
         texts_to_embed: List[tuple[int, str]] = []  # (original_index, text)
