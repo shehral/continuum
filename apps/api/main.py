@@ -5,6 +5,7 @@ Features:
 - SEC-011: Restricted CORS configuration
 - SD-016: Standardized error response schema
 - SD-006: Circuit breaker integration
+- SD-021: Response compression (GZip)
 - DEVOPS-P2-1: Security headers middleware
 - DEVOPS-QW-5: Structured startup logging
 """
@@ -18,6 +19,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from sqlalchemy import text
@@ -496,6 +498,11 @@ app.add_middleware(
     # Cache preflight for 1 hour
     max_age=3600,
 )
+
+# SD-021: GZip compression for API responses
+# Compresses responses larger than 1000 bytes to reduce bandwidth
+# Added last so it runs first on response (innermost middleware on response path)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # =============================================================================
 # Routers

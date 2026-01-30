@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X } from "lucide-react"
+import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Upload, Lightbulb } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -30,11 +30,127 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Slider } from "@/components/ui/slider"
 
-// Confidence badge styling based on level
+// Confidence badge styling based on level (Product-QW-1: Enhanced with tooltips)
 const getConfidenceStyle = (confidence: number) => {
   if (confidence >= 0.8) return "bg-green-500/20 text-green-400 border-green-500/30"
   if (confidence >= 0.6) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
   return "bg-orange-500/20 text-orange-400 border-orange-500/30"
+}
+
+// Get confidence explanation for tooltips (Product-QW-1)
+const getConfidenceExplanation = (confidence: number): { level: string; description: string } => {
+  if (confidence >= 0.8) {
+    return {
+      level: "High Confidence",
+      description: "Strong decision with clear rationale and well-defined context. The extraction has high accuracy.",
+    }
+  }
+  if (confidence >= 0.6) {
+    return {
+      level: "Medium Confidence",
+      description: "Good decision trace but may have some ambiguity in context or rationale. Consider reviewing for completeness.",
+    }
+  }
+  return {
+    level: "Low Confidence",
+    description: "Decision may need review. Could have unclear trigger, missing context, or incomplete rationale.",
+  }
+}
+
+// Date range filter options (Product-QW-2)
+const DATE_RANGE_OPTIONS = [
+  { label: "Today", value: "today", days: 0 },
+  { label: "Last 7 days", value: "week", days: 7 },
+  { label: "Last 30 days", value: "month", days: 30 },
+  { label: "All time", value: "all", days: -1 },
+] as const
+
+type DateRangeValue = typeof DATE_RANGE_OPTIONS[number]["value"]
+
+// Helper to check if a date is within the selected range (Product-QW-2)
+function isWithinDateRange(dateStr: string, range: DateRangeValue): boolean {
+  if (range === "all") return true
+  const date = new Date(dateStr)
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+  if (range === "today") {
+    return date >= startOfToday
+  }
+
+  const option = DATE_RANGE_OPTIONS.find(o => o.value === range)
+  if (!option || option.days < 0) return true
+
+  const cutoff = new Date(startOfToday)
+  cutoff.setDate(cutoff.getDate() - option.days)
+  return date >= cutoff
+}
+
+// Reusable ConfidenceBadge component with tooltip (Product-QW-1)
+function ConfidenceBadge({
+  confidence,
+  className = "",
+  showPercentOnly = false
+}: {
+  confidence: number
+  className?: string
+  showPercentOnly?: boolean
+}) {
+  const explanation = getConfidenceExplanation(confidence)
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            className={`cursor-help ${getConfidenceStyle(confidence)} ${className}`}
+            aria-label={`${Math.round(confidence * 100)}% confidence - ${explanation.level}`}
+          >
+            {showPercentOnly
+              ? `${Math.round(confidence * 100)}%`
+              : `${Math.round(confidence * 100)}% confidence`}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Info className="h-3.5 w-3.5 text-cyan-400" aria-hidden="true" />
+              <span className="font-medium text-slate-200">{explanation.level}</span>
+            </div>
+            <p className="text-xs text-slate-400">{explanation.description}</p>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+// Date range filter component (Product-QW-2)
+function DateRangeFilter({
+  value,
+  onChange,
+}: {
+  value: DateRangeValue
+  onChange: (value: DateRangeValue) => void
+}) {
+  return (
+    <div className="flex gap-1" role="group" aria-label="Date range filter">
+      {DATE_RANGE_OPTIONS.map((option) => (
+        <Button
+          key={option.value}
+          variant={value === option.value ? "default" : "ghost"}
+          size="sm"
+          onClick={() => onChange(option.value)}
+          className={
+            value === option.value
+              ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/30 h-7 text-xs"
+              : "text-slate-400 hover:text-slate-200 h-7 text-xs"
+          }
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  )
 }
 
 function DecisionDetailDialog({
@@ -448,12 +564,19 @@ export default function DecisionsPage() {
     parseInt(searchParams.get("minConfidence") || "0", 10)
   )
   const [filterOpen, setFilterOpen] = useState(false)
+  // Date range filter state (Product-QW-2)
+  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeValue>(
+    (searchParams.get("dateRange") as DateRangeValue) || "all"
+  )
 
   // Count active filters for badge
-  const activeFilterCount = (sourceFilter !== "all" ? 1 : 0) + (confidenceFilter > 0 ? 1 : 0)
+  const activeFilterCount =
+    (sourceFilter !== "all" ? 1 : 0) +
+    (confidenceFilter > 0 ? 1 : 0) +
+    (dateRangeFilter !== "all" ? 1 : 0)
 
   // Update URL when filters change
-  const updateFiltersInUrl = useCallback((source: string, confidence: number) => {
+  const updateFiltersInUrl = useCallback((source: string, confidence: number, dateRange: DateRangeValue = "all") => {
     const params = new URLSearchParams(searchParams.toString())
     if (source !== "all") {
       params.set("source", source)
@@ -465,24 +588,35 @@ export default function DecisionsPage() {
     } else {
       params.delete("minConfidence")
     }
+    if (dateRange !== "all") {
+      params.set("dateRange", dateRange)
+    } else {
+      params.delete("dateRange")
+    }
     const newUrl = params.toString() ? `?${params.toString()}` : "/decisions"
     router.replace(newUrl, { scroll: false })
   }, [searchParams, router])
 
   const handleSourceChange = useCallback((value: string) => {
     setSourceFilter(value)
-    updateFiltersInUrl(value, confidenceFilter)
-  }, [confidenceFilter, updateFiltersInUrl])
+    updateFiltersInUrl(value, confidenceFilter, dateRangeFilter)
+  }, [confidenceFilter, dateRangeFilter, updateFiltersInUrl])
 
   const handleConfidenceChange = useCallback((value: number[]) => {
     const newValue = value[0]
     setConfidenceFilter(newValue)
-    updateFiltersInUrl(sourceFilter, newValue)
-  }, [sourceFilter, updateFiltersInUrl])
+    updateFiltersInUrl(sourceFilter, newValue, dateRangeFilter)
+  }, [sourceFilter, dateRangeFilter, updateFiltersInUrl])
+
+  const handleDateRangeChange = useCallback((value: DateRangeValue) => {
+    setDateRangeFilter(value)
+    updateFiltersInUrl(sourceFilter, confidenceFilter, value)
+  }, [sourceFilter, confidenceFilter, updateFiltersInUrl])
 
   const clearFilters = useCallback(() => {
     setSourceFilter("all")
     setConfidenceFilter(0)
+    setDateRangeFilter("all")
     router.replace("/decisions", { scroll: false })
   }, [router])
 
@@ -549,8 +683,14 @@ export default function DecisionsPage() {
     // Confidence filter (P0-2) - minConfidence as percentage
     const matchesConfidence = d.confidence >= (confidenceFilter / 100)
 
-    return matchesSearch && matchesSource && matchesConfidence
+    // Date range filter (Product-QW-2)
+    const matchesDateRange = isWithinDateRange(d.created_at, dateRangeFilter)
+
+    return matchesSearch && matchesSource && matchesConfidence && matchesDateRange
   })
+
+  // Determine if filters are active (for empty state)
+  const hasActiveFilters = sourceFilter !== "all" || confidenceFilter > 0 || dateRangeFilter !== "all"
 
   // Determine if we should use virtual scrolling (P1-3)
   // Use virtual scrolling when we have more than 20 items for performance
@@ -601,6 +741,11 @@ export default function DecisionsPage() {
                 className="pl-10 bg-white/[0.05] border-white/[0.1] text-slate-200 placeholder:text-slate-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
                 aria-label="Search decisions"
               />
+            </div>
+            {/* Date range quick filters (Product-QW-2) */}
+            <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+              <Calendar className="h-4 w-4 text-slate-500" aria-hidden="true" />
+              <DateRangeFilter value={dateRangeFilter} onChange={handleDateRangeChange} />
             </div>
             <Popover open={filterOpen} onOpenChange={setFilterOpen}>
               <PopoverTrigger asChild>

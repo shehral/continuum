@@ -1,6 +1,7 @@
-"""Dashboard endpoints with proper error handling (SEC-014).
+"""Dashboard endpoints with proper error handling and caching.
 
 SEC-014: Replaced silent exception handling with specific exception handling and logging.
+SD-024: Added Redis caching for dashboard stats (30 second TTL).
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +15,7 @@ from db.neo4j import get_neo4j_session
 from db.postgres import get_db
 from models.postgres import CaptureSession
 from models.schemas import DashboardStats, Decision, Entity
+from utils.cache import get_cached, set_cached, invalidate_cache
 from utils.logging import get_logger
 
 router = APIRouter()
@@ -21,11 +23,21 @@ logger = get_logger(__name__)
 
 
 @router.get("/stats", response_model=DashboardStats)
-async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
+async def get_dashboard_stats(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = "anonymous",  # TODO: Wire up real user_id from auth when available
+):
     """Get dashboard statistics.
 
     SEC-014: Proper error handling with specific exceptions and appropriate HTTP responses.
+    SD-024: Results are cached in Redis for 30 seconds to reduce database load.
     """
+    # SD-024: Check cache first
+    cached = await get_cached("dashboard_stats", user_id)
+    if cached is not None:
+        logger.debug(f"Returning cached dashboard stats for user {user_id}")
+        return DashboardStats(**cached)
+
     # Track what succeeded for partial responses
     total_sessions = 0
     total_decisions = 0
@@ -156,9 +168,19 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     if errors:
         logger.warning(f"Dashboard stats returned with partial failures: {errors}")
 
-    return DashboardStats(
+    result = DashboardStats(
         total_decisions=total_decisions,
         total_entities=total_entities,
         total_sessions=total_sessions,
         recent_decisions=recent_decisions,
     )
+
+    # SD-024: Cache the result for 30 seconds
+    await set_cached(
+        "dashboard_stats",
+        user_id,
+        result.model_dump(),
+        ttl=30,
+    )
+
+    return result

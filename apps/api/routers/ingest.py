@@ -1,6 +1,7 @@
 """Ingestion endpoints with proper error handling (SEC-014).
 
 SEC-014: Replaced silent exception handling with specific exception handling and logging.
+SD-024: Cache invalidation added after ingestion completes.
 """
 
 from datetime import UTC, datetime
@@ -16,6 +17,7 @@ from models.schemas import IngestionResult, IngestionStatus
 from services.extractor import DecisionExtractor
 from services.file_watcher import get_file_watcher
 from services.parser import ClaudeLogParser
+from utils.cache import invalidate_user_caches
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -174,6 +176,10 @@ async def trigger_ingestion(
             logger.warning(f"Ingestion completed with errors: {errors}")
         else:
             status = "completed"
+
+        # SD-024: Invalidate caches since data changed
+        # Using "anonymous" as default user since ingestion doesn't have auth context yet
+        await invalidate_user_caches("anonymous")
 
         return IngestionResult(
             status=status,

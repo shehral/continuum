@@ -3,6 +3,8 @@
 All decisions are isolated by user. Users can only access their own decisions.
 Anonymous users can create and view decisions, but they are isolated under
 the "anonymous" user_id and not shared across sessions.
+
+SD-024: Cache invalidation added when decisions are created/deleted.
 """
 
 from datetime import UTC, datetime
@@ -15,6 +17,7 @@ from pydantic import BaseModel
 from db.neo4j import get_neo4j_session
 from models.schemas import Decision, DecisionCreate, DecisionUpdate, Entity
 from routers.auth import get_current_user_id
+from utils.cache import invalidate_user_caches
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -138,6 +141,10 @@ async def delete_decision(
         )
 
     logger.info(f"Deleted decision {decision_id} for user {user_id}")
+
+    # SD-024: Invalidate caches since data changed
+    await invalidate_user_caches(user_id)
+
     return {"status": "deleted", "id": decision_id}
 
 
@@ -380,6 +387,9 @@ async def create_decision(
                     )
 
     logger.info(f"Created decision {decision_id} for user {user_id}")
+
+    # SD-024: Invalidate caches since data changed
+    await invalidate_user_caches(user_id)
 
     # Fetch and return the created decision with its entities
     session = await get_neo4j_session()

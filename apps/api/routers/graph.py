@@ -2,6 +2,8 @@
 
 All graph operations are user-isolated. Users can only access nodes
 and relationships belonging to their own data.
+
+SD-024: Added Redis caching for expensive stats queries.
 """
 
 from typing import Optional
@@ -26,6 +28,7 @@ from models.schemas import (
 )
 from routers.auth import get_current_user_id
 from services.embeddings import get_embedding_service
+from utils.cache import get_cached, set_cached, invalidate_user_caches
 from utils.logging import get_logger
 from utils.vectors import cosine_similarity
 
@@ -1528,7 +1531,16 @@ async def semantic_search(
 async def get_graph_stats(
     user_id: str = Depends(get_current_user_id),
 ):
-    """Get statistics about the user's knowledge graph."""
+    """Get statistics about the user's knowledge graph.
+
+    SD-024: Results are cached in Redis for 30 seconds.
+    """
+    # SD-024: Check cache first
+    cached = await get_cached("graph_stats", user_id)
+    if cached is not None:
+        logger.debug(f"Returning cached graph stats for user {user_id}")
+        return cached
+
     session = await get_neo4j_session()
     async with session:
         result = await session.run(
@@ -1557,7 +1569,7 @@ async def get_graph_stats(
 
         record = await result.single()
         if record:
-            return {
+            result = {
                 "decisions": {
                     "total": record["total_decisions"],
                     "with_embeddings": record["decisions_with_embeddings"],
@@ -1568,12 +1580,16 @@ async def get_graph_stats(
                 },
                 "relationships": record["total_relationships"],
             }
+        else:
+            result = {
+                "decisions": {"total": 0, "with_embeddings": 0},
+                "entities": {"total": 0, "with_embeddings": 0},
+                "relationships": 0,
+            }
 
-        return {
-            "decisions": {"total": 0, "with_embeddings": 0},
-            "entities": {"total": 0, "with_embeddings": 0},
-            "relationships": 0,
-        }
+        # SD-024: Cache the result for 30 seconds
+        await set_cached("graph_stats", user_id, result, ttl=30)
+        return result
 
 
 @router.get("/relationships/types")
@@ -1637,6 +1653,9 @@ async def reset_graph(
             """
         )
 
+    # SD-024: Invalidate user's caches after data deletion
+    await invalidate_user_caches(user_id)
+
     return {
         "status": "completed",
         "message": "Your graph data has been deleted"
@@ -1647,7 +1666,16 @@ async def reset_graph(
 async def get_decision_sources(
     user_id: str = Depends(get_current_user_id),
 ):
-    """Get decision counts by source type for the user."""
+    """Get decision counts by source type for the user.
+
+    SD-024: Results are cached in Redis for 60 seconds.
+    """
+    # SD-024: Check cache first
+    cached = await get_cached("graph_sources", user_id)
+    if cached is not None:
+        logger.debug(f"Returning cached graph sources for user {user_id}")
+        return cached
+
     session = await get_neo4j_session()
     async with session:
         result = await session.run(
@@ -1666,6 +1694,8 @@ async def get_decision_sources(
         async for record in result:
             sources[record["source"]] = record["count"]
 
+        # SD-024: Cache the result for 60 seconds
+        await set_cached("graph_sources", user_id, sources, ttl=60)
         return sources
 
 

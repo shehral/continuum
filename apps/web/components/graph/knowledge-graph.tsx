@@ -26,8 +26,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { X, Sparkles, GitBranch, Bot, User, FileText, Trash2, Loader2, Link2 } from "lucide-react"
+import { X, Sparkles, GitBranch, Bot, User, FileText, Trash2, Loader2, Link2, Network, FolderOpen, Plus } from "lucide-react"
 import { type GraphData, type Decision, type Entity, type SimilarDecision, api } from "@/lib/api"
+import Link from "next/link"
 import { DeleteConfirmDialog } from "@/components/ui/confirm-dialog"
 
 // Pre-computed style objects for source badges (P1-3)
@@ -335,6 +336,69 @@ const nodeTypes = {
   decision: DecisionNode,
   entity: EntityNode,
 }
+// Empty state component for when the graph has no nodes (FE-QW-6)
+function GraphEmptyState() {
+  return (
+    <div className="h-full w-full flex items-center justify-center bg-slate-900/50">
+      <div className="text-center max-w-md mx-auto p-8 animate-in fade-in zoom-in-95 duration-500">
+        {/* Decorative illustration */}
+        <div className="relative mx-auto mb-6 w-32 h-32">
+          {/* Outer glow */}
+          <div className="absolute inset-0 rounded-full bg-cyan-500/10 animate-pulse" />
+          {/* Main circle */}
+          <div className="absolute inset-2 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-cyan-500/20 flex items-center justify-center">
+            <Network className="h-12 w-12 text-cyan-400/70" aria-hidden="true" />
+          </div>
+          {/* Decorative nodes */}
+          <div className="absolute top-0 right-0 w-6 h-6 rounded-full bg-purple-500/20 border border-purple-400/30 animate-bounce" style={{ animationDelay: '0.1s' }} />
+          <div className="absolute bottom-2 left-0 w-5 h-5 rounded-full bg-green-500/20 border border-green-400/30 animate-bounce" style={{ animationDelay: '0.3s' }} />
+          <div className="absolute bottom-0 right-4 w-4 h-4 rounded-full bg-orange-500/20 border border-orange-400/30 animate-bounce" style={{ animationDelay: '0.5s' }} />
+          {/* Connection lines */}
+          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 128 128">
+            <line x1="64" y1="64" x2="110" y2="20" stroke="rgba(168,85,247,0.3)" strokeWidth="1" strokeDasharray="4,4" />
+            <line x1="64" y1="64" x2="20" y2="105" stroke="rgba(34,197,94,0.3)" strokeWidth="1" strokeDasharray="4,4" />
+            <line x1="64" y1="64" x2="100" y2="110" stroke="rgba(249,115,22,0.3)" strokeWidth="1" strokeDasharray="4,4" />
+          </svg>
+        </div>
+
+        <h3 className="text-xl font-semibold text-slate-100 mb-2">
+          Your Knowledge Graph is Empty
+        </h3>
+        <p className="text-slate-400 mb-6 leading-relaxed">
+          Import Claude Code conversation logs to automatically extract decisions, 
+          or start a guided interview to capture knowledge manually.
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <Button
+            asChild
+            className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)] hover:scale-105 transition-all"
+          >
+            <Link href="/add">
+              <FolderOpen className="h-4 w-4 mr-2" aria-hidden="true" />
+              Import Claude Logs
+            </Link>
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100"
+          >
+            <Link href="/decisions?add=true">
+              <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
+              Add Manually
+            </Link>
+          </Button>
+        </div>
+
+        <p className="text-xs text-slate-500 mt-6">
+          Tip: Decisions and their relationships will appear here as connected nodes
+        </p>
+      </div>
+    </div>
+  )
+}
+
 
 interface KnowledgeGraphProps {
   data?: GraphData
@@ -722,6 +786,12 @@ function KnowledgeGraphInner({
       setFocusedNodeId(nodes[0].id)
     }
   }, [focusedNodeId, nodes])
+
+
+  // Show empty state when there are no nodes (FE-QW-6)
+  if (!data?.nodes || data.nodes.length === 0) {
+    return <GraphEmptyState />
+  }
 
   return (
     <div
