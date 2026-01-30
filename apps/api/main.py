@@ -6,9 +6,12 @@ Features:
 - SD-016: Standardized error response schema
 - SD-006: Circuit breaker integration
 - DEVOPS-P2-1: Security headers middleware
+- DEVOPS-QW-5: Structured startup logging
 """
 
 import asyncio
+import os
+import platform
 import signal
 from contextlib import asynccontextmanager
 
@@ -43,6 +46,10 @@ from routers import (
 )
 from utils.circuit_breaker import CircuitBreakerOpen, get_circuit_breaker_stats
 from utils.logging import get_logger
+
+# Application version - update this when releasing new versions
+APP_VERSION = "0.1.0"
+APP_NAME = "Continuum API"
 
 logger = get_logger(__name__)
 
@@ -100,7 +107,7 @@ async def check_redis_connection() -> bool:
         return False
 
 
-async def init_databases():
+async def init_databases() -> dict[str, bool]:
     """Initialize all database connections with error handling."""
     services_status = {"postgres": False, "neo4j": False, "redis": False}
 
@@ -192,6 +199,75 @@ def setup_signal_handlers(loop: asyncio.AbstractEventLoop):
             )
 
 
+def log_startup_banner(settings, services_status: dict[str, bool]):
+    """Log structured startup information (DEVOPS-QW-5).
+
+    Logs application version, environment, connected services, and runtime info
+    in a structured format suitable for log aggregation systems.
+    """
+    # Determine environment
+    environment = "development" if settings.debug else "production"
+
+    # Get port from environment or default
+    port = int(os.getenv("PORT", os.getenv("UVICORN_PORT", "8000")))
+    host = os.getenv("HOST", os.getenv("UVICORN_HOST", "127.0.0.1"))
+
+    # Build services status summary
+    connected_services = [svc for svc, ok in services_status.items() if ok]
+    failed_services = [svc for svc, ok in services_status.items() if not ok]
+
+    # Log structured startup information
+    logger.info(
+        "Application startup complete",
+        extra={
+            "event": "startup",
+            "app_name": APP_NAME,
+            "app_version": APP_VERSION,
+            "environment": environment,
+            "host": host,
+            "port": port,
+            "python_version": platform.python_version(),
+            "platform": platform.system(),
+            "services": {
+                "connected": connected_services,
+                "failed": failed_services,
+                "postgres": "connected" if services_status.get("postgres") else "failed",
+                "neo4j": "connected" if services_status.get("neo4j") else "failed",
+                "redis": "connected" if services_status.get("redis") else "failed",
+            },
+            "config": {
+                "cors_origins": settings.cors_origins,
+                "rate_limit_requests": settings.rate_limit_requests,
+                "rate_limit_window": settings.rate_limit_window,
+                "llm_model": settings.nvidia_model,
+                "embedding_model": settings.nvidia_embedding_model,
+            },
+        },
+    )
+
+    # Also log human-readable summary for local development
+    logger.info(f"App: {APP_NAME} v{APP_VERSION}")
+    logger.info(f"Environment: {environment}")
+    logger.info(f"Listening on: http://{host}:{port}")
+    logger.info(f"Python: {platform.python_version()} ({platform.system()})")
+    logger.info(f"Services connected: {', '.join(connected_services) or 'none'}")
+    if failed_services:
+        logger.warning(f"Services failed: {', '.join(failed_services)}")
+    logger.info(f"API docs available at: http://{host}:{port}/docs")
+
+
+def log_shutdown_info():
+    """Log structured shutdown information."""
+    logger.info(
+        "Application shutdown initiated",
+        extra={
+            "event": "shutdown",
+            "app_name": APP_NAME,
+            "app_version": APP_VERSION,
+        },
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager with graceful shutdown support."""
@@ -206,12 +282,11 @@ async def lifespan(app: FastAPI):
 
     # Startup
     logger.info("=" * 60)
-    logger.info("Continuum API starting up...")
-    logger.info(f"Environment: {'DEBUG' if settings.debug else 'PRODUCTION'}")
+    logger.info(f"{APP_NAME} v{APP_VERSION} starting up...")
 
     try:
-        await init_databases()
-        logger.info("All database services connected successfully")
+        services_status = await init_databases()
+        log_startup_banner(settings, services_status)
         logger.info("=" * 60)
     except Exception as e:
         logger.error(f"Failed to initialize services: {e}")
@@ -222,6 +297,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("=" * 60)
+    log_shutdown_info()
     logger.info("Shutting down gracefully...")
 
     # Give in-flight requests time to complete (configurable timeout)
@@ -238,9 +314,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Continuum API",
+    title=APP_NAME,
     description="Knowledge Management Platform API",
-    version="0.1.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 
@@ -508,7 +584,7 @@ async def circuit_breaker_status():
 @app.get("/")
 async def root():
     return {
-        "name": "Continuum API",
-        "version": "0.1.0",
+        "name": APP_NAME,
+        "version": APP_VERSION,
         "docs": "/docs",
     }
