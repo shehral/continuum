@@ -10,6 +10,7 @@ export interface Decision {
   confidence: number
   created_at: string
   entities: Entity[]
+  source?: "claude_logs" | "interview" | "manual" | "unknown"
 }
 
 export interface Entity {
@@ -336,6 +337,55 @@ class ApiClient {
       body: JSON.stringify({ text }),
     })
   }
+
+  // Hybrid search combining lexical and semantic search
+  async hybridSearch(
+    query: string,
+    options?: {
+      topK?: number
+      threshold?: number
+      alpha?: number
+      searchDecisions?: boolean
+      searchEntities?: boolean
+    }
+  ): Promise<HybridSearchResult[]> {
+    const body = {
+      query,
+      top_k: options?.topK ?? 10,
+      threshold: options?.threshold ?? 0.3,
+      alpha: options?.alpha ?? 0.3,
+      search_decisions: options?.searchDecisions ?? true,
+      search_entities: options?.searchEntities ?? true,
+    }
+    return this.fetch<HybridSearchResult[]>("/api/graph/search/hybrid", {
+      method: "POST",
+      body: JSON.stringify(body),
+    })
+  }
 }
 
 export const api = new ApiClient()
+
+// Hybrid search types and methods
+export interface HybridSearchResult {
+  id: string
+  type: "decision" | "entity"
+  label: string
+  lexical_score: number
+  semantic_score: number
+  combined_score: number
+  data: {
+    trigger?: string
+    decision?: string
+    context?: string
+    rationale?: string
+    created_at?: string
+    source?: string
+    name?: string
+    type?: string
+    aliases?: string[]
+  }
+  matched_fields: string[]
+}
+
+export type SearchMode = "hybrid" | "lexical" | "semantic"

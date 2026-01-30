@@ -67,7 +67,7 @@ const sampleGraphData = {
         rationale: 'Better for relational data',
         confidence: 0.9,
         created_at: '2024-01-01T00:00:00Z',
-        source: 'claude_logs',
+        source: 'claude_logs' as const,
         entities: [{ id: 'e1', name: 'PostgreSQL', type: 'technology' as const }],
       },
     },

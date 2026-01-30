@@ -17,6 +17,10 @@ from models.schemas import (
     GraphNode,
     HybridSearchRequest,
     HybridSearchResult,
+    NeighborNode,
+    NeighborsResponse,
+    PaginatedGraphData,
+    PaginationMeta,
     SemanticSearchRequest,
     SimilarDecision,
 )
@@ -83,8 +87,10 @@ def _user_filter_clause(alias: str = "d") -> str:
     return f"({alias}.user_id = $user_id OR {alias}.user_id IS NULL)"
 
 
-@router.get("", response_model=GraphData)
+@router.get("", response_model=PaginatedGraphData)
 async def get_graph(
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(100, ge=1, le=500, description="Number of decisions per page"),
     include_similarity: bool = Query(True, description="Include SIMILAR_TO edges"),
     include_temporal: bool = Query(True, description="Include INFLUENCED_BY edges"),
     include_entity_relations: bool = Query(True, description="Include entity-to-entity edges"),
@@ -94,7 +100,223 @@ async def get_graph(
     min_confidence: float = Query(0.0, ge=0.0, le=1.0, description="Minimum confidence for relationships"),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Get the user's knowledge graph with all relationship types.
+    """Get the user's knowledge graph with pagination support (SD-003).
+
+    Returns decisions in pages with their connected entities.
+    For large graphs, use smaller page sizes and lazy load neighbors via
+    GET /graph/nodes/{node_id}/neighbors.
+
+    Users can only see their own decisions and related entities.
+    """
+    try:
+        session = await get_neo4j_session()
+        async with session:
+            nodes = []
+            edges = []
+            decision_ids = set()  # Track which decisions belong to user
+
+            # Calculate pagination offset
+            offset = (page - 1) * page_size
+
+            # First, get total count of decisions for pagination metadata
+            if source_filter:
+                count_query = """
+                    MATCH (d:DecisionTrace)
+                    WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+                    AND (d.source = $source OR (d.source IS NULL AND $source = 'unknown'))
+                    RETURN count(d) as total
+                """
+                count_result = await session.run(count_query, source=source_filter, user_id=user_id)
+            else:
+                count_result = await session.run(
+                    """
+                    MATCH (d:DecisionTrace)
+                    WHERE d.user_id = $user_id OR d.user_id IS NULL
+                    RETURN count(d) as total
+                    """,
+                    user_id=user_id,
+                )
+
+            count_record = await count_result.single()
+            total_count = count_record["total"] if count_record else 0
+            total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+            has_more = page < total_pages
+
+            # Build decision query with user isolation, pagination, and optional source filter
+            if source_filter:
+                decision_query = """
+                    MATCH (d:DecisionTrace)
+                    WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+                    AND (d.source = $source OR (d.source IS NULL AND $source = 'unknown'))
+                    RETURN d, d.embedding IS NOT NULL AS has_embedding
+                    ORDER BY d.created_at DESC
+                    SKIP $offset
+                    LIMIT $limit
+                """
+                result = await session.run(
+                    decision_query,
+                    source=source_filter,
+                    user_id=user_id,
+                    offset=offset,
+                    limit=page_size,
+                )
+            else:
+                result = await session.run(
+                    """
+                    MATCH (d:DecisionTrace)
+                    WHERE d.user_id = $user_id OR d.user_id IS NULL
+                    RETURN d, d.embedding IS NOT NULL AS has_embedding
+                    ORDER BY d.created_at DESC
+                    SKIP $offset
+                    LIMIT $limit
+                    """,
+                    user_id=user_id,
+                    offset=offset,
+                    limit=page_size,
+                )
+
+            async for record in result:
+                d = record["d"]
+                has_embedding = record["has_embedding"]
+                decision_ids.add(d["id"])
+                nodes.append(
+                    GraphNode(
+                        id=d["id"],
+                        type="decision",
+                        label=d.get("trigger", "Decision")[:50],
+                        has_embedding=has_embedding,
+                        data={
+                            "trigger": d.get("trigger", ""),
+                            "context": d.get("context", ""),
+                            "options": d.get("options", []),
+                            "decision": d.get("decision", ""),
+                            "rationale": d.get("rationale", ""),
+                            "confidence": d.get("confidence", 0.0),
+                            "created_at": d.get("created_at", ""),
+                            "source": d.get("source", "unknown"),
+                        },
+                    )
+                )
+
+            # Get entities connected to the paginated decisions only
+            if decision_ids:
+                decision_ids_list = list(decision_ids)
+                result = await session.run(
+                    """
+                    MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+                    WHERE d.id IN $decision_ids
+                    WITH DISTINCT e
+                    RETURN e, e.embedding IS NOT NULL AS has_embedding
+                    """,
+                    decision_ids=decision_ids_list,
+                )
+
+                entity_ids = set()
+                async for record in result:
+                    e = record["e"]
+                    has_embedding = record["has_embedding"]
+                    entity_ids.add(e["id"])
+                    nodes.append(
+                        GraphNode(
+                            id=e["id"],
+                            type="entity",
+                            label=e.get("name", "Entity"),
+                            has_embedding=has_embedding,
+                            data={
+                                "name": e.get("name", ""),
+                                "type": e.get("type", "concept"),
+                                "aliases": e.get("aliases", []),
+                            },
+                        )
+                    )
+
+                # Build relationship query based on flags
+                rel_types = ["INVOLVES"]
+                if include_similarity:
+                    rel_types.append("SIMILAR_TO")
+                if include_temporal:
+                    rel_types.append("INFLUENCED_BY")
+                if include_entity_relations:
+                    rel_types.extend(["IS_A", "PART_OF", "RELATED_TO", "DEPENDS_ON", "ALTERNATIVE_TO"])
+                if include_contradictions:
+                    rel_types.append("CONTRADICTS")
+                if include_supersessions:
+                    rel_types.append("SUPERSEDES")
+
+                # Get relationships only between the paginated nodes
+                # For decision-decision relationships within the page
+                # For decision-entity relationships for paginated decisions
+                all_node_ids = list(decision_ids | entity_ids)
+                result = await session.run(
+                    """
+                    MATCH (a)-[r]->(b)
+                    WHERE a.id IN $node_ids AND b.id IN $node_ids
+                    AND type(r) IN $rel_types
+                    AND (r.confidence IS NULL OR r.confidence >= $min_confidence)
+                    AND (r.score IS NULL OR r.score >= $min_confidence)
+                    RETURN a.id as source, b.id as target, type(r) as relationship,
+                           r.weight as weight, r.score as score, r.confidence as confidence,
+                           r.shared_entities as shared_entities, r.reasoning as reasoning
+                    """,
+                    node_ids=all_node_ids,
+                    rel_types=rel_types,
+                    min_confidence=min_confidence,
+                )
+
+                edge_id = 0
+                async for record in result:
+                    # Determine edge weight from various properties
+                    weight = (
+                        record.get("weight")
+                        or record.get("score")
+                        or record.get("confidence")
+                        or 1.0
+                    )
+
+                    edges.append(
+                        GraphEdge(
+                            id=f"edge-{edge_id}",
+                            source=record["source"],
+                            target=record["target"],
+                            relationship=record["relationship"],
+                            weight=weight,
+                        )
+                    )
+                    edge_id += 1
+
+            # Build pagination metadata
+            pagination = PaginationMeta(
+                page=page,
+                page_size=page_size,
+                total_count=total_count,
+                total_pages=total_pages,
+                has_more=has_more,
+            )
+
+            return PaginatedGraphData(nodes=nodes, edges=edges, pagination=pagination)
+    except DriverError as e:
+        logger.error(f"Database connection error: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    except (ClientError, DatabaseError) as e:
+        logger.error(f"Error fetching graph: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch graph data")
+
+
+@router.get("/all", response_model=GraphData)
+async def get_full_graph(
+    include_similarity: bool = Query(True, description="Include SIMILAR_TO edges"),
+    include_temporal: bool = Query(True, description="Include INFLUENCED_BY edges"),
+    include_entity_relations: bool = Query(True, description="Include entity-to-entity edges"),
+    include_contradictions: bool = Query(False, description="Include CONTRADICTS edges"),
+    include_supersessions: bool = Query(False, description="Include SUPERSEDES edges"),
+    source_filter: Optional[str] = Query(None, description="Filter by source: claude_logs, interview, manual, unknown"),
+    min_confidence: float = Query(0.0, ge=0.0, le=1.0, description="Minimum confidence for relationships"),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get the user's complete knowledge graph without pagination.
+
+    WARNING: For large graphs (1000+ decisions), this may be slow.
+    Consider using the paginated GET /graph endpoint instead.
 
     Users can only see their own decisions and related entities.
     """
@@ -258,6 +480,220 @@ async def get_graph(
     except (ClientError, DatabaseError) as e:
         logger.error(f"Error fetching graph: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch graph data")
+
+
+@router.get("/nodes/{node_id}/neighbors", response_model=NeighborsResponse)
+async def get_node_neighbors(
+    node_id: str,
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of neighbors to return"),
+    relationship_types: Optional[str] = Query(
+        None,
+        description="Comma-separated list of relationship types to include (e.g., 'INVOLVES,SIMILAR_TO')"
+    ),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get neighbors of a specific node for lazy loading (SD-003).
+
+    Returns nodes directly connected to the specified node along with
+    relationship information. Useful for expanding the graph on-demand
+    when a user clicks on a node.
+
+    Users can only access their own data.
+    """
+    try:
+        session = await get_neo4j_session()
+        async with session:
+            neighbors = []
+
+            # Parse relationship types if provided
+            rel_type_filter = ""
+            rel_types_list = None
+            if relationship_types:
+                rel_types_list = [rt.strip().upper() for rt in relationship_types.split(",")]
+                rel_type_filter = "AND type(r) IN $rel_types"
+
+            # Verify the node exists and belongs to user
+            # Check if it's a decision
+            verify_result = await session.run(
+                """
+                MATCH (n)
+                WHERE n.id = $node_id
+                AND (
+                    (n:DecisionTrace AND (n.user_id = $user_id OR n.user_id IS NULL))
+                    OR (n:Entity AND EXISTS {
+                        MATCH (d:DecisionTrace)-[:INVOLVES]->(n)
+                        WHERE d.user_id = $user_id OR d.user_id IS NULL
+                    })
+                )
+                RETURN labels(n)[0] as node_type
+                """,
+                node_id=node_id,
+                user_id=user_id,
+            )
+            verify_record = await verify_result.single()
+            if not verify_record:
+                raise HTTPException(status_code=404, detail="Node not found")
+
+            # Get outgoing neighbors
+            outgoing_query = f"""
+                MATCH (source)-[r]->(target)
+                WHERE source.id = $node_id
+                AND (
+                    (target:DecisionTrace AND (target.user_id = $user_id OR target.user_id IS NULL))
+                    OR (target:Entity AND EXISTS {{
+                        MATCH (d:DecisionTrace)-[:INVOLVES]->(target)
+                        WHERE d.user_id = $user_id OR d.user_id IS NULL
+                    }})
+                )
+                {rel_type_filter}
+                RETURN target, type(r) as relationship,
+                       r.weight as weight, r.score as score, r.confidence as confidence,
+                       labels(target)[0] as target_type,
+                       target.embedding IS NOT NULL as has_embedding
+                LIMIT $limit
+            """
+
+            params = {"node_id": node_id, "user_id": user_id, "limit": limit}
+            if rel_types_list:
+                params["rel_types"] = rel_types_list
+
+            result = await session.run(outgoing_query, **params)
+            async for record in result:
+                target = record["target"]
+                target_type = record["target_type"]
+                has_embedding = record["has_embedding"]
+
+                # Build node based on type
+                if target_type == "DecisionTrace":
+                    node = GraphNode(
+                        id=target["id"],
+                        type="decision",
+                        label=target.get("trigger", "Decision")[:50],
+                        has_embedding=has_embedding,
+                        data={
+                            "trigger": target.get("trigger", ""),
+                            "context": target.get("context", ""),
+                            "options": target.get("options", []),
+                            "decision": target.get("decision", ""),
+                            "rationale": target.get("rationale", ""),
+                            "confidence": target.get("confidence", 0.0),
+                            "created_at": target.get("created_at", ""),
+                            "source": target.get("source", "unknown"),
+                        },
+                    )
+                else:
+                    node = GraphNode(
+                        id=target["id"],
+                        type="entity",
+                        label=target.get("name", "Entity"),
+                        has_embedding=has_embedding,
+                        data={
+                            "name": target.get("name", ""),
+                            "type": target.get("type", "concept"),
+                            "aliases": target.get("aliases", []),
+                        },
+                    )
+
+                weight = (
+                    record.get("weight")
+                    or record.get("score")
+                    or record.get("confidence")
+                )
+
+                neighbors.append(
+                    NeighborNode(
+                        node=node,
+                        relationship=record["relationship"],
+                        direction="outgoing",
+                        weight=weight,
+                    )
+                )
+
+            # Get incoming neighbors
+            incoming_query = f"""
+                MATCH (source)-[r]->(target)
+                WHERE target.id = $node_id
+                AND (
+                    (source:DecisionTrace AND (source.user_id = $user_id OR source.user_id IS NULL))
+                    OR (source:Entity AND EXISTS {{
+                        MATCH (d:DecisionTrace)-[:INVOLVES]->(source)
+                        WHERE d.user_id = $user_id OR d.user_id IS NULL
+                    }})
+                )
+                {rel_type_filter}
+                RETURN source, type(r) as relationship,
+                       r.weight as weight, r.score as score, r.confidence as confidence,
+                       labels(source)[0] as source_type,
+                       source.embedding IS NOT NULL as has_embedding
+                LIMIT $limit
+            """
+
+            result = await session.run(incoming_query, **params)
+            async for record in result:
+                source = record["source"]
+                source_type = record["source_type"]
+                has_embedding = record["has_embedding"]
+
+                # Build node based on type
+                if source_type == "DecisionTrace":
+                    node = GraphNode(
+                        id=source["id"],
+                        type="decision",
+                        label=source.get("trigger", "Decision")[:50],
+                        has_embedding=has_embedding,
+                        data={
+                            "trigger": source.get("trigger", ""),
+                            "context": source.get("context", ""),
+                            "options": source.get("options", []),
+                            "decision": source.get("decision", ""),
+                            "rationale": source.get("rationale", ""),
+                            "confidence": source.get("confidence", 0.0),
+                            "created_at": source.get("created_at", ""),
+                            "source": source.get("source", "unknown"),
+                        },
+                    )
+                else:
+                    node = GraphNode(
+                        id=source["id"],
+                        type="entity",
+                        label=source.get("name", "Entity"),
+                        has_embedding=has_embedding,
+                        data={
+                            "name": source.get("name", ""),
+                            "type": source.get("type", "concept"),
+                            "aliases": source.get("aliases", []),
+                        },
+                    )
+
+                weight = (
+                    record.get("weight")
+                    or record.get("score")
+                    or record.get("confidence")
+                )
+
+                neighbors.append(
+                    NeighborNode(
+                        node=node,
+                        relationship=record["relationship"],
+                        direction="incoming",
+                        weight=weight,
+                    )
+                )
+
+            return NeighborsResponse(
+                source_node_id=node_id,
+                neighbors=neighbors,
+                total_count=len(neighbors),
+            )
+
+    except DriverError as e:
+        logger.error(f"Database connection error: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    except HTTPException:
+        raise
+    except (ClientError, DatabaseError) as e:
+        logger.error(f"Error fetching neighbors: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch neighbors")
 
 
 @router.get("/validate", response_model=ValidationSummary)
