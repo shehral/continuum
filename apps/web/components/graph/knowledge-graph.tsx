@@ -26,8 +26,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { X, Sparkles, GitBranch, Bot, User, FileText, Trash2 } from "lucide-react"
-import { type GraphData, type Decision, type Entity } from "@/lib/api"
+import { X, Sparkles, GitBranch, Bot, User, FileText, Trash2, Loader2, Link2 } from "lucide-react"
+import { type GraphData, type Decision, type Entity, type SimilarDecision, api } from "@/lib/api"
 import { DeleteConfirmDialog } from "@/components/ui/confirm-dialog"
 
 // Pre-computed style objects for source badges (P1-3)
@@ -359,6 +359,9 @@ function KnowledgeGraphInner({
   const [showRelationshipLegend, setShowRelationshipLegend] = useState(true)
   const [showSourceLegend, setShowSourceLegend] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  // P1-3: Related decisions state
+  const [relatedDecisions, setRelatedDecisions] = useState<SimilarDecision[]>([])
+  const [relatedLoading, setRelatedLoading] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const { setCenter, getZoom } = useReactFlow()
 
@@ -471,6 +474,32 @@ function KnowledgeGraphInner({
       }))
     )
   }, [focusedNodeId, setNodes])
+
+  // P1-3: Fetch related decisions when a decision node is selected
+  useEffect(() => {
+    if (!selectedNode || selectedNode.type !== "decision") {
+      setRelatedDecisions([])
+      return
+    }
+
+    const decisionData = selectedNode.data as { decision?: Decision }
+    if (!decisionData.decision?.id) return
+
+    const fetchRelated = async () => {
+      setRelatedLoading(true)
+      try {
+        const similar = await api.getSimilarDecisions(decisionData.decision!.id, 5, 0.3)
+        setRelatedDecisions(similar)
+      } catch (error) {
+        console.error("Failed to fetch related decisions:", error)
+        setRelatedDecisions([])
+      } finally {
+        setRelatedLoading(false)
+      }
+    }
+
+    fetchRelated()
+  }, [selectedNode])
 
   // Count relationships by type
   const relationshipCounts = useMemo(() => {
@@ -1054,6 +1083,75 @@ function KnowledgeGraphInner({
                             <span className="text-sm text-slate-500">No entities linked</span>
                           )}
                         </div>
+                      </div>
+                      {/* P1-3: Related Decisions Sidebar */}
+                      <div className="pt-3 border-t border-white/10">
+                        <h4 className="text-xs font-medium text-cyan-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                          <Link2 className="h-3 w-3" />
+                          Related Decisions
+                        </h4>
+                        {relatedLoading ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="h-5 w-5 text-slate-400 animate-spin" />
+                            <span className="ml-2 text-xs text-slate-400">Finding similar decisions...</span>
+                          </div>
+                        ) : relatedDecisions.length > 0 ? (
+                          <div className="space-y-2" role="list" aria-label="Related decisions">
+                            {relatedDecisions.map((related) => (
+                              <button
+                                key={related.id}
+                                onClick={() => {
+                                  // Find and select the related decision node
+                                  const relatedNode = nodes.find((n) => n.id === related.id)
+                                  if (relatedNode) {
+                                    setSelectedNode(relatedNode)
+                                    setFocusedNodeId(relatedNode.id)
+                                    centerOnNode(relatedNode)
+                                  }
+                                }}
+                                className="w-full text-left p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition-colors group"
+                                role="listitem"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-xs text-slate-200 line-clamp-2 group-hover:text-white">
+                                    {related.trigger}
+                                  </p>
+                                  <Badge
+                                    className="shrink-0 text-[9px] px-1.5 py-0"
+                                    style={{
+                                      backgroundColor: `rgba(168,85,247,${0.1 + related.similarity * 0.3})`,
+                                      color: "#c084fc",
+                                      borderColor: "rgba(168,85,247,0.3)",
+                                    }}
+                                  >
+                                    {(related.similarity * 100).toFixed(0)}%
+                                  </Badge>
+                                </div>
+                                {related.shared_entities.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                    {related.shared_entities.slice(0, 3).map((entity) => (
+                                      <span
+                                        key={entity}
+                                        className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded"
+                                      >
+                                        {entity}
+                                      </span>
+                                    ))}
+                                    {related.shared_entities.length > 3 && (
+                                      <span className="text-[10px] text-slate-500">
+                                        +{related.shared_entities.length - 3} more
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500 py-2">
+                            No similar decisions found
+                          </p>
+                        )}
                       </div>
                     </div>
                   )

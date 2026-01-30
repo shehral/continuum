@@ -13,7 +13,7 @@ from neo4j.exceptions import ClientError, DatabaseError, DriverError
 from pydantic import BaseModel
 
 from db.neo4j import get_neo4j_session
-from models.schemas import Decision, DecisionCreate, Entity
+from models.schemas import Decision, DecisionCreate, DecisionUpdate, Entity
 from routers.auth import get_current_user_id
 from utils.logging import get_logger
 
@@ -171,6 +171,109 @@ async def get_decision(
 
         d = record["d"]
         entities = record["entities"]
+
+        return Decision(
+            id=d["id"],
+            trigger=d.get("trigger", ""),
+            context=d.get("context", ""),
+            options=d.get("options", []),
+            decision=d.get("decision", ""),
+            rationale=d.get("rationale", ""),
+            confidence=d.get("confidence", 0.0),
+            created_at=d.get("created_at", ""),
+            entities=[
+                Entity(
+                    id=e["id"],
+                    name=e["name"],
+                    type=e.get("type", "concept"),
+                )
+                for e in entities
+                if e
+            ],
+            source=d.get("source", "unknown"),
+        )
+
+
+@router.put("/{decision_id}", response_model=Decision)
+async def update_decision(
+    decision_id: str,
+    update: DecisionUpdate,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Update an existing decision.
+
+    Users can only update their own decisions.
+    Only provided fields will be updated. Entity management is handled
+    separately via entity linking endpoints.
+
+    Edit history is tracked via edited_at timestamp and edit_count.
+    """
+    session = await get_neo4j_session()
+    async with session:
+        # First verify the decision exists and belongs to the user
+        result = await session.run(
+            """
+            MATCH (d:DecisionTrace {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            RETURN d
+            """,
+            id=decision_id,
+            user_id=user_id,
+        )
+        record = await result.single()
+        if not record:
+            raise HTTPException(status_code=404, detail="Decision not found")
+
+        # Build the SET clause dynamically based on provided fields
+        update_data = update.model_dump(exclude_none=True)
+        if not update_data:
+            raise HTTPException(
+                status_code=400,
+                detail="No fields to update. Provide at least one field.",
+            )
+
+        # Track edit history
+        edited_at = datetime.now(UTC).isoformat()
+
+        # Build Cypher SET clause
+        set_parts = [
+            "d.edited_at = $edited_at",
+            "d.edit_count = COALESCE(d.edit_count, 0) + 1",
+        ]
+        params = {"id": decision_id, "user_id": user_id, "edited_at": edited_at}
+
+        for field, value in update_data.items():
+            set_parts.append(f"d.{field} = ${field}")
+            params[field] = value
+
+        set_clause = ", ".join(set_parts)
+
+        # Update the decision
+        await session.run(
+            f"""
+            MATCH (d:DecisionTrace {{id: $id}})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            SET {set_clause}
+            """,
+            **params,
+        )
+
+        # Fetch and return the updated decision with entities
+        result = await session.run(
+            """
+            MATCH (d:DecisionTrace {id: $id})
+            OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
+            WITH d, collect(e) as entities
+            RETURN d, entities
+            """,
+            id=decision_id,
+        )
+
+        record = await result.single()
+        d = record["d"]
+        entities = record["entities"]
+
+        logger.info(f"Updated decision {decision_id} for user {user_id}")
 
         return Decision(
             id=d["id"],

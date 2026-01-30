@@ -291,3 +291,179 @@ class TestCreateDecision:
             result = await create_decision(input_data)
             assert result.trigger == "Test"
             assert result.source == "manual"
+
+
+class TestUpdateDecision:
+    """Tests for PUT /{decision_id} endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_update_decision_success(self):
+        """Should update decision when it exists."""
+        mock_session = create_neo4j_session_mock()
+        decision_id = str(uuid4())
+        original_data = {
+            "d": {
+                "id": decision_id,
+                "trigger": "Original trigger",
+                "context": "Original context",
+                "options": ["A", "B"],
+                "decision": "A",
+                "rationale": "Original reason",
+                "confidence": 0.9,
+                "created_at": "2024-01-01T00:00:00Z",
+                "source": "manual",
+            }
+        }
+        updated_data = {
+            "d": {
+                "id": decision_id,
+                "trigger": "Updated trigger",
+                "context": "Original context",
+                "options": ["A", "B"],
+                "decision": "A",
+                "rationale": "Original reason",
+                "confidence": 0.9,
+                "created_at": "2024-01-01T00:00:00Z",
+                "edited_at": "2024-01-02T00:00:00Z",
+                "edit_count": 1,
+                "source": "manual",
+            },
+            "entities": [],
+        }
+
+        call_count = [0]
+
+        async def mock_run(query, **params):
+            call_count[0] += 1
+            result = AsyncMock()
+            if call_count[0] == 1:
+                # First call: check if decision exists
+                result.single = AsyncMock(return_value=original_data)
+            elif call_count[0] == 2:
+                # Second call: update
+                result.single = AsyncMock(return_value=None)
+            else:
+                # Third call: fetch updated decision
+                result.single = AsyncMock(return_value=updated_data)
+            return result
+
+        mock_session.run = mock_run
+
+        with patch(
+            "routers.decisions.get_neo4j_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
+            from models.schemas import DecisionUpdate
+            from routers.decisions import update_decision
+
+            update_data = DecisionUpdate(trigger="Updated trigger")
+            result = await update_decision(decision_id, update_data)
+            assert result.trigger == "Updated trigger"
+            assert result.id == decision_id
+
+    @pytest.mark.asyncio
+    async def test_update_decision_not_found(self):
+        """Should raise 404 when decision doesn't exist."""
+        mock_session = create_neo4j_session_mock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        with patch(
+            "routers.decisions.get_neo4j_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
+            from fastapi import HTTPException
+
+            from models.schemas import DecisionUpdate
+            from routers.decisions import update_decision
+
+            with pytest.raises(HTTPException) as exc_info:
+                await update_decision(
+                    "nonexistent-id",
+                    DecisionUpdate(trigger="New trigger"),
+                )
+            assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_update_decision_no_fields(self):
+        """Should raise 400 when no fields provided."""
+        mock_session = create_neo4j_session_mock()
+        decision_id = str(uuid4())
+        decision_data = {"d": {"id": decision_id}}
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=decision_data)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        with patch(
+            "routers.decisions.get_neo4j_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
+            from fastapi import HTTPException
+
+            from models.schemas import DecisionUpdate
+            from routers.decisions import update_decision
+
+            with pytest.raises(HTTPException) as exc_info:
+                await update_decision(decision_id, DecisionUpdate())
+            assert exc_info.value.status_code == 400
+            assert "No fields to update" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_update_decision_multiple_fields(self):
+        """Should update multiple fields at once."""
+        mock_session = create_neo4j_session_mock()
+        decision_id = str(uuid4())
+        original_data = {"d": {"id": decision_id}}
+        updated_data = {
+            "d": {
+                "id": decision_id,
+                "trigger": "New trigger",
+                "context": "New context",
+                "options": ["X", "Y"],
+                "decision": "X",
+                "rationale": "New reason",
+                "confidence": 0.9,
+                "created_at": "2024-01-01T00:00:00Z",
+                "edited_at": "2024-01-02T00:00:00Z",
+                "edit_count": 1,
+                "source": "manual",
+            },
+            "entities": [],
+        }
+
+        call_count = [0]
+
+        async def mock_run(query, **params):
+            call_count[0] += 1
+            result = AsyncMock()
+            if call_count[0] == 1:
+                result.single = AsyncMock(return_value=original_data)
+            elif call_count[0] == 2:
+                result.single = AsyncMock(return_value=None)
+            else:
+                result.single = AsyncMock(return_value=updated_data)
+            return result
+
+        mock_session.run = mock_run
+
+        with patch(
+            "routers.decisions.get_neo4j_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
+            from models.schemas import DecisionUpdate
+            from routers.decisions import update_decision
+
+            update_data = DecisionUpdate(
+                trigger="New trigger",
+                context="New context",
+                rationale="New reason",
+            )
+            result = await update_decision(decision_id, update_data)
+            assert result.trigger == "New trigger"
+            assert result.context == "New context"
+            assert result.rationale == "New reason"

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2 } from "lucide-react"
+import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -27,6 +27,8 @@ import { DecisionListSkeleton } from "@/components/ui/skeleton"
 import { api, type Decision } from "@/lib/api"
 import { getEntityStyle } from "@/lib/constants"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Slider } from "@/components/ui/slider"
 
 // Confidence badge styling based on level
 const getConfidenceStyle = (confidence: number) => {
@@ -440,6 +442,50 @@ export default function DecisionsPage() {
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Decision | null>(null)
 
+  // Filter state (P0-2) - synced with URL params
+  const [sourceFilter, setSourceFilter] = useState<string>(searchParams.get("source") || "all")
+  const [confidenceFilter, setConfidenceFilter] = useState<number>(
+    parseInt(searchParams.get("minConfidence") || "0", 10)
+  )
+  const [filterOpen, setFilterOpen] = useState(false)
+
+  // Count active filters for badge
+  const activeFilterCount = (sourceFilter !== "all" ? 1 : 0) + (confidenceFilter > 0 ? 1 : 0)
+
+  // Update URL when filters change
+  const updateFiltersInUrl = useCallback((source: string, confidence: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (source !== "all") {
+      params.set("source", source)
+    } else {
+      params.delete("source")
+    }
+    if (confidence > 0) {
+      params.set("minConfidence", confidence.toString())
+    } else {
+      params.delete("minConfidence")
+    }
+    const newUrl = params.toString() ? `?${params.toString()}` : "/decisions"
+    router.replace(newUrl, { scroll: false })
+  }, [searchParams, router])
+
+  const handleSourceChange = useCallback((value: string) => {
+    setSourceFilter(value)
+    updateFiltersInUrl(value, confidenceFilter)
+  }, [confidenceFilter, updateFiltersInUrl])
+
+  const handleConfidenceChange = useCallback((value: number[]) => {
+    const newValue = value[0]
+    setConfidenceFilter(newValue)
+    updateFiltersInUrl(sourceFilter, newValue)
+  }, [sourceFilter, updateFiltersInUrl])
+
+  const clearFilters = useCallback(() => {
+    setSourceFilter("all")
+    setConfidenceFilter(0)
+    router.replace("/decisions", { scroll: false })
+  }, [router])
+
   // Open add dialog if ?add=true is in URL
   useEffect(() => {
     if (searchParams.get("add") === "true") {
@@ -487,14 +533,24 @@ export default function DecisionsPage() {
     }
   }, [])
 
-  const filteredDecisions = decisions?.filter(
-    (d) =>
+  const filteredDecisions = decisions?.filter((d) => {
+    // Text search filter
+    const matchesSearch = searchQuery === "" ||
       d.trigger.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.decision.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.entities.some((e) =>
         e.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
-  )
+
+    // Source filter (P0-2)
+    const matchesSource = sourceFilter === "all" ||
+      (d.source || "unknown") === sourceFilter
+
+    // Confidence filter (P0-2) - minConfidence as percentage
+    const matchesConfidence = d.confidence >= (confidenceFilter / 100)
+
+    return matchesSearch && matchesSource && matchesConfidence
+  })
 
   // Determine if we should use virtual scrolling (P1-3)
   // Use virtual scrolling when we have more than 20 items for performance
@@ -546,15 +602,87 @@ export default function DecisionsPage() {
                 aria-label="Search decisions"
               />
             </div>
-            <Button
-              variant="outline"
-              className="border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100"
-              aria-label="Filter decisions"
-            >
-              <Filter className="h-4 w-4 mr-2" aria-hidden="true" />
-              Filter
-              <ChevronDown className="h-4 w-4 ml-2" aria-hidden="true" />
-            </Button>
+            <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 relative"
+                  aria-label="Filter decisions"
+                >
+                  <Filter className="h-4 w-4 mr-2" aria-hidden="true" />
+                  Filter
+                  {activeFilterCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-cyan-500 text-[10px] font-bold text-slate-900 flex items-center justify-center">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                  <ChevronDown className="h-4 w-4 ml-2" aria-hidden="true" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 bg-slate-900/95 border-white/10 backdrop-blur-xl" align="end">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-slate-200">Filters</h4>
+                    {activeFilterCount > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearFilters}
+                        className="h-7 text-xs text-slate-400 hover:text-slate-200"
+                      >
+                        <X className="h-3 w-3 mr-1" />
+                        Clear all
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Source filter */}
+                  <div className="space-y-2">
+                    <Label className="text-sm text-slate-400">Source</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {["all", "claude_logs", "interview", "manual", "unknown"].map((source) => (
+                        <Button
+                          key={source}
+                          variant={sourceFilter === source ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => handleSourceChange(source)}
+                          className={
+                            sourceFilter === source
+                              ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/30"
+                              : "border-white/10 text-slate-400 hover:text-slate-200"
+                          }
+                        >
+                          {source === "all" ? "All" : source.replace("_", " ")}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Confidence filter */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm text-slate-400">Min Confidence</Label>
+                      <span className="text-sm font-medium text-cyan-400">
+                        {confidenceFilter}%
+                      </span>
+                    </div>
+                    <Slider
+                      value={[confidenceFilter]}
+                      onValueChange={handleConfidenceChange}
+                      min={0}
+                      max={100}
+                      step={10}
+                      className="py-2"
+                    />
+                    <div className="flex justify-between text-xs text-slate-500">
+                      <span>0%</span>
+                      <span>50%</span>
+                      <span>100%</span>
+                    </div>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
 

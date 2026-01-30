@@ -27,7 +27,7 @@ def create_neo4j_session_mock():
 
 
 class TestGetGraph:
-    """Tests for GET / endpoint."""
+    """Tests for GET / endpoint (paginated)."""
 
     @pytest.fixture
     def sample_decisions(self):
@@ -84,7 +84,7 @@ class TestGetGraph:
     async def test_get_graph_returns_nodes_and_edges(
         self, sample_decisions, sample_entities, sample_edges
     ):
-        """Should return graph with nodes and edges."""
+        """Should return paginated graph with nodes, edges, and pagination metadata."""
         mock_session = create_neo4j_session_mock()
 
         # Track the decision ID to use in edge matching
@@ -99,10 +99,18 @@ class TestGetGraph:
 
         async def mock_run(query, **params):
             call_count[0] += 1
-            if "DecisionTrace" in query and "INVOLVES" not in query and "Entity" not in query.split("MATCH")[0]:
+            result = MagicMock()
+            # Count query returns total
+            if "count(d) as total" in query:
+                result.single = AsyncMock(return_value={"total": 1})
+                return result
+            # Decision query with pagination
+            elif "DecisionTrace" in query and "SKIP" in query and "LIMIT" in query:
                 return create_async_result_mock(sample_decisions)
-            elif "INVOLVES" in query and "e:Entity" in query and "a)-[r]->(b)" not in query:
+            # Entity query
+            elif "INVOLVES" in query and "e:Entity" in query and "(a)-[r]->(b)" not in query:
                 return create_async_result_mock(sample_entities)
+            # Relationship query
             elif "(a)-[r]->(b)" in query or "a.id as source" in query:
                 return create_async_result_mock(sample_edges)
             else:
@@ -117,16 +125,35 @@ class TestGetGraph:
         ):
             from routers.graph import get_graph
 
-            result = await get_graph(user_id="test-user")
+            result = await get_graph(
+                page=1,
+                page_size=100,
+                user_id="test-user"
+            )
 
+            # Check pagination metadata
+            assert result.pagination.page == 1
+            assert result.pagination.page_size == 100
+            assert result.pagination.total_count == 1
+            assert result.pagination.has_more is False
+
+            # Check nodes and edges
             assert len(result.nodes) >= 1
             assert isinstance(result.edges, list)
 
     @pytest.mark.asyncio
     async def test_get_graph_empty(self):
-        """Should return empty graph when database is empty."""
+        """Should return empty paginated graph when database is empty."""
         mock_session = create_neo4j_session_mock()
-        mock_session.run = AsyncMock(return_value=create_async_result_mock([]))
+
+        async def mock_run(query, **params):
+            result = MagicMock()
+            if "count(d) as total" in query:
+                result.single = AsyncMock(return_value={"total": 0})
+                return result
+            return create_async_result_mock([])
+
+        mock_session.run = mock_run
 
         with patch(
             "routers.graph.get_neo4j_session",
@@ -135,10 +162,16 @@ class TestGetGraph:
         ):
             from routers.graph import get_graph
 
-            result = await get_graph(user_id="test-user")
+            result = await get_graph(
+                page=1,
+                page_size=100,
+                user_id="test-user"
+            )
 
             assert result.nodes == []
             assert result.edges == []
+            assert result.pagination.total_count == 0
+            assert result.pagination.has_more is False
 
     @pytest.mark.asyncio
     async def test_get_graph_filters_by_source(
@@ -156,12 +189,15 @@ class TestGetGraph:
 
         async def mock_run(query, **params):
             queries_called.append(query)
-            # Return appropriate data based on query
-            if "DecisionTrace" in query and "INVOLVES" not in query and "Entity" not in query.split("MATCH")[0]:
+            result = MagicMock()
+            if "count(d) as total" in query:
+                result.single = AsyncMock(return_value={"total": 1})
+                return result
+            elif "DecisionTrace" in query and "SKIP" in query:
                 return create_async_result_mock(sample_decisions)
-            elif "INVOLVES" in query and "e:Entity" in query and "a)-[r]->(b)" not in query:
+            elif "INVOLVES" in query and "e:Entity" in query:
                 return create_async_result_mock(sample_entities)
-            elif "(a)-[r]->(b)" in query or "a.id as source" in query:
+            elif "(a)-[r]->(b)" in query:
                 return create_async_result_mock(sample_edges)
             else:
                 return create_async_result_mock([])
@@ -175,10 +211,232 @@ class TestGetGraph:
         ):
             from routers.graph import get_graph
 
-            await get_graph(source_filter="manual", user_id="test-user")
+            await get_graph(
+                page=1,
+                page_size=100,
+                source_filter="manual",
+                user_id="test-user"
+            )
 
             # Verify at least one query includes source filter
             assert any("source" in q.lower() for q in queries_called)
+
+    @pytest.mark.asyncio
+    async def test_get_graph_pagination_metadata(self):
+        """Should return correct pagination metadata for multiple pages."""
+        mock_session = create_neo4j_session_mock()
+
+        async def mock_run(query, **params):
+            result = MagicMock()
+            if "count(d) as total" in query:
+                result.single = AsyncMock(return_value={"total": 250})
+                return result
+            return create_async_result_mock([])
+
+        mock_session.run = mock_run
+
+        with patch(
+            "routers.graph.get_neo4j_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
+            from routers.graph import get_graph
+
+            result = await get_graph(
+                page=1,
+                page_size=100,
+                user_id="test-user"
+            )
+
+            assert result.pagination.total_count == 250
+            assert result.pagination.total_pages == 3
+            assert result.pagination.has_more is True
+
+            # Test last page
+            result2 = await get_graph(
+                page=3,
+                page_size=100,
+                user_id="test-user"
+            )
+            assert result2.pagination.has_more is False
+
+
+class TestGetFullGraph:
+    """Tests for GET /all endpoint (unpaginated)."""
+
+    @pytest.fixture
+    def sample_decisions(self):
+        """Sample decision nodes."""
+        return [
+            {
+                "d": {
+                    "id": str(uuid4()),
+                    "trigger": "Choosing database",
+                    "context": "Need fast queries",
+                    "options": ["PostgreSQL", "MySQL"],
+                    "decision": "PostgreSQL",
+                    "rationale": "Better performance",
+                    "confidence": 0.9,
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "source": "manual",
+                },
+                "has_embedding": True,
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_get_full_graph_returns_unpaginated(self, sample_decisions):
+        """Should return full graph without pagination."""
+        mock_session = create_neo4j_session_mock()
+
+        async def mock_run(query, **params):
+            if "DecisionTrace" in query and "INVOLVES" not in query:
+                return create_async_result_mock(sample_decisions)
+            return create_async_result_mock([])
+
+        mock_session.run = mock_run
+
+        with patch(
+            "routers.graph.get_neo4j_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
+            from routers.graph import get_full_graph
+
+            result = await get_full_graph(user_id="test-user")
+
+            # Should return GraphData (no pagination field)
+            assert hasattr(result, "nodes")
+            assert hasattr(result, "edges")
+            assert not hasattr(result, "pagination")
+
+
+class TestGetNodeNeighbors:
+    """Tests for GET /nodes/{node_id}/neighbors endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_get_node_neighbors_not_found(self):
+        """Should return 404 when node not found."""
+        mock_session = create_neo4j_session_mock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        with patch(
+            "routers.graph.get_neo4j_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
+            from fastapi import HTTPException
+
+            from routers.graph import get_node_neighbors
+
+            with pytest.raises(HTTPException) as exc_info:
+                await get_node_neighbors(
+                    node_id="nonexistent-id",
+                    limit=50,
+                    relationship_types=None,
+                    user_id="test-user"
+                )
+            assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_node_neighbors_returns_neighbors(self):
+        """Should return neighbors for a valid node."""
+        mock_session = create_neo4j_session_mock()
+        node_id = str(uuid4())
+
+        neighbor_data = {
+            "target": {
+                "id": str(uuid4()),
+                "name": "PostgreSQL",
+                "type": "technology",
+                "aliases": [],
+            },
+            "relationship": "INVOLVES",
+            "weight": 1.0,
+            "score": None,
+            "confidence": None,
+            "target_type": "Entity",
+            "has_embedding": True,
+        }
+
+        call_count = [0]
+
+        async def mock_run(query, **params):
+            call_count[0] += 1
+            result = MagicMock()
+            # Verify query
+            if "labels(n)" in query:
+                result.single = AsyncMock(return_value={"node_type": "DecisionTrace"})
+                return result
+            # Outgoing neighbors
+            elif "source.id = $node_id" in query:
+                return create_async_result_mock([neighbor_data])
+            # Incoming neighbors
+            elif "target.id = $node_id" in query:
+                return create_async_result_mock([])
+            return create_async_result_mock([])
+
+        mock_session.run = mock_run
+
+        with patch(
+            "routers.graph.get_neo4j_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
+            from routers.graph import get_node_neighbors
+
+            result = await get_node_neighbors(
+                node_id=node_id,
+                limit=50,
+                relationship_types=None,
+                user_id="test-user"
+            )
+
+            assert result.source_node_id == node_id
+            assert len(result.neighbors) == 1
+            assert result.neighbors[0].relationship == "INVOLVES"
+            assert result.neighbors[0].direction == "outgoing"
+
+    @pytest.mark.asyncio
+    async def test_get_node_neighbors_with_relationship_filter(self):
+        """Should filter neighbors by relationship type."""
+        mock_session = create_neo4j_session_mock()
+        node_id = str(uuid4())
+
+        queries_called = []
+
+        async def mock_run(query, **params):
+            queries_called.append((query, params))
+            result = MagicMock()
+            if "labels(n)" in query:
+                result.single = AsyncMock(return_value={"node_type": "DecisionTrace"})
+                return result
+            return create_async_result_mock([])
+
+        mock_session.run = mock_run
+
+        with patch(
+            "routers.graph.get_neo4j_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
+            from routers.graph import get_node_neighbors
+
+            await get_node_neighbors(
+                node_id=node_id,
+                limit=50,
+                relationship_types="INVOLVES,SIMILAR_TO",
+                user_id="test-user"
+            )
+
+            # Check that rel_types parameter was passed
+            rel_types_passed = any(
+                "rel_types" in params and params["rel_types"] == ["INVOLVES", "SIMILAR_TO"]
+                for _, params in queries_called
+            )
+            assert rel_types_passed
 
 
 class TestGetNodeDetails:

@@ -7,24 +7,28 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 # SEC-005: UUID pattern for ID validation
-UUID_PATTERN = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$", re.IGNORECASE)
+UUID_PATTERN = re.compile(
+    r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$", re.IGNORECASE
+)
 
 # SEC-005: Valid relationship types (whitelist)
-VALID_RELATIONSHIP_TYPES = frozenset({
-    # Decision -> Entity
-    "INVOLVES",
-    # Decision -> Decision
-    "SIMILAR_TO",
-    "SUPERSEDES",
-    "INFLUENCED_BY",
-    "CONTRADICTS",
-    # Entity -> Entity
-    "IS_A",
-    "PART_OF",
-    "RELATED_TO",
-    "DEPENDS_ON",
-    "ALTERNATIVE_TO",
-})
+VALID_RELATIONSHIP_TYPES = frozenset(
+    {
+        # Decision -> Entity
+        "INVOLVES",
+        # Decision -> Decision
+        "SIMILAR_TO",
+        "SUPERSEDES",
+        "INFLUENCED_BY",
+        "CONTRADICTS",
+        # Entity -> Entity
+        "IS_A",
+        "PART_OF",
+        "RELATED_TO",
+        "DEPENDS_ON",
+        "ALTERNATIVE_TO",
+    }
+)
 
 
 def validate_uuid(value: str, field_name: str = "id") -> str:
@@ -37,19 +41,23 @@ def validate_uuid(value: str, field_name: str = "id") -> str:
 # Entity schemas
 class EntityBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=500)
-    type: str = Field(..., min_length=1, max_length=50)  # concept, system, person, technology, pattern
+    type: str = Field(
+        ..., min_length=1, max_length=50
+    )  # concept, system, person, technology, pattern
 
 
 class Entity(EntityBase):
-    id: Optional[str] = Field(None, max_length=36)  # Optional for creation, always present in response
+    id: Optional[str] = Field(
+        None, max_length=36
+    )  # Optional for creation, always present in response
 
 
 # Decision source types
 class DecisionSource:
     CLAUDE_LOGS = "claude_logs"  # Extracted from Claude Code conversation logs
-    INTERVIEW = "interview"      # Captured via AI-guided interview
-    MANUAL = "manual"            # Manually entered by user
-    UNKNOWN = "unknown"          # Legacy or untagged decisions
+    INTERVIEW = "interview"  # Captured via AI-guided interview
+    MANUAL = "manual"  # Manually entered by user
+    UNKNOWN = "unknown"  # Legacy or untagged decisions
 
 
 # Decision schemas
@@ -85,6 +93,35 @@ class Decision(DecisionBase):
 class DecisionCreate(DecisionBase):
     confidence: float = Field(0.8, ge=0.0, le=1.0)
     source: str = DecisionSource.UNKNOWN
+
+
+class DecisionUpdate(BaseModel):
+    """Schema for updating a decision.
+
+    All fields are optional - only provided fields will be updated.
+    Entity management is handled separately via entity linking endpoints.
+    """
+
+    trigger: Optional[str] = Field(None, min_length=1, max_length=5000)
+    context: Optional[str] = Field(None, min_length=1, max_length=10000)
+    options: Optional[list[str]] = Field(None, min_length=1, max_length=50)
+    decision: Optional[str] = Field(None, min_length=1, max_length=5000)
+    rationale: Optional[str] = Field(None, min_length=1, max_length=10000)
+
+    @field_validator("options")
+    @classmethod
+    def validate_options(cls, v: list[str] | None) -> list[str] | None:
+        """Validate each option string if provided."""
+        if v is None:
+            return None
+        if not v:
+            raise ValueError("At least one option is required when updating options")
+        validated = []
+        for opt in v:
+            if not opt or len(opt) > 1000:
+                raise ValueError("Each option must be 1-1000 characters")
+            validated.append(opt.strip())
+        return validated
 
 
 # Graph schemas
@@ -211,22 +248,15 @@ class LinkEntityRequest(BaseModel):
 
     SEC-005: All fields are validated to prevent injection and ensure data integrity.
     """
+
     decision_id: str = Field(
-        ...,
-        min_length=36,
-        max_length=36,
-        description="UUID of the decision to link to"
+        ..., min_length=36, max_length=36, description="UUID of the decision to link to"
     )
     entity_id: str = Field(
-        ...,
-        min_length=36,
-        max_length=36,
-        description="UUID of the entity to link"
+        ..., min_length=36, max_length=36, description="UUID of the entity to link"
     )
     relationship: str = Field(
-        default="INVOLVES",
-        max_length=50,
-        description="Type of relationship"
+        default="INVOLVES", max_length=50, description="Type of relationship"
     )
 
     @field_validator("decision_id")
@@ -256,6 +286,7 @@ class LinkEntityRequest(BaseModel):
 
 class SuggestEntitiesRequest(BaseModel):
     """Request to get entity suggestions from text."""
+
     text: str = Field(..., min_length=1, max_length=10000)
 
 
@@ -269,17 +300,28 @@ class HybridSearchRequest(BaseModel):
 
     Final score = alpha * lexical_score + (1 - alpha) * semantic_score
     """
+
     query: str = Field(..., min_length=1, max_length=2000, description="Search query")
     top_k: int = Field(10, ge=1, le=100, description="Number of results to return")
-    threshold: float = Field(0.3, ge=0.0, le=1.0, description="Minimum combined score threshold")
-    alpha: float = Field(0.3, ge=0.0, le=1.0, description="Weight for lexical score (0.3 = 30% lexical, 70% semantic)")
-    include_entities: bool = Field(True, description="Include entities in search results")
+    threshold: float = Field(
+        0.3, ge=0.0, le=1.0, description="Minimum combined score threshold"
+    )
+    alpha: float = Field(
+        0.3,
+        ge=0.0,
+        le=1.0,
+        description="Weight for lexical score (0.3 = 30% lexical, 70% semantic)",
+    )
+    include_entities: bool = Field(
+        True, description="Include entities in search results"
+    )
     search_decisions: bool = Field(True, description="Search decision nodes")
     search_entities: bool = Field(True, description="Search entity nodes")
 
 
 class HybridSearchResult(BaseModel):
     """Result from hybrid search with score breakdown."""
+
     id: str
     type: str  # "decision" or "entity"
     label: str
@@ -287,4 +329,53 @@ class HybridSearchResult(BaseModel):
     semantic_score: float = Field(..., ge=0.0, le=1.0)
     combined_score: float = Field(..., ge=0.0, le=1.0)
     data: dict
-    matched_fields: list[str] = Field(default_factory=list, description="Fields that matched lexically")
+    matched_fields: list[str] = Field(
+        default_factory=list, description="Fields that matched lexically"
+    )
+
+
+# Graph Pagination schemas (SD-003)
+class PaginationMeta(BaseModel):
+    """Pagination metadata for paginated responses."""
+
+    page: int = Field(..., ge=1, description="Current page number (1-indexed)")
+    page_size: int = Field(..., ge=1, le=500, description="Number of items per page")
+    total_count: int = Field(..., ge=0, description="Total number of items")
+    total_pages: int = Field(..., ge=0, description="Total number of pages")
+    has_more: bool = Field(..., description="Whether there are more pages")
+
+
+class PaginatedGraphData(BaseModel):
+    """Paginated graph data response.
+
+    Returns decisions first in pages. Entities connected to the returned
+    decisions are included. For large graphs, use lazy loading via
+    /graph/nodes/{node_id}/neighbors endpoint.
+    """
+
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    pagination: PaginationMeta
+
+
+class NeighborNode(BaseModel):
+    """A neighbor node with its connecting relationship."""
+
+    node: GraphNode
+    relationship: str
+    direction: str = Field(
+        ...,
+        pattern=r"^(incoming|outgoing)$",
+        description="Direction relative to source node",
+    )
+    weight: Optional[float] = Field(
+        None, ge=0.0, le=1.0, description="Relationship weight/score"
+    )
+
+
+class NeighborsResponse(BaseModel):
+    """Response for neighbor nodes of a given node."""
+
+    source_node_id: str
+    neighbors: list[NeighborNode]
+    total_count: int = Field(..., ge=0, description="Total number of neighbors")
