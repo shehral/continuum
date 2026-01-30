@@ -2,6 +2,7 @@
 
 KG-P0-2: LLM response caching to avoid redundant API calls
 KG-P0-3: Relationship type validation before storing
+KG-QW-4: Extraction reasoning logging for debugging and quality analysis
 """
 
 import hashlib
@@ -487,6 +488,30 @@ class DecisionExtractor:
             # Cache the result (KG-P0-2)
             await self.cache.set(conversation_text, "decisions", decisions_data)
 
+            # Log extraction summary (KG-QW-4: Extraction reasoning logging)
+            if decisions_data:
+                confidence_scores = [d.get("confidence", 0.5) for d in decisions_data]
+                avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
+                logger.info(
+                    "Decision extraction completed",
+                    extra={
+                        "extraction_type": "decisions",
+                        "count": len(decisions_data),
+                        "avg_confidence": round(avg_confidence, 3),
+                        "confidence_range": {
+                            "min": round(min(confidence_scores), 3) if confidence_scores else 0,
+                            "max": round(max(confidence_scores), 3) if confidence_scores else 0,
+                        },
+                        "decisions_summary": [
+                            {
+                                "trigger_preview": d.get("trigger", "")[:50],
+                                "confidence": d.get("confidence", 0.5),
+                            }
+                            for d in decisions_data[:5]  # Limit to first 5 for log size
+                        ],
+                    },
+                )
+
             # Apply defaults for missing fields (ML-QW-3)
             return [
                 DecisionCreate(**{
@@ -537,10 +562,44 @@ class DecisionExtractor:
                 return []
 
             entities = result.get("entities", [])
+            reasoning = result.get("reasoning", "")
 
-            # Log reasoning for debugging
-            if result.get("reasoning"):
-                logger.debug(f"Entity reasoning: {result['reasoning']}")
+            # Log extraction with structured data (KG-QW-4: Extraction reasoning logging)
+            if entities:
+                # Group entities by type for summary
+                type_counts = {}
+                confidence_by_type = {}
+                for e in entities:
+                    etype = e.get("type", "unknown")
+                    type_counts[etype] = type_counts.get(etype, 0) + 1
+                    if etype not in confidence_by_type:
+                        confidence_by_type[etype] = []
+                    confidence_by_type[etype].append(e.get("confidence", 0.8))
+
+                avg_confidence_by_type = {
+                    t: round(sum(scores) / len(scores), 3)
+                    for t, scores in confidence_by_type.items()
+                }
+
+                logger.info(
+                    "Entity extraction completed",
+                    extra={
+                        "extraction_type": "entities",
+                        "count": len(entities),
+                        "type_distribution": type_counts,
+                        "avg_confidence_by_type": avg_confidence_by_type,
+                        "entities": [
+                            {"name": e.get("name"), "type": e.get("type"), "confidence": e.get("confidence")}
+                            for e in entities
+                        ],
+                        "llm_reasoning": reasoning[:500] if reasoning else None,  # Truncate for log size
+                    },
+                )
+            else:
+                logger.debug(
+                    "No entities extracted from text",
+                    extra={"text_length": len(text), "llm_reasoning": reasoning[:200] if reasoning else None},
+                )
 
             # Cache the result (KG-P0-2)
             await self.cache.set(text, "entities", entities)
@@ -603,13 +662,22 @@ class DecisionExtractor:
                 return []
 
             relationships = result.get("relationships", [])
+            reasoning = result.get("reasoning", "")
 
-            # Log reasoning for debugging
-            if result.get("reasoning"):
-                logger.debug(f"Relationship reasoning: {result['reasoning']}")
+            # Log raw extraction (KG-QW-4: Extraction reasoning logging)
+            logger.debug(
+                "Raw relationship extraction from LLM",
+                extra={
+                    "extraction_type": "relationships_raw",
+                    "count": len(relationships),
+                    "entity_count": len(entity_names),
+                    "llm_reasoning": reasoning[:500] if reasoning else None,
+                },
+            )
 
             # Validate and filter relationships (KG-P0-3)
             validated_relationships = []
+            validation_stats = {"valid": 0, "invalid": 0, "fallback": 0}
             for rel in relationships:
                 rel_type = rel.get("type", "RELATED_TO")
                 from_name = rel.get("from", "")
@@ -627,11 +695,20 @@ class DecisionExtractor:
 
                 if is_valid:
                     validated_relationships.append(rel)
+                    validation_stats["valid"] += 1
                 else:
+                    validation_stats["invalid"] += 1
                     # Log invalid relationship for review
-                    logger.warning(
-                        f"Invalid relationship skipped: {from_name} ({from_type}) "
-                        f"-[{rel_type}]-> {to_name} ({to_type}). Reason: {error_msg}"
+                    logger.debug(
+                        "Invalid relationship skipped",
+                        extra={
+                            "from_entity": from_name,
+                            "from_type": from_type,
+                            "to_entity": to_name,
+                            "to_type": to_type,
+                            "relationship_type": rel_type,
+                            "error": error_msg,
+                        },
                     )
                     # Try to suggest a valid alternative
                     if rel_type in ENTITY_ONLY_RELATIONSHIPS:
@@ -642,9 +719,43 @@ class DecisionExtractor:
                             "type": "RELATED_TO",
                             "confidence": confidence * 0.8,  # Lower confidence for fallback
                         })
-                        logger.info(
-                            f"Fell back to RELATED_TO for: {from_name} -> {to_name}"
+                        validation_stats["fallback"] += 1
+                        logger.debug(
+                            "Relationship type fallback applied",
+                            extra={
+                                "from_entity": from_name,
+                                "to_entity": to_name,
+                                "original_type": rel_type,
+                                "fallback_type": "RELATED_TO",
+                            },
                         )
+
+            # Log relationship extraction summary (KG-QW-4)
+            if validated_relationships:
+                type_distribution = {}
+                for r in validated_relationships:
+                    rtype = r.get("type", "RELATED_TO")
+                    type_distribution[rtype] = type_distribution.get(rtype, 0) + 1
+
+                logger.info(
+                    "Relationship extraction completed",
+                    extra={
+                        "extraction_type": "relationships",
+                        "raw_count": len(relationships),
+                        "validated_count": len(validated_relationships),
+                        "validation_stats": validation_stats,
+                        "type_distribution": type_distribution,
+                        "relationships": [
+                            {
+                                "from": r.get("from"),
+                                "to": r.get("to"),
+                                "type": r.get("type"),
+                                "confidence": r.get("confidence"),
+                            }
+                            for r in validated_relationships
+                        ],
+                    },
+                )
 
             # Cache the validated result (KG-P0-2)
             await self.cache.set(cache_text, "relationships", validated_relationships)
@@ -807,7 +918,14 @@ class DecisionExtractor:
             # Extract entities with enhanced prompt
             full_text = f"{decision.trigger} {decision.context} {decision.decision} {decision.rationale}"
             entities_data = await self.extract_entities(full_text)
-            logger.info(f"Extracted {len(entities_data)} entities")
+            logger.debug(
+                "Entities data extracted from text",
+                extra={
+                    "decision_id": decision_id,
+                    "entity_count": len(entities_data),
+                    "text_length": len(full_text),
+                },
+            )
 
             # Create entity resolver for this session
             resolver = EntityResolver(session)
@@ -881,7 +999,15 @@ class DecisionExtractor:
                             decision_id=decision_id,
                             confidence=confidence,
                         )
-                    logger.info(f"Created new entity: {resolved.name} ({resolved.type})")
+                    logger.debug(
+                        "Created new entity",
+                        extra={
+                            "entity_name": resolved.name,
+                            "entity_type": resolved.type,
+                            "entity_id": resolved.id,
+                            "aliases": resolved.aliases,
+                        },
+                    )
                 else:
                     # Link to existing entity
                     await session.run(
@@ -894,7 +1020,47 @@ class DecisionExtractor:
                         decision_id=decision_id,
                         confidence=confidence,
                     )
-                    logger.info(f"Linked to existing entity: {resolved.name} (method: {resolved.match_method})")
+                    logger.debug(
+                        "Linked to existing entity",
+                        extra={
+                            "entity_name": resolved.name,
+                            "entity_type": resolved.type,
+                            "match_method": resolved.match_method,
+                            "confidence": resolved.confidence,
+                            "entity_id": resolved.id,
+                        },
+                    )
+
+            # Log entity resolution summary (KG-QW-4: Extraction reasoning logging)
+            if resolved_entities:
+                resolution_summary = {
+                    "total_extracted": len(entities_data),
+                    "total_resolved": len(resolved_entities),
+                    "new_entities": sum(1 for e in resolved_entities if e.is_new),
+                    "existing_entities": sum(1 for e in resolved_entities if not e.is_new),
+                    "match_methods": {},
+                }
+                for e in resolved_entities:
+                    method = e.match_method
+                    resolution_summary["match_methods"][method] = resolution_summary["match_methods"].get(method, 0) + 1
+
+                logger.info(
+                    "Entity resolution completed",
+                    extra={
+                        "decision_id": decision_id,
+                        "resolution_summary": resolution_summary,
+                        "resolved_entities": [
+                            {
+                                "name": e.name,
+                                "type": e.type,
+                                "is_new": e.is_new,
+                                "match_method": e.match_method,
+                                "confidence": round(e.confidence, 3),
+                            }
+                            for e in resolved_entities
+                        ],
+                    },
+                )
 
             # Extract and create entity-to-entity relationships
             if len(resolved_entities) >= 2:
@@ -902,7 +1068,14 @@ class DecisionExtractor:
                     [{"name": e.name, "type": e.type} for e in resolved_entities],
                     context=full_text,
                 )
-                logger.info(f"Extracted {len(entity_rels)} entity relationships")
+                logger.debug(
+                    "Entity relationships extracted for decision",
+                    extra={
+                        "decision_id": decision_id,
+                        "relationship_count": len(entity_rels),
+                        "entity_count": len(resolved_entities),
+                    },
+                )
 
                 for rel in entity_rels:
                     rel_type = rel.get("type", "RELATED_TO")
