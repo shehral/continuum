@@ -31,6 +31,47 @@ from utils.vectors import cosine_similarity
 
 logger = get_logger(__name__)
 
+# Default values for missing decision fields (ML-QW-3)
+DEFAULT_DECISION_FIELDS = {
+    "confidence": 0.5,
+    "context": "",
+    "rationale": "",
+    "options": [],
+    "trigger": "Unknown trigger",
+    "decision": "",
+}
+
+
+def apply_decision_defaults(decision_data: dict) -> dict:
+    """Apply default values for missing or None decision fields (ML-QW-3).
+
+    This ensures that incomplete decision data from LLM extraction
+    or cached responses doesn't cause errors during processing.
+
+    Args:
+        decision_data: Raw decision dict from LLM or cache
+
+    Returns:
+        Decision dict with defaults applied for missing fields
+    """
+    result = {}
+    for key, default_value in DEFAULT_DECISION_FIELDS.items():
+        value = decision_data.get(key)
+        if value is None or (isinstance(value, str) and value.strip() == ""):
+            result[key] = default_value
+        elif isinstance(default_value, list) and not isinstance(value, list):
+            # Handle case where options might be a string or other type
+            result[key] = default_value
+        else:
+            result[key] = value
+    # Preserve any extra fields not in defaults
+    for key, value in decision_data.items():
+        if key not in result:
+            result[key] = value
+    return result
+
+
+
 # Few-shot decision extraction prompt with Chain-of-Thought reasoning
 DECISION_EXTRACTION_PROMPT = """Analyze this conversation and extract any technical decisions made.
 
@@ -414,17 +455,14 @@ class DecisionExtractor:
             cached = await self.cache.get(conversation_text, "decisions")
             if cached is not None:
                 logger.info("Using cached decision extraction")
+                # Apply defaults for missing fields (ML-QW-3)
                 return [
-                    DecisionCreate(
-                        trigger=d.get("trigger", "Unknown trigger"),
-                        context=d.get("context", ""),
-                        options=d.get("options", []),
-                        decision=d.get("decision", ""),
-                        rationale=d.get("rationale", ""),
-                        confidence=d.get("confidence", 0.5),
-                    )
+                    DecisionCreate(**{
+                        k: v for k, v in apply_decision_defaults(d).items()
+                        if k in ("trigger", "context", "options", "decision", "rationale", "confidence")
+                    })
                     for d in cached
-                    if d.get("decision")
+                    if apply_decision_defaults(d).get("decision")
                 ]
 
         prompt = DECISION_EXTRACTION_PROMPT.format(
@@ -449,17 +487,14 @@ class DecisionExtractor:
             # Cache the result (KG-P0-2)
             await self.cache.set(conversation_text, "decisions", decisions_data)
 
+            # Apply defaults for missing fields (ML-QW-3)
             return [
-                DecisionCreate(
-                    trigger=d.get("trigger", "Unknown trigger"),
-                    context=d.get("context", ""),
-                    options=d.get("options", []),
-                    decision=d.get("decision", ""),
-                    rationale=d.get("rationale", ""),
-                    confidence=d.get("confidence", 0.5),
-                )
+                DecisionCreate(**{
+                    k: v for k, v in apply_decision_defaults(d).items()
+                    if k in ("trigger", "context", "options", "decision", "rationale", "confidence")
+                })
                 for d in decisions_data
-                if d.get("decision")  # Skip entries without a decision
+                if apply_decision_defaults(d).get("decision")  # Skip entries without a decision
             ]
 
         except (TimeoutError, ConnectionError) as e:
