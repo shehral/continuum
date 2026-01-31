@@ -546,6 +546,8 @@ class TestRelationshipTypeValidation:
             "INVOLVES", "SIMILAR_TO", "SUPERSEDES", "INFLUENCED_BY",
             "CONTRADICTS", "IS_A", "PART_OF", "RELATED_TO",
             "DEPENDS_ON", "ALTERNATIVE_TO",
+            # Phase 5 additions
+            "ENABLES", "PREVENTS", "REQUIRES", "REFINES",
         }
         assert expected == VALID_RELATIONSHIP_TYPES
 

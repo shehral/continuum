@@ -200,6 +200,8 @@
   },
   "active": "7f7eee1b34d68465",
   "lastOpenFiles": [
+    "pnpm-lock.yaml.2841898383",
+    "pnpm-lock.yaml.814650724",
     "docs/devops/CICD_GUIDE.md",
     "docs/devops",
     "docs/reviews/CTO-COORDINATION-PLAN.md",
@@ -217,7 +219,6 @@
     "apps/api/tests/contract/__pycache__/test_graph_contract.cpython-312-pytest-9.0.2.pyc",
     "apps/api/tests/contract/__pycache__/test_decisions_contract.cpython-312-pytest-9.0.2.pyc",
     "apps/api/tests/performance/__pycache__/test_api_performance.cpython-312-pytest-9.0.2.pyc",
-    "apps/api/tests/performance/__pycache__/__init__.cpython-312.pyc",
     "k8s/README.md",
     "apps/api/docs/SD-025-async-review.md",
     "docs/testing/CROSS-BROWSER-TESTING.md",
@@ -236,7 +237,6 @@
     "docs/reviews/security-tasks.md",
     "docs/reviews/qa-test-tasks.md",
     "docs/reviews/system-design-tasks.md",
-    "docs/reviews/frontend-ux-tasks.md",
-    "docs/reviews/ml-ai-tasks.md"
+    "docs/reviews/frontend-ux-tasks.md"
   ]
 }
