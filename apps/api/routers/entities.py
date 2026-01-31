@@ -2,6 +2,8 @@
 
 All entity operations are scoped to the current user's data.
 Users can only access entities that are connected to their own decisions.
+
+SD-011: Entity lookup cache invalidation on create/update/delete.
 """
 
 from uuid import uuid4
@@ -16,6 +18,7 @@ from models.schemas import (
     SuggestEntitiesRequest,
 )
 from routers.auth import get_current_user_id
+from services.entity_cache import get_entity_cache
 from services.extractor import DecisionExtractor
 from utils.logging import get_logger
 
@@ -26,7 +29,7 @@ router = APIRouter()
 
 async def _verify_entity_access(session, entity_id: str, user_id: str) -> bool:
     """Verify the user can access this entity.
-    
+
     An entity is accessible if it's connected to at least one of the user's decisions.
     """
     result = await session.run(
@@ -83,7 +86,7 @@ async def link_entity(
     user_id: str = Depends(get_current_user_id),
 ):
     """Link an entity to a decision.
-    
+
     SEC-005: Input validation ensures:
     - decision_id and entity_id are valid UUIDs
     - relationship is in the allowed whitelist
@@ -127,7 +130,7 @@ async def suggest_entities(
     user_id: str = Depends(get_current_user_id),
 ):
     """Suggest entities to link based on text content.
-    
+
     Suggestions are based on the user's existing entities plus new extractions.
     """
     extractor = DecisionExtractor()
@@ -229,11 +232,14 @@ async def create_entity(
     user_id: str = Depends(get_current_user_id),
 ):
     """Create a new entity.
-    
+
     Note: Entities are shared across users but only visible when
     connected to a user's decisions. Creating an entity doesn't
     automatically connect it to any decision.
+
+    SD-011: Invalidates entity cache on creation.
     """
+    cache = get_entity_cache()
     session = await get_neo4j_session()
     async with session:
         # Generate ID if not provided
@@ -267,6 +273,15 @@ async def create_entity(
             type=entity.type,
         )
 
+        # SD-011: Invalidate cache for any cached lookups with this name
+        # This ensures new entity is discoverable
+        await cache.invalidate_entity(
+            user_id=user_id,
+            entity_id=entity_id,
+            entity_name=entity.name,
+        )
+        logger.debug(f"Entity cache invalidated for new entity: {entity.name}")
+
     return Entity(id=entity_id, name=entity.name, type=entity.type)
 
 
@@ -276,7 +291,7 @@ async def get_entity(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get a single entity by ID.
-    
+
     Users can only access entities connected to their decisions.
     """
     session = await get_neo4j_session()
@@ -304,6 +319,66 @@ async def get_entity(
         )
 
 
+@router.put("/{entity_id}", response_model=Entity)
+async def update_entity(
+    entity_id: str,
+    entity: Entity,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Update an entity by ID.
+
+    Users can only update entities connected to their decisions.
+    SD-011: Invalidates entity cache on update.
+    """
+    cache = get_entity_cache()
+    session = await get_neo4j_session()
+    async with session:
+        # Check if entity exists and is accessible to user
+        result = await session.run(
+            """
+            MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity {id: $id})
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            RETURN DISTINCT e
+            """,
+            id=entity_id,
+            user_id=user_id,
+        )
+
+        record = await result.single()
+        if not record:
+            raise HTTPException(status_code=404, detail="Entity not found")
+
+        old_entity = record["e"]
+        old_name = old_entity.get("name", "")
+
+        # Update the entity
+        await session.run(
+            """
+            MATCH (e:Entity {id: $id})
+            SET e.name = $name, e.type = $type
+            """,
+            id=entity_id,
+            name=entity.name,
+            type=entity.type,
+        )
+
+        # SD-011: Invalidate cache for both old and new names
+        await cache.invalidate_entity(
+            user_id=user_id,
+            entity_id=entity_id,
+            entity_name=old_name,
+        )
+        if entity.name.lower() != old_name.lower():
+            await cache.invalidate_entity(
+                user_id=user_id,
+                entity_id=entity_id,
+                entity_name=entity.name,
+            )
+        logger.debug(f"Entity cache invalidated for updated entity: {entity_id}")
+
+    return Entity(id=entity_id, name=entity.name, type=entity.type)
+
+
 @router.delete("/{entity_id}")
 async def delete_entity(
     entity_id: str,
@@ -315,11 +390,14 @@ async def delete_entity(
     Users can only delete entities that are ONLY connected to their own decisions.
     If the entity is shared with other users' decisions, deletion is not allowed.
 
+    SD-011: Invalidates entity cache on deletion.
+
     Args:
         entity_id: The ID of the entity to delete
         force: If True, delete even if entity has relationships with user's decisions.
                If False (default), only delete orphan entities.
     """
+    cache = get_entity_cache()
     session = await get_neo4j_session()
     async with session:
         # Check if entity exists and is connected to user's decisions
@@ -335,6 +413,10 @@ async def delete_entity(
         record = await result.single()
         if not record:
             raise HTTPException(status_code=404, detail="Entity not found")
+
+        entity_data = record["e"]
+        entity_name = entity_data.get("name", "")
+        entity_aliases = entity_data.get("aliases", [])
 
         # Check if entity is connected to other users' decisions
         result = await session.run(
@@ -376,5 +458,14 @@ async def delete_entity(
             "MATCH (e:Entity {id: $id}) DETACH DELETE e",
             id=entity_id,
         )
+
+        # SD-011: Invalidate cache for deleted entity
+        await cache.invalidate_entity(
+            user_id=user_id,
+            entity_id=entity_id,
+            entity_name=entity_name,
+            aliases=entity_aliases if entity_aliases else None,
+        )
+        logger.debug(f"Entity cache invalidated for deleted entity: {entity_id}")
 
     return {"status": "deleted", "id": entity_id}

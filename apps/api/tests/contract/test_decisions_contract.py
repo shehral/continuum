@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from tests.contract.schemas import (
     DecisionSchema,
     EntitySchema,
-    ErrorResponseSchema,
 )
 
 
@@ -33,7 +32,7 @@ class TestDecisionsContract:
             ],
             "source": "manual",
         }
-        
+
         schema = DecisionSchema(**valid_decision)
         assert schema.id == "decision-123"
         assert schema.confidence == 0.9
@@ -52,10 +51,10 @@ class TestDecisionsContract:
             "created_at": "2026-01-30T12:00:00Z",
             "entities": [],
         }
-        
+
         with pytest.raises(ValidationError) as exc_info:
             DecisionSchema(**missing_id)
-        
+
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("id",) for e in errors)
 
@@ -71,19 +70,19 @@ class TestDecisionsContract:
             "created_at": "2026-01-30T12:00:00Z",
             "entities": [],
         }
-        
+
         # Test confidence > 1.0
         with pytest.raises(ValidationError):
             DecisionSchema(**{**base_decision, "confidence": 1.5})
-        
+
         # Test confidence < 0.0
         with pytest.raises(ValidationError):
             DecisionSchema(**{**base_decision, "confidence": -0.1})
-        
+
         # Test valid confidence at boundaries
         schema = DecisionSchema(**{**base_decision, "confidence": 0.0})
         assert schema.confidence == 0.0
-        
+
         schema = DecisionSchema(**{**base_decision, "confidence": 1.0})
         assert schema.confidence == 1.0
 
@@ -99,10 +98,10 @@ class TestDecisionsContract:
             "created_at": "2026-01-30T12:00:00Z",
             "entities": [],
         }
-        
+
         with pytest.raises(ValidationError) as exc_info:
             DecisionSchema(**missing_options)
-        
+
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("options",) for e in errors)
 
@@ -119,7 +118,7 @@ class TestDecisionsContract:
             "created_at": "2026-01-30T12:00:00Z",
             "entities": [],
         }
-        
+
         schema = DecisionSchema(**decision_without_source)
         assert schema.source == "unknown"
 
@@ -136,9 +135,9 @@ class TestDecisionsContract:
             "created_at": "2026-01-30T12:00:00Z",
             "entities": [],
         }
-        
+
         valid_sources = ["claude_logs", "interview", "manual", "unknown"]
-        
+
         for source in valid_sources:
             schema = DecisionSchema(**{**base_decision, "source": source})
             assert schema.source == source
@@ -150,7 +149,7 @@ class TestDecisionsContract:
             "name": "PostgreSQL",
             "type": "technology",
         }
-        
+
         schema = EntitySchema(**valid_entity)
         assert schema.id == "entity-123"
         assert schema.name == "PostgreSQL"
@@ -162,10 +161,10 @@ class TestDecisionsContract:
             "id": "entity-123",
             "type": "technology",
         }
-        
+
         with pytest.raises(ValidationError) as exc_info:
             EntitySchema(**missing_name)
-        
+
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("name",) for e in errors)
 
@@ -175,10 +174,10 @@ class TestDecisionsContract:
             "id": "entity-123",
             "name": "PostgreSQL",
         }
-        
+
         with pytest.raises(ValidationError) as exc_info:
             EntitySchema(**missing_type)
-        
+
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("type",) for e in errors)
 
@@ -188,7 +187,7 @@ class TestDecisionsContract:
             "name": "PostgreSQL",
             "type": "technology",
         }
-        
+
         schema = EntitySchema(**no_id)
         assert schema.id is None
         assert schema.name == "PostgreSQL"
@@ -200,7 +199,7 @@ class TestDecisionsContract:
             "name": "",
             "type": "technology",
         }
-        
+
         with pytest.raises(ValidationError):
             EntitySchema(**empty_name)
 
@@ -230,7 +229,7 @@ class TestDecisionsContract:
                 "entities": [],
             },
         ]
-        
+
         # Validate each decision
         for decision_data in decisions:
             schema = DecisionSchema(**decision_data)
@@ -254,10 +253,10 @@ class TestDecisionsContract:
                 {"id": "ent-4", "name": "API Performance", "type": "concept"},
             ],
         }
-        
+
         schema = DecisionSchema(**decision)
         assert len(schema.entities) == 4
-        
+
         # Verify entity types
         entity_types = [e.type for e in schema.entities]
         assert entity_types.count("technology") == 2
@@ -275,14 +274,14 @@ class TestDecisionsContract:
             "confidence": 0.8,
             "entities": [],
         }
-        
+
         valid_datetime_formats = [
             "2026-01-30T12:00:00Z",
             "2026-01-30T12:00:00+00:00",
             "2026-01-30T12:00:00.000Z",
             "2026-01-30 12:00:00",
         ]
-        
+
         for dt_str in valid_datetime_formats:
             schema = DecisionSchema(**{**base_decision, "created_at": dt_str})
             assert schema.created_at is not None

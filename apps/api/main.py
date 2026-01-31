@@ -41,6 +41,7 @@ from routers import (
     dashboard,
     decisions,
     entities,
+    export,
     graph,
     ingest,
     search,
@@ -516,6 +517,7 @@ app.include_router(ingest.router, prefix="/api/ingest", tags=["Ingest"])
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(entities.router, prefix="/api/entities", tags=["Entities"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
+app.include_router(export.router, prefix="/api/export", tags=["Export"])
 
 
 # =============================================================================

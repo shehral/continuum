@@ -53,7 +53,7 @@ def _build_cache_key(prefix: str, user_id: str, *args: Any, **kwargs: Any) -> st
     # Create a deterministic hash of the arguments
     arg_data = json.dumps({"args": list(args), "kwargs": kwargs}, sort_keys=True)
     arg_hash = hashlib.md5(arg_data.encode()).hexdigest()[:8]
-    
+
     full_prefix = CACHE_PREFIXES.get(prefix, f"cache:{prefix}")
     return f"{full_prefix}:{user_id}:{arg_hash}"
 
@@ -77,9 +77,9 @@ async def get_cached(
     redis_client = get_redis()
     if redis_client is None:
         return None
-        
+
     cache_key = _build_cache_key(prefix, user_id, *args, **kwargs)
-    
+
     try:
         cached = await redis_client.get(cache_key)
         if cached:
@@ -115,13 +115,13 @@ async def set_cached(
     redis_client = get_redis()
     if redis_client is None:
         return False
-        
+
     cache_key = _build_cache_key(prefix, user_id, *args, **kwargs)
-    
+
     # Use default TTL if not specified
     if ttl is None:
         ttl = DEFAULT_TTLS.get(prefix, 60)
-    
+
     try:
         await redis_client.setex(cache_key, ttl, json.dumps(value))
         logger.debug(f"Cache set: {cache_key} (TTL: {ttl}s)")
@@ -144,10 +144,10 @@ async def invalidate_cache(prefix: str, user_id: str) -> int:
     redis_client = get_redis()
     if redis_client is None:
         return 0
-        
+
     full_prefix = CACHE_PREFIXES.get(prefix, f"cache:{prefix}")
     pattern = f"{full_prefix}:{user_id}:*"
-    
+
     try:
         # Use SCAN to find matching keys (safer than KEYS for large datasets)
         deleted = 0
@@ -158,7 +158,7 @@ async def invalidate_cache(prefix: str, user_id: str) -> int:
                 deleted += await redis_client.delete(*keys)
             if cursor == 0:
                 break
-        
+
         if deleted > 0:
             logger.info(f"Invalidated {deleted} cache entries for {pattern}")
         return deleted
@@ -220,29 +220,29 @@ def cached(
                         user_id = args[user_id_index]
                 except (ValueError, IndexError):
                     pass
-            
+
             if user_id is None:
                 # Can't cache without user_id, execute directly
                 logger.warning(f"Cannot cache {func.__name__}: no user_id found")
                 return await func(*args, **kwargs)
-            
+
             # Build cache key from remaining args (exclude user_id)
             cache_args = [a for i, a in enumerate(args) if i != (params.index(user_id_param) if user_id_param in params else -1)] if 'params' in dir() else list(args)
             cache_kwargs = {k: v for k, v in kwargs.items() if k != user_id_param}
-            
+
             # Try to get from cache
             cached_value = await get_cached(
-                key_prefix, 
-                user_id, 
-                *cache_args, 
+                key_prefix,
+                user_id,
+                *cache_args,
                 **cache_kwargs
             )
             if cached_value is not None:
                 return cached_value
-            
+
             # Execute function and cache result
             result = await func(*args, **kwargs)
-            
+
             # Only cache non-None results
             if result is not None:
                 # Convert Pydantic models to dict if needed
@@ -251,7 +251,7 @@ def cached(
                     cache_value = result.model_dump()
                 elif hasattr(result, "dict"):
                     cache_value = result.dict()
-                
+
                 await set_cached(
                     key_prefix,
                     user_id,
@@ -260,8 +260,8 @@ def cached(
                     *cache_args,
                     **cache_kwargs,
                 )
-            
+
             return result
-        
+
         return wrapper
     return decorator

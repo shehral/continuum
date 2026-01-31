@@ -218,6 +218,7 @@ class Neo4jRecordFactory:
         return {
             "cycle_names": names,
             "cycle_ids": ids,
+            "path_length": len(ids) - 1,  # Path length is nodes - 1
         }
 
     @classmethod

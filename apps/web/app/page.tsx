@@ -14,6 +14,17 @@ import { ErrorState } from "@/components/ui/error-state"
 import { StatCardSkeleton, DecisionCardSkeleton } from "@/components/ui/skeleton"
 import { api, type DashboardStats, type Decision } from "@/lib/api"
 import { getEntityStyle } from "@/lib/constants"
+import {
+  FileText,
+  Network,
+  MessageSquare,
+  GitBranch,
+  ArrowRight,
+  Plus,
+  Sparkles,
+  Lightbulb,
+  TrendingUp,
+} from "lucide-react"
 
 // Animated number counter for stats
 function AnimatedNumber({ value, duration = 1000 }: { value: number; duration?: number }) {
@@ -46,11 +57,18 @@ function AnimatedNumber({ value, duration = 1000 }: { value: number; duration?: 
   return <>{displayValue}</>
 }
 
+const STAT_ICONS = {
+  decisions: FileText,
+  entities: Network,
+  sessions: MessageSquare,
+  connections: GitBranch,
+}
+
 function StatCard({
   title,
   value,
   description,
-  icon,
+  iconType,
   href,
   emptyAction,
   delay = 0,
@@ -58,39 +76,43 @@ function StatCard({
   title: string
   value: number | string
   description: string
-  icon: string
+  iconType: keyof typeof STAT_ICONS
   href?: string
   emptyAction?: { label: string; href: string }
   delay?: number
 }) {
   const isEmpty = value === 0 || value === "0"
   const numericValue = typeof value === "number" ? value : parseInt(value) || 0
+  const Icon = STAT_ICONS[iconType]
 
   const content = (
     <Card
-      className={`bg-white/[0.03] backdrop-blur-xl border-white/[0.06] transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 ${href ? 'hover:bg-white/[0.06] hover:border-cyan-500/20 hover:scale-[1.02] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900' : ''}`}
+      variant="glass"
+      className={`animate-in fade-in slide-in-from-bottom-4 ${href ? 'cursor-pointer' : ''}`}
       style={{ animationDelay: `${delay}ms`, animationFillMode: 'backwards' }}
       tabIndex={href ? 0 : undefined}
       role={href ? "link" : undefined}
     >
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xl" aria-hidden="true">{icon}</span>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/10 border border-violet-500/20 flex items-center justify-center">
+            <Icon className="h-5 w-5 text-violet-400" />
+          </div>
           <CardTitle className="text-sm font-medium text-slate-400">{title}</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
-        <div className={`text-4xl font-bold bg-gradient-to-r ${isEmpty ? 'from-slate-500 to-slate-400' : 'from-cyan-400 to-teal-400'} bg-clip-text text-transparent`}>
+        <div className={`text-4xl font-bold bg-gradient-to-r ${isEmpty ? 'from-slate-500 to-slate-400' : 'from-violet-400 via-fuchsia-400 to-rose-400'} bg-clip-text text-transparent`}>
           {typeof value === "number" ? <AnimatedNumber value={numericValue} /> : value}
         </div>
         <p className="text-xs text-slate-500 mt-1">{description}</p>
         {isEmpty && emptyAction && (
           <Link
             href={emptyAction.href}
-            className="text-xs text-cyan-400 hover:text-cyan-300 mt-2 inline-flex items-center gap-1 transition-colors group"
+            className="text-xs text-violet-400 hover:text-violet-300 mt-2 inline-flex items-center gap-1 transition-colors group"
           >
             {emptyAction.label}
-            <span className="group-hover:translate-x-1 transition-transform" aria-hidden="true">{"\u2192"}</span>
+            <ArrowRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
           </Link>
         )}
       </CardContent>
@@ -111,7 +133,8 @@ function DecisionCard({ decision, index = 0 }: { decision: Decision; index?: num
   return (
     <Link href={`/decisions?id=${decision.id}`}>
       <Card
-        className="h-full bg-white/[0.03] backdrop-blur-xl border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.02] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+        variant="glass"
+        className="h-full cursor-pointer group animate-in fade-in slide-in-from-bottom-4"
         style={{ animationDelay: `${400 + index * 100}ms`, animationFillMode: 'backwards' }}
         tabIndex={0}
         role="article"
@@ -120,10 +143,10 @@ function DecisionCard({ decision, index = 0 }: { decision: Decision; index?: num
       >
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
-            <CardTitle className="text-base text-slate-200 group-hover:text-cyan-300 transition-colors leading-tight">
+            <CardTitle className="text-base text-slate-200 group-hover:text-violet-300 transition-colors leading-tight">
               {decision.trigger}
             </CardTitle>
-            <Badge className="ml-2 shrink-0 bg-cyan-500/20 text-cyan-400 border-cyan-500/30 group-hover:bg-cyan-500/30 transition-colors">
+            <Badge className="ml-2 shrink-0 bg-violet-500/20 text-violet-300 border-violet-500/30 group-hover:bg-violet-500/30 transition-colors">
               {Math.round(decision.confidence * 100)}%
             </Badge>
           </div>
@@ -134,7 +157,7 @@ function DecisionCard({ decision, index = 0 }: { decision: Decision; index?: num
                   {decision.decision}
                 </CardDescription>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-lg">
+              <TooltipContent side="bottom" className="max-w-lg bg-slate-800 border-white/10">
                 <p>{decision.decision}</p>
               </TooltipContent>
             </Tooltip>
@@ -188,41 +211,33 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-500">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-100">
-              Welcome back!
+            <h1 className="text-3xl font-bold tracking-tight gradient-text">
+              Welcome back
             </h1>
-            <p className="text-slate-400">
+            <p className="text-slate-400 flex items-center gap-2 mt-1">
+              <Sparkles className="h-4 w-4 text-violet-400" />
               Your knowledge graph at a glance
             </p>
           </div>
-          <div className="flex gap-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    asChild
-                    className="bg-white/[0.05] border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 hover:scale-105 transition-all"
-                  >
-                    <Link href="/graph">View Graph</Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Explore your knowledge graph</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    asChild
-                    className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)] hover:scale-105 transition-all"
-                  >
-                    <Link href="/add">Add Knowledge</Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Import or capture new decisions</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              asChild
+            >
+              <Link href="/graph" className="flex items-center gap-2">
+                <Network className="h-4 w-4" />
+                View Graph
+              </Link>
+            </Button>
+            <Button
+              variant="gradient"
+              asChild
+            >
+              <Link href="/add" className="flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Add Knowledge
+              </Link>
+            </Button>
           </div>
         </div>
 
@@ -248,7 +263,7 @@ export default function DashboardPage() {
               title="Total Decisions"
               value={displayStats.total_decisions}
               description="Decision traces captured"
-              icon="\ud83d\udcdd"
+              iconType="decisions"
               href="/decisions"
               emptyAction={{ label: "Import from Claude logs", href: "/add" }}
               delay={0}
@@ -257,7 +272,7 @@ export default function DashboardPage() {
               title="Entities"
               value={displayStats.total_entities}
               description="Concepts, systems, patterns"
-              icon="\ud83d\udd17"
+              iconType="entities"
               href="/graph"
               emptyAction={{ label: "Add knowledge", href: "/add" }}
               delay={100}
@@ -266,7 +281,7 @@ export default function DashboardPage() {
               title="Capture Sessions"
               value={displayStats.total_sessions}
               description="AI-guided interviews"
-              icon="\ud83d\udcac"
+              iconType="sessions"
               href="/capture"
               emptyAction={{ label: "Start an interview", href: "/capture" }}
               delay={200}
@@ -275,7 +290,7 @@ export default function DashboardPage() {
               title="Graph Connections"
               value={displayStats.total_entities * 2}
               description="Relationships mapped"
-              icon="\ud83d\udcca"
+              iconType="connections"
               href="/graph"
               delay={300}
             />
@@ -285,31 +300,33 @@ export default function DashboardPage() {
         {/* Analytics Charts */}
         {!isLoading && !error && displayStats.recent_decisions.length > 0 && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: "400ms" }}>
-            <h2 className="text-xl font-semibold text-slate-100 mb-4">Analytics</h2>
+            <h2 className="text-xl font-semibold text-slate-100 mb-4 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-violet-400" />
+              Analytics
+            </h2>
             <AnalyticsCharts decisions={displayStats.recent_decisions} />
           </div>
         )}
 
         {/* Recent Decisions */}
-        <Card className="bg-white/[0.03] backdrop-blur-xl border-white/[0.06]">
+        <Card variant="glass">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-xl text-slate-100">Recent Decisions</CardTitle>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      asChild
-                      className="text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
-                    >
-                      <Link href="/decisions">{"View all \u2192"}</Link>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>See all decisions</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <CardTitle className="text-xl text-slate-100 flex items-center gap-2">
+                <Lightbulb className="h-5 w-5 text-violet-400" />
+                Recent Decisions
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                className="text-violet-400 hover:text-violet-300 hover:bg-violet-500/10"
+              >
+                <Link href="/decisions" className="flex items-center gap-1">
+                  View all
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
@@ -321,19 +338,19 @@ export default function DashboardPage() {
                 <span className="sr-only">Loading recent decisions...</span>
               </div>
             ) : displayStats.recent_decisions.length === 0 ? (
-              <div className="py-8 text-center">
-                <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-white/[0.05] flex items-center justify-center">
-                  <span className="text-3xl" aria-hidden="true">\ud83d\udccb</span>
+              <div className="py-12 text-center">
+                <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/10 border border-violet-500/20 flex items-center justify-center">
+                  <Lightbulb className="h-8 w-8 text-violet-400" />
                 </div>
                 <h3 className="text-lg font-medium mb-1 text-slate-200">No decisions yet</h3>
-                <p className="text-slate-400 mb-4 max-w-md mx-auto">
+                <p className="text-slate-400 mb-6 max-w-md mx-auto">
                   Start capturing knowledge from your Claude Code sessions or through guided interviews.
                 </p>
-                <Button
-                  asChild
-                  className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)]"
-                >
-                  <Link href="/add">Add Knowledge</Link>
+                <Button variant="gradient" asChild>
+                  <Link href="/add" className="flex items-center gap-2">
+                    <Plus className="h-4 w-4" />
+                    Add Knowledge
+                  </Link>
                 </Button>
               </div>
             ) : (

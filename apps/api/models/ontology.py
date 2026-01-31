@@ -24,6 +24,12 @@ class RelationType(Enum):
     RELATED_TO = "RELATED_TO"       # X is related to Y (general)
     ALTERNATIVE_TO = "ALTERNATIVE_TO"  # X can be used instead of Y
 
+    # KG-P2-1: Extended entity-entity relationships
+    ENABLES = "ENABLES"             # X makes Y possible (e.g., "Docker ENABLES containerization")
+    PREVENTS = "PREVENTS"           # X blocks/prevents Y (e.g., "Rate limiting PREVENTS abuse")
+    REQUIRES = "REQUIRES"           # X needs Y to work (stronger than DEPENDS_ON, mandatory)
+    REFINES = "REFINES"             # X is a more specific version of Y (e.g., "FastAPI REFINES Starlette")
+
     # Decision-Entity relationships
     INVOLVES = "INVOLVES"           # Decision involves this entity
 
@@ -98,11 +104,55 @@ VALID_ENTITY_RELATIONSHIPS: dict[str, set[tuple[str, str]]] = {
         ("system", "system"),           # Kafka ALTERNATIVE_TO RabbitMQ
         ("concept", "concept"),         # REST ALTERNATIVE_TO GraphQL
     },
+
+    # KG-P2-1: ENABLES - X makes Y possible or practical
+    # e.g., "Docker ENABLES containerization", "Redis ENABLES caching"
+    "ENABLES": {
+        ("technology", "concept"),      # Docker ENABLES containerization
+        ("technology", "pattern"),      # ORM ENABLES repository pattern
+        ("technology", "system"),       # Kubernetes ENABLES microservices deployment
+        ("pattern", "concept"),         # Event sourcing ENABLES audit trails
+        ("system", "concept"),          # API gateway ENABLES centralized auth
+        ("system", "system"),           # Message queue ENABLES async processing
+        ("concept", "concept"),         # Caching ENABLES high performance
+    },
+
+    # KG-P2-1: PREVENTS - X blocks or prevents Y
+    # e.g., "Rate limiting PREVENTS abuse", "Type checking PREVENTS runtime errors"
+    "PREVENTS": {
+        ("technology", "concept"),      # TypeScript PREVENTS type errors
+        ("pattern", "concept"),         # Circuit breaker PREVENTS cascade failures
+        ("system", "concept"),          # WAF PREVENTS attacks
+        ("concept", "concept"),         # Rate limiting PREVENTS abuse
+    },
+
+    # KG-P2-1: REQUIRES - X strictly needs Y (mandatory dependency)
+    # Stronger than DEPENDS_ON - indicates hard requirement
+    # e.g., "GraphQL REQUIRES schema definition", "OAuth REQUIRES HTTPS"
+    "REQUIRES": {
+        ("technology", "technology"),   # Next.js REQUIRES Node.js
+        ("technology", "concept"),      # OAuth REQUIRES HTTPS
+        ("pattern", "technology"),      # CQRS REQUIRES event store
+        ("pattern", "concept"),         # Microservices REQUIRES service discovery
+        ("system", "technology"),       # Container orchestration REQUIRES container runtime
+        ("system", "concept"),          # Real-time system REQUIRES low latency
+    },
+
+    # KG-P2-1: REFINES - X is a more specific/enhanced version of Y
+    # e.g., "FastAPI REFINES Starlette", "TypeScript REFINES JavaScript"
+    "REFINES": {
+        ("technology", "technology"),   # FastAPI REFINES Starlette
+        ("pattern", "pattern"),         # Event sourcing REFINES audit logging
+        ("concept", "concept"),         # Microservices REFINES modular architecture
+        ("system", "system"),           # GraphQL gateway REFINES API gateway
+    },
 }
 
 # Relationships that are ONLY valid between entities (not decisions)
 ENTITY_ONLY_RELATIONSHIPS: frozenset[str] = frozenset([
-    "IS_A", "PART_OF", "DEPENDS_ON", "RELATED_TO", "ALTERNATIVE_TO"
+    "IS_A", "PART_OF", "DEPENDS_ON", "RELATED_TO", "ALTERNATIVE_TO",
+    # KG-P2-1: Extended relationships
+    "ENABLES", "PREVENTS", "REQUIRES", "REFINES",
 ])
 
 # Relationships that are ONLY valid between decisions
@@ -189,8 +239,19 @@ def get_suggested_relationship(
     target_type = target_type.lower()
 
     # Check each relationship type for validity
-    # Priority order: DEPENDS_ON > PART_OF > IS_A > ALTERNATIVE_TO > RELATED_TO
-    priority_order = ["DEPENDS_ON", "PART_OF", "IS_A", "ALTERNATIVE_TO", "RELATED_TO"]
+    # Priority order reflects semantic specificity
+    # KG-P2-1: Include new relationship types in priority order
+    priority_order = [
+        "REQUIRES",      # Strongest dependency
+        "DEPENDS_ON",    # Standard dependency
+        "ENABLES",       # Capability relationship
+        "PREVENTS",      # Blocking relationship
+        "REFINES",       # Specialization
+        "PART_OF",       # Composition
+        "IS_A",          # Taxonomy
+        "ALTERNATIVE_TO",  # Substitution
+        "RELATED_TO",    # General fallback
+    ]
 
     for rel_type in priority_order:
         if rel_type in VALID_ENTITY_RELATIONSHIPS:
@@ -199,8 +260,6 @@ def get_suggested_relationship(
 
     # Fallback to RELATED_TO if nothing else matches
     return "RELATED_TO"
-
-
 # Canonical name mappings for entity resolution
 # Maps various aliases/variations to the canonical name
 CANONICAL_NAMES: dict[str, str] = {

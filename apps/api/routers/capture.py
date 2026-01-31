@@ -6,6 +6,7 @@ not linked to any authenticated account.
 
 SEC-012: WebSocket input validation and rate limiting.
 SEC-009: Per-user rate limiting for LLM calls.
+SD-010: Batch message storage for improved performance.
 """
 
 import time
@@ -30,6 +31,7 @@ from models.schemas import (
     Entity,
 )
 from routers.auth import get_current_user_id
+from services.message_queue import get_message_queue_manager
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -226,6 +228,7 @@ async def send_capture_message(
     """Send a message in a capture session and get AI response.
 
     Users can only send messages to their own sessions.
+    SD-010: Messages are batched for improved database performance.
     """
     # Verify session ownership and get session
     session = await _verify_session_ownership(db, session_id, user_id)
@@ -233,14 +236,16 @@ async def send_capture_message(
     if session.status != SessionStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="Session is not active")
 
-    # Save user message
-    user_message = CaptureMessage(
-        id=str(uuid4()),
+    # Get message queue manager (SD-010)
+    queue_manager = get_message_queue_manager()
+
+    # Save user message via batch queue (SD-010)
+    await queue_manager.add_message(
+        db=db,
         session_id=session_id,
         role="user",
         content=content.get("content", ""),
     )
-    db.add(user_message)
 
     # Get conversation history
     result = await db.execute(
@@ -257,24 +262,20 @@ async def send_capture_message(
         history=[{"role": m.role, "content": m.content} for m in history],
     )
 
-    # Save AI response
-    ai_message = CaptureMessage(
-        id=str(uuid4()),
+    # Save AI response via batch queue (SD-010)
+    ai_message_id = await queue_manager.add_message(
+        db=db,
         session_id=session_id,
         role="assistant",
         content=response_content,
         extracted_entities=[e.model_dump() for e in extracted_entities],
     )
-    db.add(ai_message)
-
-    await db.commit()
-    await db.refresh(ai_message)
 
     return CaptureMessageSchema(
-        id=ai_message.id,
-        role=ai_message.role,
-        content=ai_message.content,
-        timestamp=ai_message.timestamp,
+        id=ai_message_id,
+        role="assistant",
+        content=response_content,
+        timestamp=datetime.now(UTC),
         extracted_entities=extracted_entities,
     )
 
@@ -289,12 +290,17 @@ async def complete_capture_session(
 
     Users can only complete their own sessions. The resulting decision
     will be linked to their user ID for multi-tenant isolation.
+    SD-010: Flushes any pending messages before completing.
     """
     # Verify session ownership
     session = await _verify_session_ownership(db, session_id, user_id)
 
     if session.status != SessionStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="Session is not active")
+
+    # Flush any pending messages (SD-010)
+    queue_manager = get_message_queue_manager()
+    await queue_manager.flush_session(db, session_id)
 
     # Update session status
     session.status = SessionStatus.COMPLETED
@@ -341,6 +347,9 @@ async def complete_capture_session(
 
     await db.commit()
     await db.refresh(session)
+
+    # Clean up the session queue (SD-010)
+    await queue_manager.remove_session(db, session_id)
 
     return CaptureSessionSchema(
         id=session.id,

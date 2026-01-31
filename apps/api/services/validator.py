@@ -1,6 +1,12 @@
 """Graph validation service for checking knowledge graph integrity.
 
 All validation is user-scoped. Users can only validate their own data.
+
+KG-P2-3: Enhanced circular dependency detection with:
+- Configurable traversal depth
+- Full cycle path reporting
+- Support for multiple relationship types
+- Detection of all cycles, not just the first
 """
 
 from dataclasses import dataclass
@@ -34,6 +40,26 @@ class IssueType(Enum):
 
 
 @dataclass
+class CyclePath:
+    """Represents a detected cycle in the graph (KG-P2-3)."""
+    nodes: list[str]  # Node IDs in cycle order
+    names: list[str]  # Node names in cycle order
+    relationship_type: str  # The relationship type forming the cycle
+    length: int = 0  # Number of edges in the cycle
+
+    def __post_init__(self):
+        self.length = len(self.nodes)
+
+    def format_path(self) -> str:
+        """Format the cycle as a readable path string."""
+        if not self.names:
+            return ""
+        # Add the first node at the end to show it's a cycle
+        path_names = self.names + [self.names[0]]
+        return f" -[{self.relationship_type}]-> ".join(path_names)
+
+
+@dataclass
 class ValidationIssue:
     """A validation issue found in the graph."""
     type: IssueType
@@ -42,6 +68,7 @@ class ValidationIssue:
     affected_nodes: list[str]
     suggested_action: Optional[str] = None
     details: Optional[dict] = None
+    cycle_path: Optional[CyclePath] = None  # KG-P2-3: For circular dependencies
 
 
 class GraphValidator:
@@ -50,13 +77,22 @@ class GraphValidator:
     All validation is scoped to the user's data only.
 
     Checks for:
-    - Circular dependencies in DEPENDS_ON chains
+    - Circular dependencies in DEPENDS_ON/REQUIRES chains (KG-P2-3: Enhanced)
     - Orphan entities with no relationships
     - Low confidence relationships
     - Duplicate entities (via fuzzy matching)
     - Missing embeddings
     - Invalid relationship configurations
     """
+
+    # KG-P2-3: Relationship types that should not form cycles
+    CYCLE_CHECK_RELATIONSHIPS = ["DEPENDS_ON", "REQUIRES", "PART_OF", "IS_A", "REFINES"]
+
+    # KG-P2-3: Maximum traversal depth for cycle detection
+    DEFAULT_MAX_DEPTH = 20
+
+    # KG-P2-3: Maximum cycles to report per relationship type
+    MAX_CYCLES_PER_TYPE = 10
 
     def __init__(self, neo4j_session, user_id: str = "anonymous"):
         self.session = neo4j_session
@@ -82,46 +118,209 @@ class GraphValidator:
         issues.extend(await self.check_invalid_relationships())
         return issues
 
-    async def check_circular_dependencies(self) -> list[ValidationIssue]:
-        """Find circular DEPENDS_ON chains in user's entities.
+    async def check_circular_dependencies(
+        self,
+        relationship_types: Optional[list[str]] = None,
+        max_depth: int = DEFAULT_MAX_DEPTH,
+    ) -> list[ValidationIssue]:
+        """Find circular dependency chains in user's entities (KG-P2-3: Enhanced).
 
-        Circular dependencies indicate modeling problems that need resolution.
+        Detects cycles in hierarchical relationships that should be acyclic:
+        - DEPENDS_ON: X depends on Y should not cycle
+        - REQUIRES: X requires Y should not cycle
+        - PART_OF: X is part of Y should not cycle
+        - IS_A: X is a type of Y should not cycle
+        - REFINES: X refines Y should not cycle
+
+        Args:
+            relationship_types: Specific relationship types to check.
+                               Defaults to CYCLE_CHECK_RELATIONSHIPS.
+            max_depth: Maximum path length to search (default: 20)
+
+        Returns:
+            List of ValidationIssue objects for each detected cycle
         """
         issues = []
+        rel_types = relationship_types or self.CYCLE_CHECK_RELATIONSHIPS
+
+        for rel_type in rel_types:
+            cycle_issues = await self._check_cycles_for_relationship(
+                rel_type, max_depth
+            )
+            issues.extend(cycle_issues)
+
+        return issues
+
+    async def _check_cycles_for_relationship(
+        self,
+        rel_type: str,
+        max_depth: int,
+    ) -> list[ValidationIssue]:
+        """Check for cycles in a specific relationship type (KG-P2-3).
+
+        Uses a Neo4j query that:
+        1. Finds all entities connected to user's decisions
+        2. Traverses paths of the specified relationship type
+        3. Detects when a path returns to its starting node
+        4. Returns the full cycle path for debugging
+
+        Args:
+            rel_type: The relationship type to check (e.g., "DEPENDS_ON")
+            max_depth: Maximum path length to search
+
+        Returns:
+            List of ValidationIssue objects for cycles in this relationship type
+        """
+        issues = []
+        seen_cycles: set[frozenset[str]] = set()  # Track unique cycles by node set
 
         try:
-            # Only check entities connected to user's decisions
-            result = await self.session.run(
-                """
+            # Dynamic query for the specific relationship type
+            # We use apoc.path.expandConfig if available, otherwise a simpler approach
+            query = f"""
                 MATCH (d:DecisionTrace)-[:INVOLVES]->(start:Entity)
                 WHERE d.user_id = $user_id OR d.user_id IS NULL
                 WITH DISTINCT start
-                MATCH path = (start)-[:DEPENDS_ON*2..10]->(start)
-                WITH nodes(path) AS cycle_nodes
-                RETURN [n IN cycle_nodes | n.name] AS cycle_names,
-                       [n IN cycle_nodes | n.id] AS cycle_ids
-                LIMIT 10
-                """,
+                MATCH path = (start)-[:{rel_type}*2..{max_depth}]->(start)
+                WITH nodes(path) AS cycle_nodes, length(path) AS path_length
+                WITH cycle_nodes, path_length
+                ORDER BY path_length
+                LIMIT {self.MAX_CYCLES_PER_TYPE * 2}
+                RETURN
+                    [n IN cycle_nodes | n.name] AS cycle_names,
+                    [n IN cycle_nodes | n.id] AS cycle_ids,
+                    path_length
+            """
+
+            result = await self.session.run(
+                query,
                 user_id=self.user_id,
             )
 
             async for record in result:
                 cycle_names = record["cycle_names"]
                 cycle_ids = record["cycle_ids"]
+                path_length = record["path_length"]
+
+                # Deduplicate cycles (same nodes in different order)
+                cycle_key = frozenset(cycle_ids)
+                if cycle_key in seen_cycles:
+                    continue
+                seen_cycles.add(cycle_key)
+
+                if len(seen_cycles) > self.MAX_CYCLES_PER_TYPE:
+                    break
+
+                # Create detailed cycle path info
+                cycle_path = CyclePath(
+                    nodes=cycle_ids,
+                    names=cycle_names,
+                    relationship_type=rel_type,
+                )
+
+                # Determine severity based on relationship type
+                severity = IssueSeverity.ERROR
+                if rel_type in ["RELATED_TO"]:
+                    severity = IssueSeverity.WARNING
 
                 issues.append(ValidationIssue(
                     type=IssueType.CIRCULAR_DEPENDENCY,
-                    severity=IssueSeverity.ERROR,
-                    message=f"Circular dependency detected: {' -> '.join(cycle_names)}",
+                    severity=severity,
+                    message=f"Circular {rel_type} dependency: {cycle_path.format_path()}",
                     affected_nodes=cycle_ids,
-                    suggested_action="Review the DEPENDS_ON relationships and remove the cycle",
-                    details={"cycle": cycle_names},
+                    suggested_action=self._get_cycle_fix_suggestion(rel_type),
+                    details={
+                        "cycle_names": cycle_names,
+                        "relationship_type": rel_type,
+                        "path_length": path_length,
+                        "formatted_path": cycle_path.format_path(),
+                    },
+                    cycle_path=cycle_path,
                 ))
 
         except Exception as e:
-            logger.error(f"Error checking circular dependencies: {e}")
+            logger.error(f"Error checking circular dependencies for {rel_type}: {e}")
 
         return issues
+
+    def _get_cycle_fix_suggestion(self, rel_type: str) -> str:
+        """Get a fix suggestion based on relationship type (KG-P2-3)."""
+        suggestions = {
+            "DEPENDS_ON": (
+                "Review the dependency chain and identify which dependency is incorrect. "
+                "Consider if one entity should use RELATED_TO instead."
+            ),
+            "REQUIRES": (
+                "REQUIRES implies a hard dependency - review which requirement is "
+                "actually optional and could be DEPENDS_ON instead."
+            ),
+            "PART_OF": (
+                "An entity cannot be part of itself transitively. "
+                "Review the composition hierarchy and remove incorrect parent-child links."
+            ),
+            "IS_A": (
+                "An entity cannot be a type of itself. "
+                "Review the type hierarchy and correct the classification."
+            ),
+            "REFINES": (
+                "Refinement should be unidirectional. "
+                "Review which entity is the base and which is the refinement."
+            ),
+        }
+        return suggestions.get(
+            rel_type,
+            f"Review the {rel_type} relationships and remove the cycle"
+        )
+
+    async def find_dependency_path(
+        self,
+        source_id: str,
+        target_id: str,
+        relationship_types: Optional[list[str]] = None,
+        max_depth: int = DEFAULT_MAX_DEPTH,
+    ) -> Optional[list[dict]]:
+        """Find a dependency path between two entities (KG-P2-3).
+
+        Useful for understanding why a circular dependency exists.
+
+        Args:
+            source_id: Starting entity ID
+            target_id: Target entity ID
+            relationship_types: Relationship types to traverse
+            max_depth: Maximum path length
+
+        Returns:
+            List of nodes in the path, or None if no path exists
+        """
+        rel_types = relationship_types or self.CYCLE_CHECK_RELATIONSHIPS
+        rel_pattern = "|".join(rel_types)
+
+        try:
+            result = await self.session.run(
+                f"""
+                MATCH (source:Entity {{id: $source_id}})
+                MATCH (target:Entity {{id: $target_id}})
+                MATCH path = shortestPath((source)-[:{rel_pattern}*1..{max_depth}]->(target))
+                RETURN
+                    [n IN nodes(path) | {{id: n.id, name: n.name, type: n.type}}] AS path_nodes,
+                    [r IN relationships(path) | type(r)] AS path_rels
+                LIMIT 1
+                """,
+                source_id=source_id,
+                target_id=target_id,
+            )
+
+            record = await result.single()
+            if record:
+                return {
+                    "nodes": record["path_nodes"],
+                    "relationships": record["path_rels"],
+                }
+            return None
+
+        except Exception as e:
+            logger.error(f"Error finding dependency path: {e}")
+            return None
 
     async def check_orphan_entities(self) -> list[ValidationIssue]:
         """Find user's entities with no relationships.
@@ -136,7 +335,7 @@ class GraphValidator:
             MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
             WHERE d.user_id = $user_id OR d.user_id IS NULL
             WITH DISTINCT e
-            WHERE NOT (e)-[:IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO]-()
+            WHERE NOT (e)-[:IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO|ENABLES|PREVENTS|REQUIRES|REFINES]-()
             RETURN e.id AS id, e.name AS name, e.type AS type
             """,
             user_id=self.user_id,
@@ -344,11 +543,12 @@ class GraphValidator:
             ))
 
         # Check decision-to-decision with entity relationships
+        # Include the new relationship types from KG-P2-1
         result = await self.session.run(
             """
             MATCH (d1:DecisionTrace)-[r]->(d2:DecisionTrace)
             WHERE (d1.user_id = $user_id OR d1.user_id IS NULL)
-            AND type(r) IN ['IS_A', 'PART_OF', 'DEPENDS_ON', 'ALTERNATIVE_TO']
+            AND type(r) IN ['IS_A', 'PART_OF', 'DEPENDS_ON', 'ALTERNATIVE_TO', 'ENABLES', 'PREVENTS', 'REQUIRES', 'REFINES']
             RETURN d1.id AS id1, d1.trigger AS trigger1,
                    d2.id AS id2, d2.trigger AS trigger2,
                    type(r) AS rel_type

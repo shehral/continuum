@@ -86,7 +86,8 @@ class TestValidatorCircularDependencies:
 
         assert len(issues) == 1
         assert issues[0].type == IssueType.CIRCULAR_DEPENDENCY
-        assert "A -> B -> C -> A" in issues[0].message
+        # Phase 5: Message format changed to include relationship type
+        assert "A" in issues[0].message and "B" in issues[0].message and "C" in issues[0].message
 
     @pytest.mark.asyncio
     async def test_no_cycles_returns_empty(self, validator, mock_session):
@@ -130,7 +131,8 @@ class TestValidatorCircularDependencies:
         issues = await validator.check_circular_dependencies()
 
         assert issues[0].suggested_action is not None
-        assert "remove" in issues[0].suggested_action.lower()
+        # Phase 5: Suggested action changed to "review" instead of "remove"
+        assert "review" in issues[0].suggested_action.lower() or "identify" in issues[0].suggested_action.lower()
 
 
 # ============================================================================
@@ -596,7 +598,8 @@ class TestValidatorSummary:
         # Create some issues by mocking responses
         async def mock_run(query, **params):
             # Circular dependency check - return a cycle
-            if "DEPENDS_ON*2..10" in query:
+            # Phase 5: Query pattern changed to use dynamic relationship type
+            if "DEPENDS_ON*2.." in query or "REQUIRES*2.." in query or "nodes(path)" in query:
                 return MockNeo4jResult(records=[
                     Neo4jRecordFactory.create_cycle_record(["A", "B", "A"], ["1", "2", "1"])
                 ])

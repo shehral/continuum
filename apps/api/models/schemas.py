@@ -27,6 +27,11 @@ VALID_RELATIONSHIP_TYPES = frozenset(
         "RELATED_TO",
         "DEPENDS_ON",
         "ALTERNATIVE_TO",
+        # KG-P2-1: Extended entity relationships
+        "ENABLES",
+        "PREVENTS",
+        "REQUIRES",
+        "REFINES",
     }
 )
 

@@ -418,10 +418,12 @@ class DecisionCreationSaga(BaseSaga[dict]):
         self, data: dict, context: SagaContext
     ) -> dict:
         """Create decision record in PostgreSQL."""
-        from db.postgres import async_session_maker
-        from models.decision import Decision as DecisionModel
         from datetime import UTC, datetime
         from uuid import uuid4
+
+        from models.decision import Decision as DecisionModel
+
+        from db.postgres import async_session_maker
 
         async with async_session_maker() as session:
             decision_id = str(uuid4())
@@ -445,9 +447,10 @@ class DecisionCreationSaga(BaseSaga[dict]):
         self, result: dict, context: SagaContext
     ) -> None:
         """Compensate: Delete decision from PostgreSQL."""
-        from db.postgres import async_session_maker
         from models.decision import Decision as DecisionModel
         from sqlalchemy import delete
+
+        from db.postgres import async_session_maker
 
         decision_id = result.get("decision_id")
         if not decision_id:

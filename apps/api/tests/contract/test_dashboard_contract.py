@@ -4,10 +4,9 @@ QA-P2-2: Tests that /api/dashboard/stats responses match expected schema.
 """
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from tests.contract.schemas import DashboardStatsSchema, ErrorResponseSchema
@@ -20,19 +19,19 @@ class TestDashboardStatsContract:
     def mock_neo4j_session(self):
         """Create a mock Neo4j session."""
         session = AsyncMock()
-        
+
         # Mock decision count query
         decision_result = AsyncMock()
         decision_result.single = AsyncMock(return_value={"count": 10})
-        
+
         # Mock entity count query
         entity_result = AsyncMock()
         entity_result.single = AsyncMock(return_value={"count": 25})
-        
+
         # Mock recent decisions query
         recent_result = AsyncMock()
         recent_result.__aiter__ = lambda self: self._async_iter()
-        
+
         async def _async_iter():
             decisions = [
                 {
@@ -54,9 +53,9 @@ class TestDashboardStatsContract:
             ]
             for d in decisions:
                 yield d
-        
+
         recent_result._async_iter = _async_iter
-        
+
         def mock_run(query, **kwargs):
             if "count(d)" in query:
                 return decision_result
@@ -64,11 +63,11 @@ class TestDashboardStatsContract:
                 return entity_result
             else:
                 return recent_result
-        
+
         session.run = AsyncMock(side_effect=mock_run)
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=None)
-        
+
         return session
 
     @pytest.fixture
@@ -104,7 +103,7 @@ class TestDashboardStatsContract:
                 }
             ],
         }
-        
+
         # Should not raise
         schema = DashboardStatsSchema(**valid_response)
         assert schema.total_decisions == 10
@@ -118,10 +117,10 @@ class TestDashboardStatsContract:
             "total_decisions": 10,
             # Missing total_entities, total_sessions, recent_decisions
         }
-        
+
         with pytest.raises(ValidationError) as exc_info:
             DashboardStatsSchema(**incomplete_response)
-        
+
         errors = exc_info.value.errors()
         field_names = [e["loc"][0] for e in errors]
         assert "total_entities" in field_names
@@ -136,7 +135,7 @@ class TestDashboardStatsContract:
             "total_sessions": 5,
             "recent_decisions": [],
         }
-        
+
         with pytest.raises(ValidationError):
             DashboardStatsSchema(**invalid_response)
 
@@ -160,7 +159,7 @@ class TestDashboardStatsContract:
                 }
             ],
         }
-        
+
         with pytest.raises(ValidationError):
             DashboardStatsSchema(**invalid_response)
 
@@ -186,7 +185,7 @@ class TestDashboardStatsContract:
                 }
             ],
         }
-        
+
         with pytest.raises(ValidationError):
             DashboardStatsSchema(**invalid_response)
 
@@ -198,20 +197,20 @@ class TestDashboardStatsContract:
             "total_sessions": 0,
             "recent_decisions": [],
         }
-        
+
         schema = DashboardStatsSchema(**valid_response)
         assert schema.recent_decisions == []
 
     def test_error_response_matches_schema(self):
         """Test that error responses match expected schema."""
         error_response = {"detail": "Service unavailable"}
-        
+
         schema = ErrorResponseSchema(**error_response)
         assert schema.detail == "Service unavailable"
 
     def test_error_response_requires_detail(self):
         """Test that error response requires detail field."""
         invalid_error = {"message": "Error"}  # Wrong field name
-        
+
         with pytest.raises(ValidationError):
             ErrorResponseSchema(**invalid_error)

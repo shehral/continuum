@@ -15,6 +15,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpe
 
 from config import get_settings
 from utils.logging import get_logger
+from utils.prompt_sanitizer import InjectionRiskLevel, sanitize_prompt
 
 logger = get_logger(__name__)
 
@@ -62,6 +63,21 @@ class RateLimitExceededError(Exception):
             f"Rate limit exceeded for user. Please retry after {retry_after:.0f} seconds."
         )
 
+
+
+
+class PromptInjectionError(ValueError):
+    """Raised when a prompt injection attempt is detected (ML-P1-1)."""
+
+    def __init__(self, risk_level: InjectionRiskLevel, patterns: list[str], message: str | None = None):
+        self.risk_level = risk_level
+        self.patterns = patterns
+        if message is None:
+            message = (
+                f"Potential prompt injection detected (risk: {risk_level.value}). "
+                f"Detected patterns: {', '.join(patterns[:3])}"
+            )
+        super().__init__(message)
 
 class RateLimiter:
     """Token bucket rate limiter using Redis with per-user support (SEC-009).
@@ -319,6 +335,47 @@ class LLMClient:
 
         return estimated_tokens
 
+
+    def _sanitize_user_prompt(
+        self,
+        prompt: str,
+        reject_high_risk: bool = True,
+    ) -> str:
+        """Sanitize user prompt to prevent prompt injection (ML-P1-1).
+
+        Args:
+            prompt: The user prompt to sanitize
+            reject_high_risk: If True, raise error on HIGH/CRITICAL risk prompts
+
+        Returns:
+            Sanitized prompt
+
+        Raises:
+            PromptInjectionError: If prompt is high risk and reject_high_risk=True
+        """
+        result = sanitize_prompt(prompt)
+
+        # Log any detected patterns
+        if result.detected_patterns:
+            logger.warning(
+                "Prompt injection patterns detected",
+                extra={
+                    "risk_level": result.risk_level.value,
+                    "confidence": result.confidence,
+                    "pattern_count": len(result.detected_patterns),
+                    "was_modified": result.was_modified,
+                }
+            )
+
+        # Reject high-risk prompts
+        if reject_high_risk and result.risk_level in (InjectionRiskLevel.HIGH, InjectionRiskLevel.CRITICAL):
+            raise PromptInjectionError(
+                result.risk_level,
+                result.detected_patterns,
+            )
+
+        return result.sanitized_text
+
     def _calculate_backoff(self, attempt: int) -> float:
         """Calculate exponential backoff with jitter.
 
@@ -498,6 +555,7 @@ class LLMClient:
         max_retries: int | None = None,
         validate_size: bool = True,
         user_id: str | None = None,
+        sanitize_input: bool = True,
     ) -> str:
         """Generate a completion (non-streaming) with retry logic and model fallback.
 
@@ -509,17 +567,23 @@ class LLMClient:
             max_retries: Maximum retry attempts (default: from settings)
             validate_size: Whether to validate prompt size before sending
             user_id: User ID for per-user rate limiting (SEC-009)
+            sanitize_input: Whether to sanitize prompt for injection attacks (ML-P1-1)
 
         Returns:
             The generated text with thinking tags stripped
 
         Raises:
             PromptTooLargeError: If prompt exceeds max_prompt_tokens (when validate_size=True)
+            PromptInjectionError: If prompt injection detected (when sanitize_input=True)
             RateLimitExceededError: If rate limit exceeded after timeout
             Exception: If max retries exceeded on both primary and fallback models
         """
         if max_retries is None:
             max_retries = self.settings.llm_max_retries
+
+        # Sanitize prompt for injection attempts (ML-P1-1)
+        if sanitize_input:
+            prompt = self._sanitize_user_prompt(prompt)
 
         # Validate prompt size before making API call (ML-P1-3)
         if validate_size:
@@ -590,6 +654,7 @@ class LLMClient:
         max_retries: int | None = None,
         validate_size: bool = True,
         user_id: str | None = None,
+        sanitize_input: bool = True,
     ) -> AsyncIterator[str]:
         """Generate a streaming completion with retry logic.
 
@@ -601,17 +666,23 @@ class LLMClient:
             max_retries: Maximum retry attempts (default: from settings)
             validate_size: Whether to validate prompt size before sending
             user_id: User ID for per-user rate limiting (SEC-009)
+            sanitize_input: Whether to sanitize prompt for injection attacks (ML-P1-1)
 
         Yields:
             Generated text chunks with thinking tags stripped
 
         Raises:
             PromptTooLargeError: If prompt exceeds max_prompt_tokens (when validate_size=True)
+            PromptInjectionError: If prompt injection detected (when sanitize_input=True)
             RateLimitExceededError: If rate limit exceeded after timeout
             Exception: If max retries exceeded
         """
         if max_retries is None:
             max_retries = self.settings.llm_max_retries
+
+        # Sanitize prompt for injection attempts (ML-P1-1)
+        if sanitize_input:
+            prompt = self._sanitize_user_prompt(prompt)
 
         # Validate prompt size before making API call (ML-P1-3)
         if validate_size:

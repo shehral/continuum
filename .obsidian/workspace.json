@@ -13,15 +13,30 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "docs/planning/CONTINUUM_IMPLEMENTATION_GUIDE.md",
+                "file": "docs/reviews/CTO-COORDINATION-PLAN.md",
                 "mode": "preview",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "CONTINUUM_IMPLEMENTATION_GUIDE"
+              "title": "CTO-COORDINATION-PLAN"
+            }
+          },
+          {
+            "id": "2f78ebeba2279e51",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "docs/reviews/EXECUTION-STATUS.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "EXECUTION-STATUS"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -78,8 +93,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "right": {
     "id": "832d7c15a1d003e1",
@@ -95,7 +109,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "docs/planning/CONTINUUM_IMPLEMENTATION_GUIDE.md",
+                "file": "docs/reviews/EXECUTION-STATUS.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -105,7 +119,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for CONTINUUM_IMPLEMENTATION_GUIDE"
+              "title": "Backlinks for EXECUTION-STATUS"
             }
           },
           {
@@ -114,12 +128,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "docs/planning/CONTINUUM_IMPLEMENTATION_GUIDE.md",
+                "file": "docs/reviews/EXECUTION-STATUS.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from CONTINUUM_IMPLEMENTATION_GUIDE"
+              "title": "Outgoing links from EXECUTION-STATUS"
             }
           },
           {
@@ -157,13 +171,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "docs/planning/CONTINUUM_IMPLEMENTATION_GUIDE.md",
+                "file": "docs/reviews/EXECUTION-STATUS.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of CONTINUUM_IMPLEMENTATION_GUIDE"
+              "title": "Outline of EXECUTION-STATUS"
             }
           }
         ]
@@ -184,35 +198,45 @@
       "bases:Create new base": false
     }
   },
-  "active": "0ee39d083c4f850b",
+  "active": "7f7eee1b34d68465",
   "lastOpenFiles": [
-    "apps/api/utils/__pycache__/sanitize.cpython-312.pyc",
-    "apps/api/tests/utils/__pycache__/test_sanitize.cpython-312-pytest-9.0.2.pyc",
-    "apps/api/tests/utils/__pycache__",
-    "apps/api/tests/utils/test_sanitize.py",
-    "apps/api/tests/utils",
-    "apps/api/models/__pycache__/errors.cpython-312.pyc",
-    "apps/api/utils/__pycache__/retry.cpython-312.pyc",
-    "apps/api/tests/services/__pycache__/test_file_watcher.cpython-312-pytest-9.0.2.pyc",
-    "apps/api/utils/__pycache__/circuit_breaker.cpython-312.pyc",
-    "apps/api/tests/integration/__pycache__/test_error_handling.cpython-312-pytest-9.0.2.pyc",
-    "apps/api/tests/integration/__pycache__/test_data_integrity.cpython-312-pytest-9.0.2.pyc",
+    "pnpm-lock.yaml.2841898383",
+    "pnpm-lock.yaml.814650724",
+    "docs/devops/CICD_GUIDE.md",
+    "docs/devops",
     "docs/reviews/CTO-COORDINATION-PLAN.md",
-    "docs/reviews/EXECUTION-STATUS.md",
-    "docs/reviews/system-design-review-2026-01-29.md",
+    "docs/reviews/product-tasks.md",
     "docs/reviews/EXPERT-REVIEW-SUMMARY-2026-01-29.md",
+    "docs/reviews/EXECUTION-STATUS.md",
     "docs/planning/CONTINUUM_IMPLEMENTATION_GUIDE.md",
     "docs/reviews/knowledge-graph-ai-tasks.md",
+    "apps/api/tests/__pycache__/test_message_queue.cpython-312-pytest-9.0.2.pyc",
+    "apps/api/tests/test_message_queue.py",
+    "docs/security/SECURITY-CHECKLIST.md",
+    "apps/api/tests/__pycache__/test_entity_cache.cpython-312-pytest-9.0.2.pyc",
+    "apps/api/tests/contract/__pycache__/test_graph_contract.cpython-312-pytest-9.0.2.pyc.73255",
+    "apps/api/tests/test_entity_cache.py",
+    "apps/api/tests/contract/__pycache__/test_graph_contract.cpython-312-pytest-9.0.2.pyc",
+    "apps/api/tests/contract/__pycache__/test_decisions_contract.cpython-312-pytest-9.0.2.pyc",
+    "apps/api/tests/performance/__pycache__/test_api_performance.cpython-312-pytest-9.0.2.pyc",
+    "k8s/README.md",
+    "apps/api/docs/SD-025-async-review.md",
+    "docs/testing/CROSS-BROWSER-TESTING.md",
+    "apps/api/tests/load/CROSS-BROWSER-TESTING.md",
+    "apps/api/tests/load/README.md",
+    "docs/reviews/SECURITY-AUDIT-PHASE4.md",
+    "docs/reviews/PHASE4-EXECUTION-PLAN.md",
+    "graph-detail-scrolled.png",
+    "graph-detail-panel.png",
+    "docs/reviews/system-design-review-2026-01-29.md",
     "docs/reviews/knowledge-graph-ai-review-2026-01-29.md",
     "docs/reviews/frontend-ux-review-2026-01-29.md",
     "docs/reviews/product-manager-review-2026-01-29.md",
     "docs/reviews/devops-sre-tasks.md",
     "docs/reviews/devops-sre-review-2026-01-29.md",
     "docs/reviews/security-tasks.md",
-    "docs/reviews/product-tasks.md",
     "docs/reviews/qa-test-tasks.md",
     "docs/reviews/system-design-tasks.md",
-    "docs/reviews/frontend-ux-tasks.md",
-    "docs/reviews/ml-ai-tasks.md"
+    "docs/reviews/frontend-ux-tasks.md"
   ]
 }

@@ -15,7 +15,7 @@ from db.neo4j import get_neo4j_session
 from db.postgres import get_db
 from models.postgres import CaptureSession
 from models.schemas import DashboardStats, Decision, Entity
-from utils.cache import get_cached, set_cached, invalidate_cache
+from utils.cache import get_cached, set_cached
 from utils.logging import get_logger
 
 router = APIRouter()

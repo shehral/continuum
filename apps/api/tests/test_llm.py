@@ -671,28 +671,32 @@ class TestInterviewAgent:
         assert state == InterviewState.TRIGGER
 
     def test_determine_next_state_progression(self):
-        """Should progress through states based on user responses."""
+        """Should progress through states using content-based analysis (ML-P2-2)."""
         agent = InterviewAgent()
 
-        # 1 substantial response -> CONTEXT
-        history = [{"role": "user", "content": "A" * 30}]
+        # Short conversation uses heuristic - 1 response goes to CONTEXT
+        history = [{"role": "user", "content": "We had a problem and needed to fix an issue."}]
         assert agent._determine_next_state(history) == InterviewState.CONTEXT
 
-        # 2 responses -> OPTIONS
-        history.append({"role": "user", "content": "B" * 30})
-        assert agent._determine_next_state(history) == InterviewState.OPTIONS
+        # With trigger and context info, should move to OPTIONS
+        history.append({"role": "user", "content": "We already had a system with budget constraints."})
+        state = agent._determine_next_state(history)
+        assert state == InterviewState.OPTIONS
 
-        # 3 responses -> DECISION
-        history.append({"role": "user", "content": "C" * 30})
-        assert agent._determine_next_state(history) == InterviewState.DECISION
+        # With options added, should move to DECISION
+        history.append({"role": "user", "content": "We considered several alternatives and options."})
+        state = agent._determine_next_state(history)
+        assert state == InterviewState.DECISION
 
-        # 4 responses -> RATIONALE
-        history.append({"role": "user", "content": "D" * 30})
-        assert agent._determine_next_state(history) == InterviewState.RATIONALE
+        # With decision added, should move to RATIONALE
+        history.append({"role": "user", "content": "We ultimately decided to use PostgreSQL."})
+        state = agent._determine_next_state(history)
+        assert state == InterviewState.RATIONALE
 
-        # 5+ responses -> SUMMARIZING
-        history.append({"role": "user", "content": "E" * 30})
-        assert agent._determine_next_state(history) == InterviewState.SUMMARIZING
+        # With rationale, should move to SUMMARIZING
+        history.append({"role": "user", "content": "We chose this because of the benefits and trade-offs."})
+        state = agent._determine_next_state(history)
+        assert state == InterviewState.SUMMARIZING
 
     def test_fallback_response(self):
         """Should provide fallback responses when AI unavailable."""

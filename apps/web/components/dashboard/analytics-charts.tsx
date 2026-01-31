@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState, useEffect } from "react"
 import {
   LineChart,
   Line,
@@ -11,13 +11,13 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
   Cell,
   Legend,
 } from "recharts"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { TrendingUp, PieChart as PieChartIcon, BarChart3, Activity } from "lucide-react"
+import { TrendingUp, PieChart as PieChartIcon, BarChart3, Activity, Zap, Target, Hash } from "lucide-react"
 
 interface Decision {
   id: string
@@ -30,19 +30,49 @@ interface AnalyticsChartsProps {
   decisions: Decision[]
 }
 
+// Nebula-themed colors
 const ENTITY_TYPE_COLORS: Record<string, string> = {
-  technology: "#3b82f6",
-  pattern: "#8b5cf6",
-  concept: "#10b981",
-  person: "#f59e0b",
-  team: "#ec4899",
-  component: "#06b6d4",
-  other: "#6b7280",
+  technology: "#fb923c", // Orange
+  pattern: "#ec4899",    // Pink/Rose
+  concept: "#a78bfa",    // Violet
+  person: "#34d399",     // Emerald
+  team: "#f472b6",       // Pink
+  component: "#38bdf8",  // Sky blue
+  system: "#4ade80",     // Green
+  other: "#94a3b8",      // Slate
 }
 
-const CONFIDENCE_COLORS = ["#fee2e2", "#fecaca", "#fca5a5", "#f87171", "#ef4444"]
+// Gradient confidence colors (violet to rose)
+const CONFIDENCE_COLORS = [
+  "#fecdd3", // Rose 200
+  "#fda4af", // Rose 300
+  "#fb7185", // Rose 400
+  "#f472b6", // Pink 400
+  "#a78bfa", // Violet 400
+]
+
+// Custom tooltip component for consistent styling
+function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; name?: string }>; label?: string }) {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-xl px-3 py-2 shadow-xl">
+        <p className="text-xs text-slate-400">{label}</p>
+        <p className="text-sm font-semibold text-white">
+          {payload[0].value} {payload[0].name || 'count'}
+        </p>
+      </div>
+    )
+  }
+  return null
+}
 
 export function AnalyticsCharts({ decisions }: AnalyticsChartsProps) {
+  // Prevent hydration mismatch - Recharts renders differently on server vs client
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   const decisionsOverTime = useMemo(() => {
     const now = new Date()
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
@@ -129,7 +159,7 @@ export function AnalyticsCharts({ decisions }: AnalyticsChartsProps) {
 
   if (decisions.length === 0) {
     return (
-      <Card className="col-span-full">
+      <Card variant="glass" className="col-span-full">
         <CardContent className="flex items-center justify-center py-12">
           <p className="text-muted-foreground">No decisions yet to analyze</p>
         </CardContent>
@@ -137,51 +167,107 @@ export function AnalyticsCharts({ decisions }: AnalyticsChartsProps) {
     )
   }
 
+  // Render placeholder until mounted to prevent hydration mismatch
+  if (!mounted) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        {[...Array(4)].map((_, i) => (
+          <Card key={i} variant="glass">
+            <CardContent className="h-[280px] flex items-center justify-center">
+              <div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <Card>
+      {/* Decisions Over Time */}
+      <Card variant="glass">
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Decisions Over Time</CardTitle>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/20 to-fuchsia-500/10 border border-violet-500/20 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4 text-violet-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Decisions Over Time</CardTitle>
+              <CardDescription>Last 14 days</CardDescription>
+            </div>
           </div>
-          <CardDescription>Last 14 days</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={decisionsOverTime}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="date" fontSize={11} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-                <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip />
-                <Line type="monotone" dataKey="count" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} />
+                <defs>
+                  <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#a78bfa" />
+                    <stop offset="50%" stopColor="#ec4899" />
+                    <stop offset="100%" stopColor="#fb923c" />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" fontSize={11} tickLine={false} axisLine={false} interval="preserveStartEnd" stroke="#64748b" />
+                <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} stroke="#64748b" />
+                <RechartsTooltip content={<CustomTooltip />} />
+                <Line
+                  type="monotone"
+                  dataKey="count"
+                  stroke="url(#lineGradient)"
+                  strokeWidth={3}
+                  dot={{ fill: "#a78bfa", strokeWidth: 0, r: 4 }}
+                  activeDot={{ fill: "#ec4899", strokeWidth: 0, r: 6 }}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
+      {/* Entity Types */}
+      <Card variant="glass">
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">
-            <PieChartIcon className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Entity Types</CardTitle>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-fuchsia-500/20 to-rose-500/10 border border-fuchsia-500/20 flex items-center justify-center">
+              <PieChartIcon className="h-4 w-4 text-fuchsia-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Entity Types</CardTitle>
+              <CardDescription>Distribution of extracted entities</CardDescription>
+            </div>
           </div>
-          <CardDescription>Distribution of extracted entities</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[200px]">
             {entityTypeDistribution.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={entityTypeDistribution} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2} dataKey="value">
+                  <Pie
+                    data={entityTypeDistribution}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={45}
+                    outerRadius={75}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="rgba(0,0,0,0.2)"
+                    strokeWidth={2}
+                  >
                     {entityTypeDistribution.map((entry, index) => (
                       <Cell key={index} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip />
-                  <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" iconSize={8} />
+                  <RechartsTooltip content={<CustomTooltip />} />
+                  <Legend
+                    verticalAlign="middle"
+                    align="right"
+                    layout="vertical"
+                    iconType="circle"
+                    iconSize={8}
+                    wrapperStyle={{ fontSize: '11px', color: '#94a3b8' }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
@@ -193,23 +279,28 @@ export function AnalyticsCharts({ decisions }: AnalyticsChartsProps) {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* Confidence Distribution */}
+      <Card variant="glass">
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Confidence Distribution</CardTitle>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500/20 to-orange-500/10 border border-rose-500/20 flex items-center justify-center">
+              <BarChart3 className="h-4 w-4 text-rose-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Confidence Distribution</CardTitle>
+              <CardDescription>Extraction confidence levels</CardDescription>
+            </div>
           </div>
-          <CardDescription>Extraction confidence levels</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={confidenceDistribution}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="range" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="range" fontSize={11} tickLine={false} axisLine={false} stroke="#64748b" />
+                <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} stroke="#64748b" />
+                <RechartsTooltip content={<CustomTooltip />} />
+                <Bar dataKey="count" radius={[6, 6, 0, 0]}>
                   {confidenceDistribution.map((_, index) => (
                     <Cell key={index} fill={CONFIDENCE_COLORS[index]} />
                   ))}
@@ -220,30 +311,47 @@ export function AnalyticsCharts({ decisions }: AnalyticsChartsProps) {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* Quick Stats */}
+      <Card variant="glass">
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Quick Stats</CardTitle>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500/20 to-amber-500/10 border border-orange-500/20 flex items-center justify-center">
+              <Activity className="h-4 w-4 text-orange-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Quick Stats</CardTitle>
+              <CardDescription>Summary metrics</CardDescription>
+            </div>
           </div>
-          <CardDescription>Summary metrics</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <p className="text-2xl font-bold">{quickStats.avgConfidence}%</p>
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-violet-500/30 transition-colors">
+              <div className="flex items-center gap-2 mb-1">
+                <Target className="h-4 w-4 text-violet-400" />
+                <p className="text-2xl font-bold gradient-text">{quickStats.avgConfidence}%</p>
+              </div>
               <p className="text-xs text-muted-foreground">Avg Confidence</p>
             </div>
-            <div className="space-y-1">
-              <p className="text-2xl font-bold">{quickStats.totalEntities}</p>
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-fuchsia-500/30 transition-colors">
+              <div className="flex items-center gap-2 mb-1">
+                <Hash className="h-4 w-4 text-fuchsia-400" />
+                <p className="text-2xl font-bold gradient-text">{quickStats.totalEntities}</p>
+              </div>
               <p className="text-xs text-muted-foreground">Total Entities</p>
             </div>
-            <div className="space-y-1">
-              <p className="text-2xl font-bold">{quickStats.recentCount}</p>
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-rose-500/30 transition-colors">
+              <div className="flex items-center gap-2 mb-1">
+                <Zap className="h-4 w-4 text-rose-400" />
+                <p className="text-2xl font-bold gradient-text">{quickStats.recentCount}</p>
+              </div>
               <p className="text-xs text-muted-foreground">This Week</p>
             </div>
-            <div className="space-y-1">
-              <p className="text-2xl font-bold">{quickStats.avgEntitiesPerDecision}</p>
+            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-orange-500/30 transition-colors">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="h-4 w-4 text-orange-400" />
+                <p className="text-2xl font-bold gradient-text">{quickStats.avgEntitiesPerDecision}</p>
+              </div>
               <p className="text-xs text-muted-foreground">Entities/Decision</p>
             </div>
           </div>
