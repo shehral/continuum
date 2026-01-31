@@ -26,7 +26,12 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { X, Sparkles, GitBranch, Bot, User, FileText, Trash2, Loader2, Link2, Network, FolderOpen, Plus, Layout, ChevronDown, Target, Columns } from "lucide-react"
+import {
+  X, Sparkles, GitBranch, Bot, User, FileText, Trash2, Loader2, Link2, Network,
+  FolderOpen, Plus, Layout, ChevronDown, Target, Columns, Lightbulb, Settings,
+  Wrench, Code, ArrowUpRight, Box, RefreshCw, Zap, Clock, CircleDot, BarChart3,
+  Atom, Brain, Server, Cpu
+} from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,77 +109,87 @@ const SOURCE_STYLES: Record<string, {
 const RELATIONSHIP_STYLES: Record<string, {
   color: string
   label: string
-  icon: string
+  icon: React.ReactNode
   strokeDasharray?: string
   animated?: boolean
 }> = {
   INVOLVES: {
     color: "#22D3EE",
     label: "Involves",
-    icon: "links",
+    icon: <Link2 className="h-3 w-3" style={{ color: "#22D3EE" }} />,
     strokeDasharray: "5,5",
     animated: true,
   },
   SIMILAR_TO: {
     color: "#A78BFA",
     label: "Similar To",
-    icon: "sparkles",
+    icon: <Sparkles className="h-3 w-3" style={{ color: "#A78BFA" }} />,
     animated: true,
   },
   INFLUENCED_BY: {
     color: "#F59E0B",
     label: "Influenced By",
-    icon: "clock",
+    icon: <Clock className="h-3 w-3" style={{ color: "#F59E0B" }} />,
     strokeDasharray: "10,5",
   },
   IS_A: {
     color: "#10B981",
     label: "Is A",
-    icon: "arrow-up-right",
+    icon: <ArrowUpRight className="h-3 w-3" style={{ color: "#10B981" }} />,
   },
   PART_OF: {
     color: "#3B82F6",
     label: "Part Of",
-    icon: "box",
+    icon: <Box className="h-3 w-3" style={{ color: "#3B82F6" }} />,
   },
   RELATED_TO: {
     color: "#EC4899",
     label: "Related To",
-    icon: "refresh",
+    icon: <RefreshCw className="h-3 w-3" style={{ color: "#EC4899" }} />,
     strokeDasharray: "3,3",
   },
   DEPENDS_ON: {
     color: "#EF4444",
     label: "Depends On",
-    icon: "zap",
+    icon: <Zap className="h-3 w-3" style={{ color: "#EF4444" }} />,
   },
 }
 
 // Pre-computed entity type config (moved outside component)
-const ENTITY_TYPE_CONFIG: Record<string, { color: string; icon: string; bg: string }> = {
+const ENTITY_TYPE_CONFIG: Record<string, {
+  color: string
+  icon: React.ReactNode
+  iconClass: string
+  bg: string
+}> = {
   concept: {
     color: "border-blue-400",
-    icon: "crystal",
+    icon: <Atom className="h-4 w-4 text-blue-400" />,
+    iconClass: "text-blue-400",
     bg: "from-blue-500/20 to-blue-600/10",
   },
   system: {
     color: "border-green-400",
-    icon: "gear",
+    icon: <Server className="h-4 w-4 text-green-400" />,
+    iconClass: "text-green-400",
     bg: "from-green-500/20 to-green-600/10",
   },
   person: {
     color: "border-purple-400",
-    icon: "person",
+    icon: <User className="h-4 w-4 text-purple-400" />,
+    iconClass: "text-purple-400",
     bg: "from-purple-500/20 to-purple-600/10",
   },
   technology: {
     color: "border-orange-400",
-    icon: "wrench",
+    icon: <Code className="h-4 w-4 text-orange-400" />,
+    iconClass: "text-orange-400",
     bg: "from-orange-500/20 to-orange-600/10",
   },
   pattern: {
     color: "border-pink-400",
-    icon: "target",
+    icon: <Target className="h-4 w-4 text-pink-400" />,
+    iconClass: "text-pink-400",
     bg: "from-pink-500/20 to-pink-600/10",
   },
 }
@@ -194,13 +209,13 @@ const DecisionNode = React.memo(
           px-5 py-4 rounded-2xl min-w-[220px] max-w-[320px]
           bg-gradient-to-br ${sourceStyle.color}
           backdrop-blur-xl
-          border-2 transition-all duration-200
+          border-2 transition-all duration-300
           ${selected
-            ? "border-white shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-            : `${sourceStyle.borderColor} hover:border-white/50 shadow-[0_4px_20px_rgba(0,0,0,0.3)]`
+            ? "border-white shadow-[0_0_40px_rgba(255,255,255,0.3)] scale-105"
+            : `${sourceStyle.borderColor} hover:border-white/60 hover:scale-[1.02] shadow-[0_8px_32px_rgba(0,0,0,0.4)]`
           }
           ${isFocused
-            ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-slate-900"
+            ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-slate-900 animate-pulse"
             : ""
           }
         `}
@@ -278,8 +293,8 @@ const EntityNode = React.memo(
     const config = ENTITY_TYPE_CONFIG[entityType] || ENTITY_TYPE_CONFIG.concept
     const isFocused = nodeData.isFocused
     const selectedClass = selected
-      ? `shadow-[0_0_25px_rgba(59,130,246,0.4)] scale-105`
-      : "hover:scale-105"
+      ? `shadow-[0_0_30px_rgba(59,130,246,0.5)] scale-110 border-white`
+      : "hover:scale-105 hover:shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
 
     return (
       <div
@@ -287,11 +302,11 @@ const EntityNode = React.memo(
           px-4 py-3 rounded-full
           bg-gradient-to-br ${config.bg}
           backdrop-blur-xl
-          border-2 ${config.color}
-          transition-all duration-200
+          border-2 ${selected ? "" : config.color}
+          transition-all duration-300
           ${selectedClass}
           ${isFocused
-            ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-slate-900"
+            ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-slate-900 animate-pulse"
             : ""
           }
         `}
@@ -305,11 +320,8 @@ const EntityNode = React.memo(
           className="!w-2 !h-2 !bg-slate-400 !border-slate-700"
         />
         <div className="flex items-center gap-2">
-          <span className="text-base" aria-hidden="true">
-            {entityType === "concept" ? "crystal-ball" :
-             entityType === "system" ? "gear" :
-             entityType === "person" ? "person" :
-             entityType === "technology" ? "wrench" : "target"}
+          <span aria-hidden="true">
+            {config.icon}
           </span>
           <span className="font-medium text-sm text-slate-200 whitespace-nowrap">
             {nodeData.label}
@@ -474,7 +486,7 @@ function KnowledgeGraphInner({
       const weight = edge.weight ?? 1.0
 
       // Calculate stroke width based on weight (similarity score)
-      const strokeWidth = Math.max(1.5, Math.min(4, weight * 3))
+      const strokeWidth = Math.max(2, Math.min(5, weight * 3.5))
 
       return {
         id: edge.id,
@@ -483,27 +495,31 @@ function KnowledgeGraphInner({
         label: weight < 1.0 ? `${relStyle.label} (${(weight * 100).toFixed(0)}%)` : relStyle.label,
         animated: relStyle.animated ?? false,
         labelStyle: {
-          fill: relStyle.color,
-          fontSize: 10,
-          fontWeight: 500,
+          fill: "#fff",
+          fontSize: 11,
+          fontWeight: 600,
+          textShadow: "0 1px 2px rgba(0,0,0,0.5)",
         },
         labelBgStyle: {
-          fill: "rgba(15, 23, 42, 0.9)",
-          fillOpacity: 0.9,
+          fill: relStyle.color,
+          fillOpacity: 0.85,
+          rx: 8,
+          ry: 8,
         },
-        labelBgPadding: [6, 4] as [number, number],
-        labelBgBorderRadius: 6,
+        labelBgPadding: [8, 5] as [number, number],
+        labelBgBorderRadius: 8,
         markerEnd: {
           type: MarkerType.ArrowClosed,
           color: relStyle.color,
-          width: 15,
-          height: 15,
+          width: 18,
+          height: 18,
         },
         style: {
           stroke: relStyle.color,
           strokeWidth,
           strokeDasharray: relStyle.strokeDasharray,
-          opacity: 0.8 + (weight * 0.2),
+          opacity: 0.85 + (weight * 0.15),
+          filter: `drop-shadow(0 0 ${Math.max(2, weight * 4)}px ${relStyle.color}40)`,
         },
       }
     })
@@ -924,25 +940,39 @@ function KnowledgeGraphInner({
           <Card className="w-52 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Entity types legend">
             <CardHeader className="py-3 px-4">
               <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
-                <span aria-hidden="true">chart</span> Entity Types
+                <BarChart3 className="h-4 w-4" aria-hidden="true" /> Entity Types
               </CardTitle>
             </CardHeader>
             <CardContent className="py-2 px-4 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-blue-500/20 border-2 border-blue-400" aria-hidden="true" />
-                <span className="text-xs text-slate-300">crystal-ball Concept</span>
+                <div className="w-5 h-5 rounded-full bg-blue-500/20 border-2 border-blue-400 flex items-center justify-center" aria-hidden="true">
+                  <Atom className="h-3 w-3 text-blue-400" />
+                </div>
+                <span className="text-xs text-slate-300">Concept</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-green-500/20 border-2 border-green-400" aria-hidden="true" />
-                <span className="text-xs text-slate-300">gear System</span>
+                <div className="w-5 h-5 rounded-full bg-green-500/20 border-2 border-green-400 flex items-center justify-center" aria-hidden="true">
+                  <Server className="h-3 w-3 text-green-400" />
+                </div>
+                <span className="text-xs text-slate-300">System</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-orange-500/20 border-2 border-orange-400" aria-hidden="true" />
-                <span className="text-xs text-slate-300">wrench Technology</span>
+                <div className="w-5 h-5 rounded-full bg-orange-500/20 border-2 border-orange-400 flex items-center justify-center" aria-hidden="true">
+                  <Code className="h-3 w-3 text-orange-400" />
+                </div>
+                <span className="text-xs text-slate-300">Technology</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-purple-500/20 border-2 border-purple-400" aria-hidden="true" />
-                <span className="text-xs text-slate-300">person Person</span>
+                <div className="w-5 h-5 rounded-full bg-purple-500/20 border-2 border-purple-400 flex items-center justify-center" aria-hidden="true">
+                  <User className="h-3 w-3 text-purple-400" />
+                </div>
+                <span className="text-xs text-slate-300">Person</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-full bg-pink-500/20 border-2 border-pink-400 flex items-center justify-center" aria-hidden="true">
+                  <Target className="h-3 w-3 text-pink-400" />
+                </div>
+                <span className="text-xs text-slate-300">Pattern</span>
               </div>
               <div className="flex items-center gap-2 pt-1 border-t border-white/10 mt-2">
                 <Sparkles className="h-4 w-4 text-purple-400" aria-hidden="true" />
@@ -1074,8 +1104,14 @@ function KnowledgeGraphInner({
         {/* Stats Panel */}
         <Panel position="bottom-right" className="m-4">
           <div className="px-3 py-2 rounded-lg bg-slate-800/80 backdrop-blur-xl border border-white/10 text-xs text-slate-400 flex gap-4">
-            <span>pin {data?.nodes?.length || 0} nodes</span>
-            <span>link {data?.edges?.length || 0} edges</span>
+            <span className="flex items-center gap-1.5">
+              <CircleDot className="h-3 w-3" aria-hidden="true" />
+              {data?.nodes?.length || 0} nodes
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Link2 className="h-3 w-3" aria-hidden="true" />
+              {data?.edges?.length || 0} edges
+            </span>
           </div>
         </Panel>
       </ReactFlow>
@@ -1086,7 +1122,11 @@ function KnowledgeGraphInner({
           <Card className="bg-slate-800/95 backdrop-blur-xl border-white/10 shadow-2xl">
             <CardHeader className="flex flex-row items-center justify-between py-3 border-b border-white/10">
               <CardTitle className="text-base text-slate-100 flex items-center gap-2">
-                {selectedNode.type === "decision" ? "lightbulb" : "crystal-ball"}
+                {selectedNode.type === "decision" ? (
+                  <Lightbulb className="h-4 w-4 text-cyan-400" aria-hidden="true" />
+                ) : (
+                  <Atom className="h-4 w-4 text-blue-400" aria-hidden="true" />
+                )}
                 {selectedNode.type === "decision" ? "Decision" : "Entity"} Details
               </CardTitle>
               <div className="flex items-center gap-1">
@@ -1175,15 +1215,21 @@ function KnowledgeGraphInner({
                         </h4>
                         <div className="flex flex-wrap gap-2" role="list" aria-label="Related entities">
                           {(decision.entities ?? []).length > 0 ? (
-                            decision.entities.map((entity) => (
-                              <Badge
-                                key={entity.id}
-                                className="bg-blue-500/20 text-blue-400 border-blue-500/30"
-                                role="listitem"
-                              >
-                                gear {entity.name}
-                              </Badge>
-                            ))
+                            decision.entities.map((entity) => {
+                              const entityConfig = ENTITY_TYPE_CONFIG[entity.type] || ENTITY_TYPE_CONFIG.concept
+                              return (
+                                <Badge
+                                  key={entity.id}
+                                  className="bg-blue-500/20 text-blue-400 border-blue-500/30 flex items-center gap-1.5"
+                                  role="listitem"
+                                >
+                                  {React.cloneElement(entityConfig.icon as React.ReactElement, {
+                                    className: "h-3 w-3",
+                                  })}
+                                  {entity.name}
+                                </Badge>
+                              )
+                            })
                           ) : (
                             <span className="text-sm text-slate-500">No entities linked</span>
                           )}
