@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useEffect, useState, useCallback } from "react"
 
 import { AppShell } from "@/components/layout/app-shell"
+import { AnalyticsCharts } from "@/components/dashboard/analytics-charts"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -278,6 +279,14 @@ export default function DashboardPage() {
               href="/graph"
               delay={300}
             />
+          </div>
+        )}
+
+        {/* Analytics Charts */}
+        {!isLoading && !error && displayStats.recent_decisions.length > 0 && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: "400ms" }}>
+            <h2 className="text-xl font-semibold text-slate-100 mb-4">Analytics</h2>
+            <AnalyticsCharts decisions={displayStats.recent_decisions} />
           </div>
         )}
 

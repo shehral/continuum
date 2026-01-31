@@ -26,7 +26,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { X, Sparkles, GitBranch, Bot, User, FileText, Trash2, Loader2, Link2, Network, FolderOpen, Plus } from "lucide-react"
+import { X, Sparkles, GitBranch, Bot, User, FileText, Trash2, Loader2, Link2, Network, FolderOpen, Plus, Layout, ChevronDown, Target, Columns } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { applyLayout, bundleEdges, LAYOUT_INFO, type LayoutType } from "./layout-utils"
 import { type GraphData, type Decision, type Entity, type SimilarDecision, api } from "@/lib/api"
 import Link from "next/link"
 import { DeleteConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -423,62 +430,41 @@ function KnowledgeGraphInner({
   const [showRelationshipLegend, setShowRelationshipLegend] = useState(true)
   const [showSourceLegend, setShowSourceLegend] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [layoutType, setLayoutType] = useState<LayoutType>("force")
   // P1-3: Related decisions state
   const [relatedDecisions, setRelatedDecisions] = useState<SimilarDecision[]>([])
   const [relatedLoading, setRelatedLoading] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const { setCenter, getZoom } = useReactFlow()
 
-  // Convert graph data to React Flow format with better layout
+  // Convert graph data to React Flow format with layout
   const initialNodes: Node[] = useMemo(() => {
     if (!data?.nodes) return []
 
-    const decisionNodes = data.nodes.filter((n) => n.type === "decision")
-    const entityNodes = data.nodes.filter((n) => n.type === "entity")
+    // First, create nodes with placeholder positions
+    const rawNodes: Node[] = data.nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+      position: { x: 0, y: 0 }, // Will be set by layout
+      data: {
+        label: node.label,
+        decision: node.type === "decision" ? node.data : undefined,
+        entity: node.type === "entity" ? node.data : undefined,
+        hasEmbedding: node.has_embedding,
+        isFocused: false,
+      },
+    }))
 
-    const nodes: Node[] = []
+    // Create edges for layout algorithm
+    const rawEdges: Edge[] = data.edges?.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+    })) || []
 
-    // Layout decisions in a row at the top
-    decisionNodes.forEach((node, index) => {
-      nodes.push({
-        id: node.id,
-        type: node.type,
-        position: {
-          x: index * 400 + 100,
-          y: 50,
-        },
-        data: {
-          label: node.label,
-          decision: node.data,
-          hasEmbedding: node.has_embedding,
-          isFocused: false,
-        },
-      })
-    })
-
-    // Layout entities in a grid below
-    entityNodes.forEach((node, index) => {
-      const cols = Math.ceil(Math.sqrt(entityNodes.length))
-      const row = Math.floor(index / cols)
-      const col = index % cols
-      nodes.push({
-        id: node.id,
-        type: node.type,
-        position: {
-          x: col * 200 + 150,
-          y: row * 120 + 300,
-        },
-        data: {
-          label: node.label,
-          entity: node.data,
-          hasEmbedding: node.has_embedding,
-          isFocused: false,
-        },
-      })
-    })
-
-    return nodes
-  }, [data])
+    // Apply the selected layout algorithm
+    return applyLayout(rawNodes, rawEdges, layoutType, { type: layoutType })
+  }, [data, layoutType])
 
   const initialEdges: Edge[] = useMemo(() => {
     if (!data?.edges) return []
@@ -1034,6 +1020,55 @@ function KnowledgeGraphInner({
             <div>Arrow keys: Navigate | Enter: Select | Esc: Deselect</div>
             <div>Click and drag to pan | Scroll to zoom</div>
           </div>
+        </Panel>
+
+        {/* Layout Selector */}
+        <Panel position="bottom-center" className="m-4">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-slate-800/90 border-white/10 text-slate-300 hover:bg-slate-700/90 hover:text-slate-100"
+              >
+                <Layout className="h-4 w-4 mr-2" />
+                {LAYOUT_INFO[layoutType].label}
+                <ChevronDown className="h-4 w-4 ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="bg-slate-800 border-white/10">
+              <DropdownMenuItem
+                onClick={() => setLayoutType("force")}
+                className={`cursor-pointer ${layoutType === "force" ? "bg-cyan-500/20 text-cyan-300" : "text-slate-300 hover:text-slate-100"}`}
+              >
+                <Columns className="h-4 w-4 mr-2" />
+                <div className="flex flex-col">
+                  <span>Force-Directed</span>
+                  <span className="text-xs text-slate-500">Natural clustering</span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setLayoutType("hierarchical")}
+                className={`cursor-pointer ${layoutType === "hierarchical" ? "bg-cyan-500/20 text-cyan-300" : "text-slate-300 hover:text-slate-100"}`}
+              >
+                <GitBranch className="h-4 w-4 mr-2" />
+                <div className="flex flex-col">
+                  <span>Hierarchical</span>
+                  <span className="text-xs text-slate-500">Tree-like structure</span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setLayoutType("radial")}
+                className={`cursor-pointer ${layoutType === "radial" ? "bg-cyan-500/20 text-cyan-300" : "text-slate-300 hover:text-slate-100"}`}
+              >
+                <Target className="h-4 w-4 mr-2" />
+                <div className="flex flex-col">
+                  <span>Radial</span>
+                  <span className="text-xs text-slate-500">Decisions at center</span>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </Panel>
 
         {/* Stats Panel */}
