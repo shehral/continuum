@@ -1,6 +1,6 @@
 "use client"
 
-import Dagre from "@dagrejs/dagre"
+import dagre from "dagre"
 import type { Node, Edge } from "@xyflow/react"
 
 export type LayoutType = "force" | "hierarchical" | "radial"
@@ -74,7 +74,7 @@ export function applyHierarchicalLayout(
   const nodeSpacing = options.nodeSpacing ?? 100
   const rankSpacing = options.rankSpacing ?? 150
 
-  const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
+  const g = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
 
   g.setGraph({
     rankdir: direction,
@@ -97,7 +97,7 @@ export function applyHierarchicalLayout(
   })
 
   // Run the layout
-  Dagre.layout(g)
+  dagre.layout(g)
 
   // Apply the calculated positions
   return nodes.map((node) => {
