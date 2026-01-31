@@ -3,6 +3,8 @@
 KG-P0-2: LLM response caching to avoid redundant API calls
 KG-P0-3: Relationship type validation before storing
 KG-QW-4: Extraction reasoning logging for debugging and quality analysis
+ML-P2-2: Specialized prompt templates for different decision types
+ML-P2-3: Post-processing confidence calibration based on extraction quality
 """
 
 import hashlib
@@ -154,6 +156,175 @@ If no clear decisions are found, return an empty array [].
 {conversation_text}
 
 Return ONLY valid JSON, no markdown code blocks or explanation."""
+
+
+# ML-P2-2: Decision Type Enumeration
+class DecisionType:
+    """Enumeration of decision types for specialized extraction (ML-P2-2)."""
+    ARCHITECTURE = "architecture"
+    TECHNOLOGY = "technology"
+    PROCESS = "process"
+    GENERAL = "general"
+
+
+# ML-P2-2: Specialized prompt for architecture decisions
+ARCHITECTURE_DECISION_PROMPT = """Analyze this conversation for ARCHITECTURE DECISIONS.
+
+Focus on: system structure, scalability, communication patterns, tradeoffs.
+
+## Example
+Conversation: "We decided to start with a modular monolith given our small team."
+Output:
+```json
+[{{"trigger": "Deciding on system architecture", "context": "Small team", "options": ["Microservices", "Monolith"], "decision": "Modular monolith", "rationale": "Reduced complexity for small team", "confidence": 0.9, "decision_type": "architecture"}}]
+```
+
+## Conversation to analyze:
+{conversation_text}
+
+Return ONLY valid JSON, no markdown code blocks or explanation."""
+
+
+# ML-P2-2: Specialized prompt for technology choice decisions
+TECHNOLOGY_DECISION_PROMPT = """Analyze this conversation for TECHNOLOGY CHOICE DECISIONS.
+
+Focus on: tools, frameworks, alternatives considered, compatibility, team skills.
+
+## Example
+Conversation: "We chose PostgreSQL over MongoDB for ACID compliance."
+Output:
+```json
+[{{"trigger": "Selecting database", "context": "Need ACID compliance", "options": ["PostgreSQL", "MongoDB"], "decision": "PostgreSQL", "rationale": "Better transactional support", "confidence": 0.95, "decision_type": "technology"}}]
+```
+
+## Conversation to analyze:
+{conversation_text}
+
+Return ONLY valid JSON, no markdown code blocks or explanation."""
+
+
+# ML-P2-2: Specialized prompt for process decisions
+PROCESS_DECISION_PROMPT = """Analyze this conversation for PROCESS and WORKFLOW DECISIONS.
+
+Focus on: team workflows, deployment practices, quality assurance, collaboration.
+
+## Example
+Conversation: "We are implementing mandatory code reviews with CODEOWNERS."
+Output:
+```json
+[{{"trigger": "Establishing code review practices", "context": "Need quality improvement", "options": ["Optional reviews", "Mandatory reviews"], "decision": "Mandatory reviews with CODEOWNERS", "rationale": "Ensures expert review", "confidence": 0.85, "decision_type": "process"}}]
+```
+
+## Conversation to analyze:
+{conversation_text}
+
+Return ONLY valid JSON, no markdown code blocks or explanation."""
+
+
+# ML-P2-2: Map decision types to prompts
+DECISION_TYPE_PROMPTS = {
+    DecisionType.ARCHITECTURE: ARCHITECTURE_DECISION_PROMPT,
+    DecisionType.TECHNOLOGY: TECHNOLOGY_DECISION_PROMPT,
+    DecisionType.PROCESS: PROCESS_DECISION_PROMPT,
+    DecisionType.GENERAL: None,  # Use default DECISION_EXTRACTION_PROMPT
+}
+
+
+# ML-P2-2: Keywords for auto-detecting decision type
+DECISION_TYPE_KEYWORDS = {
+    DecisionType.ARCHITECTURE: [
+        "architecture", "microservice", "monolith", "distributed", "scalability",
+        "api gateway", "event-driven", "message queue", "load balancer",
+    ],
+    DecisionType.TECHNOLOGY: [
+        "framework", "library", "database", "postgres", "mongodb", "redis",
+        "react", "vue", "python", "typescript", "aws", "docker",
+    ],
+    DecisionType.PROCESS: [
+        "workflow", "process", "ci/cd", "deployment", "code review",
+        "branching", "agile", "sprint", "release",
+    ],
+}
+
+
+def detect_decision_type(text: str) -> str:
+    """Auto-detect the decision type based on keywords in the text (ML-P2-2).
+
+    Args:
+        text: The conversation or decision text to analyze
+
+    Returns:
+        The detected decision type string
+    """
+    text_lower = text.lower()
+    scores = {dtype: 0 for dtype in DECISION_TYPE_KEYWORDS}
+
+    for dtype, keywords in DECISION_TYPE_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in text_lower:
+                scores[dtype] += 1
+
+    max_score = max(scores.values())
+    if max_score >= 2:  # Require at least 2 keyword matches
+        for dtype, score in scores.items():
+            if score == max_score:
+                return dtype
+
+    return DecisionType.GENERAL
+
+
+def calibrate_confidence(decision_data: dict) -> float:
+    """Calibrate confidence score based on extraction completeness (ML-P2-3).
+
+    Adjusts the raw LLM confidence based on:
+    - Completeness of extracted fields
+    - Number of options/entities mentioned
+    - Quality indicators in rationale
+
+    Args:
+        decision_data: The extracted decision dictionary
+
+    Returns:
+        Calibrated confidence score (0.0 to 1.0)
+    """
+    raw_confidence = decision_data.get("confidence", 0.5)
+    calibrated = raw_confidence
+
+    # Penalty for missing required fields
+    required_fields = ["trigger", "decision", "rationale"]
+    missing_required = sum(1 for f in required_fields if not decision_data.get(f))
+    calibrated -= missing_required * 0.15
+
+    # Bonus for having options (indicates careful consideration)
+    options = decision_data.get("options", [])
+    if len(options) >= 2:
+        calibrated += 0.05
+    if len(options) >= 3:
+        calibrated += 0.03
+
+    # Bonus for detailed rationale
+    rationale = decision_data.get("rationale", "")
+    rationale_words = len(rationale.split()) if rationale else 0
+    if rationale_words >= 20:
+        calibrated += 0.05
+    elif rationale_words >= 10:
+        calibrated += 0.02
+    elif rationale_words < 5:
+        calibrated -= 0.10
+
+    # Bonus for having context
+    context = decision_data.get("context", "")
+    if context and len(context.split()) >= 5:
+        calibrated += 0.03
+
+    # Quality phrases bonus
+    quality_phrases = ["because", "since", "due to", "trade-off", "benefit", "compared to"]
+    rationale_lower = rationale.lower()
+    quality_matches = sum(1 for p in quality_phrases if p in rationale_lower)
+    calibrated += min(quality_matches * 0.02, 0.08)
+
+    return round(max(0.1, min(1.0, calibrated)), 3)
+
 
 
 # Few-shot entity extraction prompt with Chain-of-Thought reasoning
@@ -441,22 +612,34 @@ class DecisionExtractor:
     async def extract_decisions(
         self,
         conversation: Conversation,
-        bypass_cache: bool = False
+        bypass_cache: bool = False,
+        decision_type: str | None = None,
     ) -> list[DecisionCreate]:
         """Extract decision traces from a conversation using few-shot CoT prompt.
+
+        Supports specialized prompts for different decision types (ML-P2-2) and
+        applies confidence calibration post-processing (ML-P2-3).
 
         Args:
             conversation: The conversation to extract decisions from
             bypass_cache: If True, skip cache lookup and force fresh extraction
+            decision_type: Optional decision type override (architecture, technology, process)
+                          If None, auto-detects based on keywords (ML-P2-2)
         """
         conversation_text = conversation.get_full_text()
 
-        # Check cache first (KG-P0-2)
+        # ML-P2-2: Auto-detect decision type if not specified
+        if decision_type is None:
+            decision_type = detect_decision_type(conversation_text)
+        logger.debug(f"Using decision type: {decision_type}")
+
+        # Check cache first (KG-P0-2) - include decision_type in cache key
+        cache_key = f"{decision_type}:{conversation_text}"
         if not bypass_cache:
-            cached = await self.cache.get(conversation_text, "decisions")
+            cached = await self.cache.get(cache_key, "decisions")
             if cached is not None:
-                logger.info("Using cached decision extraction")
-                # Apply defaults for missing fields (ML-QW-3)
+                logger.info(f"Using cached decision extraction (type={decision_type})")
+                # Apply defaults and calibration for missing fields (ML-QW-3, ML-P2-3)
                 return [
                     DecisionCreate(**{
                         k: v for k, v in apply_decision_defaults(d).items()
@@ -466,9 +649,12 @@ class DecisionExtractor:
                     if apply_decision_defaults(d).get("decision")
                 ]
 
-        prompt = DECISION_EXTRACTION_PROMPT.format(
-            conversation_text=conversation_text
-        )
+        # ML-P2-2: Select appropriate prompt based on decision type
+        specialized_prompt = DECISION_TYPE_PROMPTS.get(decision_type)
+        if specialized_prompt is not None:
+            prompt = specialized_prompt.format(conversation_text=conversation_text)
+        else:
+            prompt = DECISION_EXTRACTION_PROMPT.format(conversation_text=conversation_text)
 
         try:
             response = await self.llm.generate(prompt, temperature=0.3)
@@ -485,19 +671,31 @@ class DecisionExtractor:
                 logger.warning(f"Expected list, got {type(decisions_data)}")
                 return []
 
+            # ML-P2-3: Apply confidence calibration to each decision
+            for d in decisions_data:
+                raw_confidence = d.get("confidence", 0.5)
+                calibrated = calibrate_confidence(d)
+                d["confidence"] = calibrated
+                d["raw_confidence"] = raw_confidence  # Preserve original for debugging
+
             # Cache the result (KG-P0-2)
-            await self.cache.set(conversation_text, "decisions", decisions_data)
+            await self.cache.set(cache_key, "decisions", decisions_data)
 
             # Log extraction summary (KG-QW-4: Extraction reasoning logging)
             if decisions_data:
                 confidence_scores = [d.get("confidence", 0.5) for d in decisions_data]
+                raw_scores = [d.get("raw_confidence", d.get("confidence", 0.5)) for d in decisions_data]
                 avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
+                avg_raw = sum(raw_scores) / len(raw_scores) if raw_scores else 0
                 logger.info(
                     "Decision extraction completed",
                     extra={
                         "extraction_type": "decisions",
+                        "decision_type": decision_type,
                         "count": len(decisions_data),
                         "avg_confidence": round(avg_confidence, 3),
+                        "avg_raw_confidence": round(avg_raw, 3),
+                        "calibration_delta": round(avg_confidence - avg_raw, 3),
                         "confidence_range": {
                             "min": round(min(confidence_scores), 3) if confidence_scores else 0,
                             "max": round(max(confidence_scores), 3) if confidence_scores else 0,
@@ -506,6 +704,7 @@ class DecisionExtractor:
                             {
                                 "trigger_preview": d.get("trigger", "")[:50],
                                 "confidence": d.get("confidence", 0.5),
+                                "raw_confidence": d.get("raw_confidence", d.get("confidence", 0.5)),
                             }
                             for d in decisions_data[:5]  # Limit to first 5 for log size
                         ],

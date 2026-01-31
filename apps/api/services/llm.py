@@ -1,6 +1,7 @@
-"""LLM client for NVIDIA NIM API with per-user rate limiting, retry logic, and request size validation.
+"""LLM client for NVIDIA NIM API with per-user rate limiting, retry logic, request size validation, and model fallback.
 
 SEC-009: Implements per-user rate limiting instead of global rate limiting.
+ML-QW-2: Model fallback support - if primary model fails, automatically fall back to secondary model.
 """
 
 import asyncio
@@ -177,7 +178,7 @@ class RateLimiter:
 
 
 class LLMClient:
-    """Client for NVIDIA NIM Llama API with per-user rate limiting, retry logic, and size validation.
+    """Client for NVIDIA NIM Llama API with per-user rate limiting, retry logic, size validation, and model fallback.
 
     Features:
     - Per-user token bucket rate limiting via Redis (SEC-009)
@@ -186,6 +187,7 @@ class LLMClient:
     - Retries on 429, 500, 502, 503, 504 status codes
     - Thinking tag stripping from model output
     - Request size validation to prevent oversized prompts (ML-P1-3)
+    - Model fallback support (ML-QW-2): Falls back to secondary model if primary fails
     """
 
     def __init__(self):
@@ -195,6 +197,9 @@ class LLMClient:
             api_key=self.settings.get_nvidia_api_key(),
         )
         self.model = self.settings.nvidia_model
+        # ML-QW-2: Fallback model configuration
+        self.fallback_model = self.settings.llm_fallback_model
+        self.fallback_enabled = self.settings.llm_fallback_enabled
         self._redis: redis.Redis | None = None
         # Cache rate limiters by user_id to avoid recreating
         self._rate_limiters: dict[str, RateLimiter] = {}
@@ -330,6 +335,37 @@ class LLMClient:
         jitter = random.uniform(0, 1)
         return exponential + jitter
 
+    def _should_fallback(self, error: Exception) -> bool:
+        """Check if an error should trigger fallback to secondary model (ML-QW-2).
+
+        Fallback is appropriate for:
+        - Model-specific errors (model overloaded, not available)
+        - Persistent failures after retries
+        - Non-transient API errors
+
+        Args:
+            error: The exception that was raised
+
+        Returns:
+            True if fallback should be attempted
+        """
+        if not self.fallback_enabled:
+            return False
+
+        # Check for model-specific errors that warrant fallback
+        if isinstance(error, APIStatusError):
+            # Model unavailable, service overloaded, or quota exceeded
+            if error.status_code in {503, 529}:  # 529 = model overloaded on some APIs
+                return True
+            # Check error message for model-specific issues
+            error_msg = str(error).lower()
+            if any(phrase in error_msg for phrase in [
+                "model", "overloaded", "capacity", "unavailable"
+            ]):
+                return True
+
+        return False
+
     def _is_retryable_error(self, error: Exception) -> bool:
         """Check if an error should trigger a retry.
 
@@ -382,6 +418,77 @@ class LLMClient:
         )
 
 
+    async def _generate_with_model(
+        self,
+        model: str,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int,
+        max_retries: int,
+    ) -> str:
+        """Internal method to generate completion with a specific model (ML-QW-2).
+
+        Args:
+            model: The model to use for generation
+            messages: List of message dicts
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            max_retries: Maximum retry attempts
+
+        Returns:
+            The generated text with thinking tags stripped
+
+        Raises:
+            Exception: If max retries exceeded
+        """
+        last_error: Exception | None = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = await self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    top_p=0.95,
+                    max_tokens=max_tokens,
+                    frequency_penalty=0,
+                    presence_penalty=0,
+                )
+
+                # Log token usage for cost monitoring (ML-QW-1)
+                self._log_token_usage(response.usage, model, streaming=False)
+
+                content = response.choices[0].message.content or ""
+                return strip_thinking_tags(content)
+
+            except Exception as e:
+                last_error = e
+
+                # Don't retry non-retryable errors
+                if not self._is_retryable_error(e):
+                    logger.error(f"Non-retryable error on LLM call with {model}: {type(e).__name__}: {e}")
+                    raise
+
+                # Don't retry if we've exhausted attempts
+                if attempt >= max_retries:
+                    logger.error(
+                        f"LLM call with {model} failed after {max_retries + 1} attempts. "
+                        f"Last error: {type(e).__name__}: {e}"
+                    )
+                    raise
+
+                # Calculate backoff and retry
+                backoff = self._calculate_backoff(attempt)
+                logger.warning(
+                    f"Retryable error on attempt {attempt + 1}/{max_retries + 1} with {model}: "
+                    f"{type(e).__name__}: {e}. Retrying in {backoff:.2f}s"
+                )
+                await asyncio.sleep(backoff)
+
+        if last_error:
+            raise last_error
+        raise Exception("Unexpected error in LLM generate")
+
     async def generate(
         self,
         prompt: str,
@@ -392,7 +499,7 @@ class LLMClient:
         validate_size: bool = True,
         user_id: str | None = None,
     ) -> str:
-        """Generate a completion (non-streaming) with retry logic.
+        """Generate a completion (non-streaming) with retry logic and model fallback.
 
         Args:
             prompt: The user prompt
@@ -409,7 +516,7 @@ class LLMClient:
         Raises:
             PromptTooLargeError: If prompt exceeds max_prompt_tokens (when validate_size=True)
             RateLimitExceededError: If rate limit exceeded after timeout
-            Exception: If max retries exceeded
+            Exception: If max retries exceeded on both primary and fallback models
         """
         if max_retries is None:
             max_retries = self.settings.llm_max_retries
@@ -430,54 +537,49 @@ class LLMClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        last_error: Exception | None = None
-
-        for attempt in range(max_retries + 1):
-            try:
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=temperature,
-                    top_p=0.95,
-                    max_tokens=max_tokens,
-                    frequency_penalty=0,
-                    presence_penalty=0,
-                )
-
-                # Log token usage for cost monitoring (ML-QW-1)
-                self._log_token_usage(response.usage, self.model, streaming=False)
-
-                content = response.choices[0].message.content or ""
-                return strip_thinking_tags(content)
-
-            except Exception as e:
-                last_error = e
-
-                # Don't retry non-retryable errors
-                if not self._is_retryable_error(e):
-                    logger.error(f"Non-retryable error on LLM call: {type(e).__name__}: {e}")
-                    raise
-
-                # Don't retry if we've exhausted attempts
-                if attempt >= max_retries:
-                    logger.error(
-                        f"LLM call failed after {max_retries + 1} attempts. "
-                        f"Last error: {type(e).__name__}: {e}"
-                    )
-                    raise
-
-                # Calculate backoff and retry
-                backoff = self._calculate_backoff(attempt)
+        # Try primary model first
+        try:
+            return await self._generate_with_model(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                max_retries=max_retries,
+            )
+        except Exception as primary_error:
+            # ML-QW-2: Check if we should fall back to secondary model
+            if self._should_fallback(primary_error) and self.fallback_model:
                 logger.warning(
-                    f"Retryable error on attempt {attempt + 1}/{max_retries + 1}: "
-                    f"{type(e).__name__}: {e}. Retrying in {backoff:.2f}s"
+                    f"Primary model {self.model} failed, falling back to {self.fallback_model}",
+                    extra={
+                        "primary_model": self.model,
+                        "fallback_model": self.fallback_model,
+                        "primary_error": str(primary_error),
+                    }
                 )
-                await asyncio.sleep(backoff)
-
-        # This should never be reached, but just in case
-        if last_error:
-            raise last_error
-        raise Exception("Unexpected error in LLM generate")
+                try:
+                    return await self._generate_with_model(
+                        model=self.fallback_model,
+                        messages=messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        max_retries=max_retries,
+                    )
+                except Exception as fallback_error:
+                    logger.error(
+                        f"Fallback model {self.fallback_model} also failed",
+                        extra={
+                            "primary_model": self.model,
+                            "fallback_model": self.fallback_model,
+                            "primary_error": str(primary_error),
+                            "fallback_error": str(fallback_error),
+                        }
+                    )
+                    # Re-raise the fallback error as it's more recent
+                    raise fallback_error
+            else:
+                # No fallback available or not appropriate, re-raise original error
+                raise
 
     async def generate_stream(
         self,

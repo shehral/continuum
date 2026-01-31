@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     llm_cache_enabled: bool = True  # Enable/disable LLM response caching
     llm_cache_ttl: int = 86400  # 24 hours in seconds (default)
     llm_extraction_prompt_version: str = "v1"  # Bump when prompts change to invalidate cache
+    # LLM model fallback settings (ML-QW-2)
+    # If primary model fails, fall back to a secondary model
+    llm_fallback_model: str = "nvidia/llama-3.1-nemotron-70b-instruct"  # Fallback model
+    llm_fallback_enabled: bool = True  # Enable/disable fallback behavior
+
 
     # Similarity thresholds (KG-P2-2: Configurable thresholds)
     # Decision similarity (ML-P1-4)
