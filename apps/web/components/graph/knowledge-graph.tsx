@@ -306,7 +306,7 @@ const EntityNode = React.memo(
           px-4 py-3 rounded-full
           bg-gradient-to-br ${config.bg}
           backdrop-blur-xl
-          border-2 ${selected ? "" : config.color}
+          border-2 ${selected ? "border-white" : config.color}
           transition-all duration-300
           ${selectedClass}
           ${isFocused
@@ -966,7 +966,7 @@ function KnowledgeGraphInner({
 
                 <div className="pt-2 mt-2 border-t border-white/10">
                   <p className="text-[10px] text-slate-500">
-                    {sourceFilter
+                    {sourceFilter && sourceFilter !== ""
                       ? `Showing ${sourceCounts[sourceFilter] || 0} ${SOURCE_STYLES[sourceFilter]?.label || sourceFilter} decisions`
                       : "Click to filter by source"}
                   </p>
@@ -976,8 +976,8 @@ function KnowledgeGraphInner({
           </Panel>
         )}
 
-        {/* Node Type Legend */}
-        <Panel position="top-left" className="m-4" style={{ marginTop: showSourceLegend ? "280px" : "0" }}>
+        {/* Node Type Legend - positioned below Source Filter when visible */}
+        <Panel position="top-left" className={`m-4 ${showSourceLegend ? "mt-[280px]" : ""}`}>
           <Card className="w-52 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Entity types legend">
             <CardHeader className="py-3 px-4">
               <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
@@ -1167,9 +1167,9 @@ function KnowledgeGraphInner({
         </Panel>
       </ReactFlow>
 
-      {/* Detail Panel */}
+      {/* Detail Panel - responsive width and dynamic positioning */}
       {selectedNode && (
-        <div className="absolute top-4 right-4 w-80 z-10" style={{ marginTop: showRelationshipLegend ? "220px" : "0" }}>
+        <div className={`absolute top-4 right-4 w-80 max-w-[90vw] z-10 ${showRelationshipLegend ? "mt-[220px]" : ""}`}>
           <Card className="bg-slate-800/95 backdrop-blur-xl border-white/10 shadow-2xl">
             <CardHeader className="flex flex-row items-center justify-between py-3 border-b border-white/10">
               <CardTitle className="text-base text-slate-100 flex items-center gap-2">
@@ -1223,7 +1223,7 @@ function KnowledgeGraphInner({
               </div>
             </CardHeader>
             <CardContent className="pt-4">
-              <ScrollArea className="h-[320px] pr-2">
+              <ScrollArea className="h-[320px] max-h-[50vh] pr-2">
                 {selectedNode.type === "decision" && (() => {
                   const decisionData = selectedNode.data as { decision?: Decision; hasEmbedding?: boolean }
                   if (!decisionData.decision) return null

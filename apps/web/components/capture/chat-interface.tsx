@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Send, Loader2 } from "lucide-react"
+import { Send, Loader2, MessageCircle, Bot, User, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,42 +30,52 @@ function MessageBubble({ message, isNew = false }: { message: CaptureMessage; is
         isNew && "animate-in fade-in slide-in-from-bottom-2 duration-300"
       )}
     >
-      <Avatar className="h-8 w-8 shrink-0" aria-hidden="true">
+      <Avatar className={cn(
+        "h-9 w-9 shrink-0 ring-2 ring-offset-2 ring-offset-slate-950",
+        isUser ? "ring-violet-500/50" : "ring-fuchsia-500/50"
+      )} aria-hidden="true">
         <AvatarFallback className={cn(
           "text-sm font-medium",
           isUser
-            ? "bg-gradient-to-br from-cyan-500 to-teal-400 text-slate-900"
-            : "bg-purple-500/20 text-purple-400"
+            ? "bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white"
+            : "bg-gradient-to-br from-fuchsia-500/20 to-rose-500/20 text-fuchsia-400"
         )}>
-          {isUser ? "U" : "🤖"}
+          {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
         </AvatarFallback>
       </Avatar>
-      <div
-        className={cn(
-          "max-w-[80%] rounded-2xl px-4 py-3",
-          isUser
-            ? "bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900"
-            : "bg-white/[0.05] border border-white/[0.08] text-slate-200"
-        )}
-      >
-        <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
-        {message.extracted_entities && message.extracted_entities.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {message.extracted_entities.map((entity) => (
-              <Badge
-                key={entity.id}
-                variant="outline"
-                className={cn(
-                  "text-xs",
-                  isUser
-                    ? "bg-white/20 border-white/30 text-slate-900"
-                    : "bg-purple-500/10 border-purple-500/30 text-purple-400"
-                )}
-              >
-                {entity.name}
-              </Badge>
-            ))}
-          </div>
+      <div className="relative max-w-[80%]">
+        <div
+          className={cn(
+            "rounded-2xl px-4 py-3 shadow-lg",
+            isUser
+              ? "bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white rounded-br-md shadow-violet-500/20"
+              : "bg-white/[0.05] border border-white/[0.1] text-slate-200 rounded-bl-md"
+          )}
+        >
+          <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+          {message.extracted_entities && message.extracted_entities.length > 0 && (
+            <div className="mt-3 pt-2 border-t border-white/10 flex flex-wrap gap-1.5">
+              {message.extracted_entities.map((entity) => (
+                <Badge
+                  key={entity.id}
+                  variant="outline"
+                  className={cn(
+                    "text-xs transition-all hover:scale-105",
+                    isUser
+                      ? "bg-white/20 border-white/30 text-white"
+                      : "bg-violet-500/10 border-violet-500/30 text-violet-300"
+                  )}
+                >
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  {entity.name}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* Message tail */}
+        {!isUser && (
+          <div className="absolute -left-2 top-3 w-3 h-3 bg-white/[0.05] border-l border-b border-white/[0.1] transform rotate-45" />
         )}
       </div>
     </div>
@@ -76,16 +86,21 @@ function MessageBubble({ message, isNew = false }: { message: CaptureMessage; is
 function TypingIndicator() {
   return (
     <div className="flex gap-3 mb-4 animate-in fade-in duration-300" role="status" aria-label="AI is typing">
-      <Avatar className="h-8 w-8 shrink-0" aria-hidden="true">
-        <AvatarFallback className="bg-purple-500/20 text-purple-400">🤖</AvatarFallback>
+      <Avatar className="h-9 w-9 shrink-0 ring-2 ring-offset-2 ring-offset-slate-950 ring-fuchsia-500/50" aria-hidden="true">
+        <AvatarFallback className="bg-gradient-to-br from-fuchsia-500/20 to-rose-500/20 text-fuchsia-400">
+          <Bot className="h-4 w-4" />
+        </AvatarFallback>
       </Avatar>
-      <div className="bg-white/[0.05] border border-white/[0.08] rounded-2xl px-4 py-3">
-        <div className="flex gap-1" aria-hidden="true">
-          <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-          <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-          <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+      <div className="relative">
+        <div className="bg-white/[0.05] border border-white/[0.1] rounded-2xl rounded-bl-md px-4 py-3">
+          <div className="flex gap-1.5" aria-hidden="true">
+            <span className="w-2 h-2 bg-gradient-to-r from-violet-400 to-fuchsia-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-2 h-2 bg-gradient-to-r from-fuchsia-400 to-rose-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-2 h-2 bg-gradient-to-r from-rose-400 to-orange-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+          <span className="sr-only">AI is typing a response</span>
         </div>
-        <span className="sr-only">AI is typing a response</span>
+        <div className="absolute -left-2 top-3 w-3 h-3 bg-white/[0.05] border-l border-b border-white/[0.1] transform rotate-45" />
       </div>
     </div>
   )
@@ -120,20 +135,20 @@ export function ChatInterface({
   }
 
   return (
-    <div className="flex flex-col h-full bg-slate-900/50">
+    <div className="flex flex-col h-full bg-slate-950/50">
       {/* Messages */}
       <ScrollArea ref={scrollRef} className="flex-1 p-6" role="log" aria-label="Chat messages" aria-live="polite">
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-center">
             <div className="animate-in fade-in duration-500">
-              <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-purple-500/10 flex items-center justify-center">
-                <span className="text-3xl">💬</span>
+              <div className="mx-auto mb-4 h-20 w-20 rounded-2xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/10 border border-violet-500/20 flex items-center justify-center">
+                <MessageCircle className="h-10 w-10 text-violet-400" />
               </div>
-              <p className="text-slate-300 mb-2 font-medium">
-                Start a conversation to capture knowledge
+              <p className="text-slate-200 mb-2 font-medium text-lg">
+                Start a conversation
               </p>
-              <p className="text-sm text-slate-500">
-                I&apos;ll help you document decisions, context, and rationale
+              <p className="text-sm text-slate-500 max-w-xs mx-auto">
+                I&apos;ll help you capture decisions, document context, and record rationale for your knowledge graph.
               </p>
             </div>
           </div>
@@ -151,8 +166,9 @@ export function ChatInterface({
 
       {/* Entity suggestions */}
       {suggestedEntities && suggestedEntities.length > 0 && (
-        <div className="px-6 py-3 border-t border-white/[0.06] bg-white/[0.02]">
-          <p className="text-xs text-slate-500 mb-2">
+        <div className="px-6 py-3 border-t border-white/[0.06] bg-gradient-to-r from-violet-500/5 to-fuchsia-500/5">
+          <p className="text-xs text-slate-400 mb-2 flex items-center gap-1.5">
+            <Sparkles className="h-3 w-3 text-violet-400" />
             Extracted entities:
           </p>
           <div className="flex flex-wrap gap-2">
@@ -160,11 +176,11 @@ export function ChatInterface({
               <Badge
                 key={entity.id}
                 variant="outline"
-                className="cursor-pointer bg-purple-500/10 border-purple-500/30 text-purple-400 hover:bg-purple-500/20 hover:scale-105 transition-all"
+                className="cursor-pointer bg-violet-500/10 border-violet-500/30 text-violet-300 hover:bg-violet-500/20 hover:scale-105 hover:shadow-glow-violet/20 transition-all"
                 onClick={() => onLinkEntity?.(entity)}
               >
                 {entity.name}
-                <span className="ml-1 opacity-60">({entity.type})</span>
+                <span className="ml-1.5 text-violet-400/60 text-[10px]">({entity.type})</span>
               </Badge>
             ))}
           </div>
@@ -172,7 +188,7 @@ export function ChatInterface({
       )}
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-4 border-t border-white/[0.06] bg-slate-900/80 backdrop-blur-xl">
+      <form onSubmit={handleSubmit} className="p-4 border-t border-white/[0.06] bg-slate-950/80 backdrop-blur-xl">
         <div className="flex gap-3">
           <Input
             ref={inputRef}
@@ -181,13 +197,13 @@ export function ChatInterface({
             placeholder="Type your message..."
             disabled={isLoading}
             aria-label="Type your message"
-            className="flex-1 bg-white/[0.05] border-white/[0.1] text-slate-200 placeholder:text-slate-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
+            className="flex-1 bg-white/[0.03] border-white/[0.1] text-slate-200 placeholder:text-slate-500 focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 rounded-xl"
           />
           <Button
             type="submit"
             disabled={!input.trim() || isLoading}
+            variant="gradient"
             aria-label={isLoading ? "Sending message" : "Send message"}
-            className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 hover:shadow-[0_0_20px_rgba(34,211,238,0.3)] transition-all disabled:opacity-50"
           >
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />

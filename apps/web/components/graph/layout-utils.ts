@@ -104,7 +104,8 @@ export function applyForceLayout(
   const clusters = clusterNodes(nodes, edges)
   
   // Initialize force nodes with positions based on clusters
-  const numClusters = Math.max(...Array.from(clusters.values())) + 1
+  const clusterValues = Array.from(clusters.values())
+  const numClusters = clusterValues.length > 0 ? Math.max(...clusterValues) + 1 : 1
   const clusterCenters: { x: number; y: number }[] = []
   
   // Arrange cluster centers in a grid pattern
@@ -332,12 +333,16 @@ export function applyClusteredLayout(
     const connectedDecisions = entityToDecisions.get(entity.id) || []
     
     if (connectedDecisions.length === 0) {
-      // Orphan entity - place at bottom
+      // Orphan entity - place at bottom in a grid pattern to avoid overlap
+      const orphanCols = Math.max(3, Math.ceil(Math.sqrt(sharedEntities.filter(e => (entityToDecisions.get(e.id) || []).length === 0).length)))
+      const orphanCol = i % orphanCols
+      const orphanRow = Math.floor(i / orphanCols)
+      const orphanSpacing = nodeSpacing * 1.5 // 1.5x spacing to prevent overlap
       result.push({
         ...entity,
         position: {
-          x: i * nodeSpacing + 200,
-          y: (Math.ceil(numDecisions / cols) + 1) * clusterSpacing
+          x: orphanCol * orphanSpacing + 200,
+          y: (Math.ceil(numDecisions / cols) + 1) * clusterSpacing + orphanRow * (ENTITY_NODE_HEIGHT + 40)
         }
       })
     } else {
@@ -441,8 +446,12 @@ export function applyRadialLayout(
   const centerRadius = options.centerRadius ?? baseRadius
   const ringSpacing = options.ringSpacing ?? 320
 
-  const centerX = 800
-  const centerY = 600
+  // Calculate dynamic center based on graph size
+  const totalNodes = nodes.length
+  const estimatedWidth = Math.max(1600, totalNodes * 50)
+  const estimatedHeight = Math.max(1200, totalNodes * 40)
+  const centerX = estimatedWidth / 2
+  const centerY = estimatedHeight / 2
 
   const result: Node[] = []
 
@@ -483,7 +492,8 @@ export function applyRadialLayout(
     const entitiesInThisRing = Math.min(entitiesPerRing, sortedEntities.length - ringIndex * entitiesPerRing)
 
     const radius = centerRadius + ringSpacing * (ringIndex + 0.5)
-    const angleStep = (2 * Math.PI) / entitiesInThisRing
+    // Guard against division by zero
+    const angleStep = entitiesInThisRing > 0 ? (2 * Math.PI) / entitiesInThisRing : 0
     const angle = indexInRing * angleStep - Math.PI / 2
 
     result.push({
@@ -507,10 +517,16 @@ export function applyLayout(
   layoutType: LayoutType,
   options: LayoutOptions = { type: "force" }
 ): Node[] {
+  // Validate direction for hierarchical layout
+  const validDirections = ["TB", "LR", "BT", "RL"] as const
+  const direction = options.direction && validDirections.includes(options.direction)
+    ? options.direction
+    : "TB"
+
   switch (layoutType) {
     case "hierarchical":
       return applyHierarchicalLayout(nodes, edges, {
-        direction: options.direction ?? "TB",
+        direction,
         nodeSpacing: options.nodeSpacing ?? 200,
         rankSpacing: options.rankSpacing ?? 280,
       })

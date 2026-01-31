@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Sidebar } from "./sidebar"
 
 interface AppShellProps {
@@ -7,22 +8,24 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Ambient background effects */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0"
-        style={{
-          background: `
-            radial-gradient(ellipse at 20% 20%, rgba(34, 211, 238, 0.08) 0%, transparent 50%),
-            radial-gradient(ellipse at 80% 80%, rgba(20, 184, 166, 0.05) 0%, transparent 50%)
-          `
-        }}
+    <div className="flex h-screen overflow-hidden bg-background">
+      {/* Nebula background effects - only visible in dark mode */}
+      <div className="nebula-bg dark:block hidden" aria-hidden="true" />
+
+      {/* Sidebar */}
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
       />
 
-      <Sidebar />
+      {/* Main content */}
       <main className="flex-1 overflow-auto relative z-10">
-        {children}
+        <div className="page-transition">
+          {children}
+        </div>
       </main>
     </div>
   )
