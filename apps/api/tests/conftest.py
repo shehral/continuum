@@ -16,7 +16,7 @@ from models.ontology import ResolvedEntity
 @pytest.fixture
 def mock_postgres_session():
     """Mock PostgreSQL async session for unit tests.
-    
+
     Provides a mock SQLAlchemy async session with common operations:
     - execute: Run queries (returns mock result)
     - commit: Commit transaction
@@ -25,7 +25,7 @@ def mock_postgres_session():
     - add: Add object to session
     - delete: Delete object from session
     - close: Close session
-    
+
     Example:
         async def test_create_user(mock_postgres_session):
             mock_postgres_session.execute.return_value.scalar_one_or_none.return_value = None
@@ -61,7 +61,7 @@ def mock_postgres_session():
 @pytest.fixture
 def mock_postgres_result_factory():
     """Factory for creating mock PostgreSQL query results.
-    
+
     Example:
         def test_find_users(mock_postgres_session, mock_postgres_result_factory):
             users = [User(id=1, name="Alice"), User(id=2, name="Bob")]
@@ -69,6 +69,7 @@ def mock_postgres_result_factory():
                 scalars_all=users
             )
     """
+
     def _create_result(
         scalar_one=None,
         scalar_one_or_none=None,
@@ -99,11 +100,11 @@ def mock_postgres_result_factory():
 @pytest.fixture
 def mock_neo4j_session():
     """Create a mock Neo4j async session.
-    
+
     Provides a mock Neo4j session with:
     - run: Execute Cypher queries (returns async iterable result)
     - close: Close session
-    
+
     Example:
         async def test_find_node(mock_neo4j_session, mock_neo4j_result):
             mock_neo4j_session.run.return_value = mock_neo4j_result(
@@ -132,7 +133,7 @@ def mock_neo4j_session():
 @pytest.fixture
 def mock_neo4j_result():
     """Factory for creating mock Neo4j query results.
-    
+
     Example:
         result = mock_neo4j_result(
             records=[
@@ -142,6 +143,7 @@ def mock_neo4j_result():
             single_value={"count": 2}
         )
     """
+
     def _create_result(records=None, single_value=None):
         result = AsyncMock()
 
@@ -155,11 +157,14 @@ def mock_neo4j_result():
             async def async_iter():
                 for record in records:
                     yield record
+
             result.__aiter__ = lambda: async_iter()
         else:
+
             async def empty_iter():
                 return
                 yield  # Make it a generator
+
             result.__aiter__ = lambda: empty_iter()
 
         return result
@@ -175,7 +180,7 @@ def mock_neo4j_result():
 @pytest.fixture
 def mock_redis():
     """Create a mock Redis client for unit tests.
-    
+
     Provides a mock Redis client with common operations:
     - get/set/delete: Basic key-value operations
     - mget/mset: Multi-key operations
@@ -184,7 +189,7 @@ def mock_redis():
     - incr/decr: Counter operations
     - pipeline: Transaction pipeline
     - zrangebyscore/zadd/zrem: Sorted set operations (for rate limiting)
-    
+
     Example:
         async def test_cache_hit(mock_redis):
             mock_redis.get.return_value = '{"cached": "value"}'
@@ -236,13 +241,14 @@ def mock_redis():
 @pytest.fixture
 def mock_redis_with_data():
     """Factory for creating a mock Redis with pre-populated data.
-    
+
     Example:
         redis = mock_redis_with_data({
             "user:123": '{"name": "Alice"}',
             "session:abc": '{"user_id": "123"}'
         })
     """
+
     def _create_redis(data: dict):
         redis = AsyncMock()
 
@@ -291,9 +297,12 @@ def mock_llm_client():
 @pytest.fixture
 def mock_llm_json_response():
     """Factory for creating mock LLM JSON responses."""
+
     def _create_response(data):
         import json
+
         return json.dumps(data)
+
     return _create_response
 
 
@@ -336,7 +345,7 @@ def sample_embedding():
 @pytest.fixture
 def sample_entity():
     """Return a single sample entity for testing.
-    
+
     Includes all standard fields expected by the API.
     """
     return {
@@ -419,7 +428,7 @@ def sample_entity_types():
 @pytest.fixture
 def sample_decision():
     """Return a single sample decision with all standard fields.
-    
+
     Includes the full decision trace structure as documented in CLAUDE.md.
     """
     return {
@@ -427,12 +436,12 @@ def sample_decision():
         "title": "Use PostgreSQL for data storage",
         "trigger": "Need to choose a database for persistent storage",
         "context": "Building a new web application that requires complex queries, "
-                   "joins, and ACID compliance. Expected data volume is moderate.",
+        "joins, and ACID compliance. Expected data volume is moderate.",
         "options": ["PostgreSQL", "MySQL", "MongoDB", "SQLite"],
         "decision": "PostgreSQL",
         "rationale": "PostgreSQL offers the best combination of features for our needs: "
-                     "robust JSON support, excellent query performance, strong consistency, "
-                     "and a mature ecosystem with good tooling.",
+        "robust JSON support, excellent query performance, strong consistency, "
+        "and a mature ecosystem with good tooling.",
         "source": "test-session-abc",
         "timestamp": "2026-01-29T12:00:00Z",
         "user_id": "test-user-456",
@@ -659,6 +668,7 @@ def sample_jwt_token():
 @pytest.fixture
 def mock_auth_dependency():
     """Mock the authentication dependency for protected route testing."""
+
     async def _get_current_user():
         return {"id": "test-user-456", "email": "testuser@example.com"}
 

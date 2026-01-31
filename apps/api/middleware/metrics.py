@@ -23,14 +23,14 @@ def normalize_path(path: str) -> str:
     """
     # Replace UUIDs with placeholder
     path = re.sub(
-        r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
-        '{id}',
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        "{id}",
         path,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
 
     # Replace numeric IDs with placeholder
-    path = re.sub(r'/\d+(?=/|$)', '/{id}', path)
+    path = re.sub(r"/\d+(?=/|$)", "/{id}", path)
 
     return path
 
@@ -72,14 +72,11 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
             # Update metrics
             REQUEST_COUNT.labels(
-                method=method,
-                endpoint=normalized_path,
-                status_code=str(status_code)
+                method=method, endpoint=normalized_path, status_code=str(status_code)
             ).inc()
 
-            REQUEST_DURATION.labels(
-                method=method,
-                endpoint=normalized_path
-            ).observe(duration)
+            REQUEST_DURATION.labels(method=method, endpoint=normalized_path).observe(
+                duration
+            )
 
         return response

@@ -64,10 +64,19 @@ def sample_conversation():
     """Create a sample conversation for ingestion testing."""
     return Conversation(
         messages=[
-            {"role": "user", "content": "We need to choose a database for our project."},
+            {
+                "role": "user",
+                "content": "We need to choose a database for our project.",
+            },
             {"role": "assistant", "content": "What are your requirements?"},
-            {"role": "user", "content": "We need ACID compliance, good performance, and JSON support."},
-            {"role": "assistant", "content": "I recommend PostgreSQL. It provides excellent ACID compliance, native JSONB support, and great performance for complex queries."},
+            {
+                "role": "user",
+                "content": "We need ACID compliance, good performance, and JSON support.",
+            },
+            {
+                "role": "assistant",
+                "content": "I recommend PostgreSQL. It provides excellent ACID compliance, native JSONB support, and great performance for complex queries.",
+            },
             {"role": "user", "content": "Let's go with PostgreSQL then."},
         ],
         file_path="/test/claude/logs/project-test/conversation.jsonl",
@@ -95,7 +104,7 @@ def mock_settings():
 
 class TestIngestWorkflow:
     """Test the complete ingestion workflow.
-    
+
     Flow: Parse logs -> Extract decisions -> Save to Neo4j -> View -> Edit -> Delete
     """
 
@@ -104,28 +113,34 @@ class TestIngestWorkflow:
         self, mock_llm, mock_embedding_service, mock_neo4j_session, mock_settings
     ):
         """Test complete ingest -> view -> edit -> delete workflow."""
-        decision_id = str(uuid4())
-        user_id = "test-user-001"
+        _decision_id = str(uuid4())  # noqa: F841 - kept for future test expansion
+        _user_id = "test-user-001"  # noqa: F841 - kept for future test expansion
 
         # Mock LLM responses for extraction
-        mock_llm.set_json_response("analyze", [
-            {
-                "trigger": "Need to choose a database",
-                "context": "Building a web application with complex queries",
-                "options": ["PostgreSQL", "MySQL", "MongoDB"],
-                "decision": "Use PostgreSQL",
-                "rationale": "Best ACID compliance and JSON support",
-                "confidence": 0.9,
-            }
-        ])
-
-        mock_llm.set_json_response("extract", {
-            "entities": [
-                {"name": "PostgreSQL", "type": "technology", "confidence": 0.95},
-                {"name": "database", "type": "concept", "confidence": 0.8},
+        mock_llm.set_json_response(
+            "analyze",
+            [
+                {
+                    "trigger": "Need to choose a database",
+                    "context": "Building a web application with complex queries",
+                    "options": ["PostgreSQL", "MySQL", "MongoDB"],
+                    "decision": "Use PostgreSQL",
+                    "rationale": "Best ACID compliance and JSON support",
+                    "confidence": 0.9,
+                }
             ],
-            "reasoning": "PostgreSQL is a database technology",
-        })
+        )
+
+        mock_llm.set_json_response(
+            "extract",
+            {
+                "entities": [
+                    {"name": "PostgreSQL", "type": "technology", "confidence": 0.95},
+                    {"name": "database", "type": "concept", "confidence": 0.8},
+                ],
+                "reasoning": "PostgreSQL is a database technology",
+            },
+        )
 
         # Configure Neo4j mock responses
         mock_neo4j_session.set_default_response(
@@ -133,12 +148,18 @@ class TestIngestWorkflow:
             single_value=None,
         )
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings), \
-             patch('services.extractor.get_neo4j_session', return_value=mock_neo4j_session), \
-             patch('services.entity_resolver.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+            patch(
+                "services.extractor.get_neo4j_session", return_value=mock_neo4j_session
+            ),
+            patch("services.entity_resolver.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -149,7 +170,10 @@ class TestIngestWorkflow:
             conversation = Conversation(
                 messages=[
                     {"role": "user", "content": "We need to choose a database."},
-                    {"role": "assistant", "content": "I recommend PostgreSQL for your needs."},
+                    {
+                        "role": "assistant",
+                        "content": "I recommend PostgreSQL for your needs.",
+                    },
                 ],
                 file_path="/test/logs/conversation.jsonl",
                 project_name="test-project",
@@ -175,10 +199,14 @@ class TestIngestWorkflow:
         # LLM returns empty array for no decisions
         mock_llm.set_json_response("analyze", [])
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -188,8 +216,14 @@ class TestIngestWorkflow:
             # Conversation with no decisions
             conversation = Conversation(
                 messages=[
-                    {"role": "user", "content": "What do you think about microservices?"},
-                    {"role": "assistant", "content": "They have pros and cons depending on your needs."},
+                    {
+                        "role": "user",
+                        "content": "What do you think about microservices?",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "They have pros and cons depending on your needs.",
+                    },
                 ],
                 file_path="/test/logs/discussion.jsonl",
                 project_name="test-project",
@@ -207,10 +241,14 @@ class TestIngestWorkflow:
         mock_llm = MockLLMClient()
         mock_llm.generate = AsyncMock(side_effect=TimeoutError("LLM timeout"))
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -236,7 +274,7 @@ class TestIngestWorkflow:
 
 class TestCaptureSessionWorkflow:
     """Test the capture session workflow.
-    
+
     Flow: Start session -> Send messages -> Complete session -> Save decision
     """
 
@@ -256,15 +294,15 @@ class TestCaptureSessionWorkflow:
 
         # Mock refresh to set timestamp fields on the session
         async def mock_refresh(obj):
-            if not hasattr(obj, 'created_at') or obj.created_at is None:
+            if not hasattr(obj, "created_at") or obj.created_at is None:
                 obj.created_at = datetime.now(UTC)
-            if not hasattr(obj, 'updated_at') or obj.updated_at is None:
+            if not hasattr(obj, "updated_at") or obj.updated_at is None:
                 obj.updated_at = datetime.now(UTC)
 
         mock_postgres_session.refresh = mock_refresh
 
         # Step 1: Start session
-        with patch('routers.capture.get_db', return_value=mock_postgres_session):
+        with patch("routers.capture.get_db", return_value=mock_postgres_session):
             from routers.capture import start_capture_session
 
             result = await start_capture_session(
@@ -289,7 +327,9 @@ class TestCaptureSessionWorkflow:
 
         # Configure mock to return session
         mock_session_result = MagicMock()
-        mock_session_result.scalar_one_or_none = MagicMock(return_value=mock_session_obj)
+        mock_session_result.scalar_one_or_none = MagicMock(
+            return_value=mock_session_obj
+        )
 
         mock_messages_result = MagicMock()
         mock_messages_result.scalars = MagicMock(
@@ -297,6 +337,7 @@ class TestCaptureSessionWorkflow:
         )
 
         call_count = [0]
+
         async def mock_execute(query):
             call_count[0] += 1
             if call_count[0] == 1:
@@ -314,7 +355,7 @@ class TestCaptureSessionWorkflow:
         mock_ai_message.extracted_entities = []
 
         async def mock_refresh(obj):
-            if hasattr(obj, 'content'):
+            if hasattr(obj, "content"):
                 obj.id = mock_ai_message.id
                 obj.role = mock_ai_message.role
                 obj.content = mock_ai_message.content
@@ -328,7 +369,7 @@ class TestCaptureSessionWorkflow:
             return_value=("What technologies are you considering?", [])
         )
 
-        with patch('routers.capture.InterviewAgent', return_value=mock_interview_agent):
+        with patch("routers.capture.InterviewAgent", return_value=mock_interview_agent):
             from routers.capture import send_capture_message
 
             result = await send_capture_message(
@@ -342,7 +383,9 @@ class TestCaptureSessionWorkflow:
             assert "technologies" in result.content.lower()
 
     @pytest.mark.asyncio
-    async def test_capture_session_completion(self, mock_postgres_session, mock_llm, mock_embedding_service):
+    async def test_capture_session_completion(
+        self, mock_postgres_session, mock_llm, mock_embedding_service
+    ):
         """Test completing a capture session and saving the decision."""
         session_id = str(uuid4())
         user_id = "test-user-001"
@@ -356,7 +399,9 @@ class TestCaptureSessionWorkflow:
         mock_session_obj.updated_at = datetime.now(UTC)
 
         mock_session_result = MagicMock()
-        mock_session_result.scalar_one_or_none = MagicMock(return_value=mock_session_obj)
+        mock_session_result.scalar_one_or_none = MagicMock(
+            return_value=mock_session_obj
+        )
 
         # Mock messages
         mock_message = MagicMock()
@@ -372,6 +417,7 @@ class TestCaptureSessionWorkflow:
         )
 
         call_count = [0]
+
         async def mock_execute(query):
             call_count[0] += 1
             if call_count[0] == 1:
@@ -382,21 +428,25 @@ class TestCaptureSessionWorkflow:
 
         # Mock interview agent synthesizing decision
         mock_interview_agent = MagicMock()
-        mock_interview_agent.synthesize_decision = AsyncMock(return_value={
-            "trigger": "Database selection",
-            "context": "Building a new application",
-            "options": ["PostgreSQL", "MySQL", "MongoDB"],
-            "decision": "PostgreSQL",
-            "rationale": "Best fit for our relational data needs",
-            "confidence": 0.85,
-        })
+        mock_interview_agent.synthesize_decision = AsyncMock(
+            return_value={
+                "trigger": "Database selection",
+                "context": "Building a new application",
+                "options": ["PostgreSQL", "MySQL", "MongoDB"],
+                "decision": "PostgreSQL",
+                "rationale": "Best fit for our relational data needs",
+                "confidence": 0.85,
+            }
+        )
 
         # Mock extractor
         mock_extractor = MagicMock()
         mock_extractor.save_decision = AsyncMock(return_value="decision-123")
 
-        with patch('routers.capture.InterviewAgent', return_value=mock_interview_agent), \
-             patch('services.extractor.DecisionExtractor', return_value=mock_extractor):
+        with (
+            patch("routers.capture.InterviewAgent", return_value=mock_interview_agent),
+            patch("services.extractor.DecisionExtractor", return_value=mock_extractor),
+        ):
             from routers.capture import complete_capture_session
 
             result = await complete_capture_session(
@@ -408,7 +458,9 @@ class TestCaptureSessionWorkflow:
             assert result.status == "completed"
 
     @pytest.mark.asyncio
-    async def test_capture_session_rejects_completed_session(self, mock_postgres_session):
+    async def test_capture_session_rejects_completed_session(
+        self, mock_postgres_session
+    ):
         """Test that completed sessions cannot receive more messages."""
         session_id = str(uuid4())
         user_id = "test-user-001"
@@ -420,7 +472,9 @@ class TestCaptureSessionWorkflow:
         mock_session_obj.user_id = user_id
 
         mock_session_result = MagicMock()
-        mock_session_result.scalar_one_or_none = MagicMock(return_value=mock_session_obj)
+        mock_session_result.scalar_one_or_none = MagicMock(
+            return_value=mock_session_obj
+        )
         mock_postgres_session.execute = AsyncMock(return_value=mock_session_result)
 
         from fastapi import HTTPException
@@ -453,14 +507,21 @@ class TestEntityManagementWorkflow:
     ):
         """Test extracting entities and resolving duplicates."""
         # Configure LLM to extract entities
-        mock_llm.set_json_response("extract", {
-            "entities": [
-                {"name": "PostgreSQL", "type": "technology", "confidence": 0.95},
-                {"name": "Postgres", "type": "technology", "confidence": 0.9},  # Alias
-                {"name": "database", "type": "concept", "confidence": 0.8},
-            ],
-            "reasoning": "PostgreSQL/Postgres are the same database technology",
-        })
+        mock_llm.set_json_response(
+            "extract",
+            {
+                "entities": [
+                    {"name": "PostgreSQL", "type": "technology", "confidence": 0.95},
+                    {
+                        "name": "Postgres",
+                        "type": "technology",
+                        "confidence": 0.9,
+                    },  # Alias
+                    {"name": "database", "type": "concept", "confidence": 0.8},
+                ],
+                "reasoning": "PostgreSQL/Postgres are the same database technology",
+            },
+        )
 
         # Configure Neo4j to return existing PostgreSQL entity
         existing_entity = {
@@ -475,10 +536,14 @@ class TestEntityManagementWorkflow:
             single_value=existing_entity,
         )
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -501,28 +566,35 @@ class TestEntityManagementWorkflow:
     ):
         """Test extracting relationships between entities."""
         # Configure LLM for relationship extraction
-        mock_llm.set_json_response("identify", {
-            "relationships": [
-                {
-                    "from": "Next.js",
-                    "to": "React",
-                    "type": "DEPENDS_ON",
-                    "confidence": 0.95,
-                },
-                {
-                    "from": "PostgreSQL",
-                    "to": "MongoDB",
-                    "type": "ALTERNATIVE_TO",
-                    "confidence": 0.9,
-                },
-            ],
-            "reasoning": "Next.js is built on React; PostgreSQL and MongoDB are alternative databases",
-        })
+        mock_llm.set_json_response(
+            "identify",
+            {
+                "relationships": [
+                    {
+                        "from": "Next.js",
+                        "to": "React",
+                        "type": "DEPENDS_ON",
+                        "confidence": 0.95,
+                    },
+                    {
+                        "from": "PostgreSQL",
+                        "to": "MongoDB",
+                        "type": "ALTERNATIVE_TO",
+                        "confidence": 0.9,
+                    },
+                ],
+                "reasoning": "Next.js is built on React; PostgreSQL and MongoDB are alternative databases",
+            },
+        )
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -563,16 +635,23 @@ class TestDecisionAnalysisWorkflow:
     ):
         """Test detecting when one decision supersedes another."""
         # Configure LLM to detect supersedes relationship
-        mock_llm.set_json_response("analyze", {
-            "relationship": "SUPERSEDES",
-            "confidence": 0.9,
-            "reasoning": "The newer decision explicitly changes the database choice from PostgreSQL to MongoDB",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "SUPERSEDES",
+                "confidence": 0.9,
+                "reasoning": "The newer decision explicitly changes the database choice from PostgreSQL to MongoDB",
+            },
+        )
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -605,16 +684,23 @@ class TestDecisionAnalysisWorkflow:
         self, mock_llm, mock_embedding_service, mock_settings
     ):
         """Test detecting contradicting decisions."""
-        mock_llm.set_json_response("analyze", {
-            "relationship": "CONTRADICTS",
-            "confidence": 0.85,
-            "reasoning": "JWT stateless auth conflicts with session-based stateful auth",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "CONTRADICTS",
+                "confidence": 0.85,
+                "reasoning": "JWT stateless auth conflicts with session-based stateful auth",
+            },
+        )
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -634,7 +720,9 @@ class TestDecisionAnalysisWorkflow:
                 "rationale": "Need server-side session management",
             }
 
-            result = await extractor.extract_decision_relationship(decision_a, decision_b)
+            result = await extractor.extract_decision_relationship(
+                decision_a, decision_b
+            )
 
             assert result is not None
             assert result["type"] == "CONTRADICTS"
@@ -644,16 +732,23 @@ class TestDecisionAnalysisWorkflow:
         self, mock_llm, mock_embedding_service, mock_settings
     ):
         """Test detecting when decisions have no significant relationship."""
-        mock_llm.set_json_response("analyze", {
-            "relationship": None,
-            "confidence": 0.0,
-            "reasoning": "Decisions are about unrelated topics",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": None,
+                "confidence": 0.0,
+                "reasoning": "Decisions are about unrelated topics",
+            },
+        )
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -673,7 +768,9 @@ class TestDecisionAnalysisWorkflow:
                 "rationale": "Team familiarity",
             }
 
-            result = await extractor.extract_decision_relationship(decision_a, decision_b)
+            result = await extractor.extract_decision_relationship(
+                decision_a, decision_b
+            )
 
             assert result is None
 
@@ -692,21 +789,28 @@ class TestErrorRecoveryWorkflows:
     ):
         """Test that extraction process continues even if one decision fails."""
         # First call succeeds, simulate real scenario
-        mock_llm.set_json_response("analyze", [
-            {
-                "trigger": "Test decision",
-                "context": "Test context",
-                "options": ["A", "B"],
-                "decision": "A",
-                "rationale": "Because",
-                "confidence": 0.8,
-            }
-        ])
+        mock_llm.set_json_response(
+            "analyze",
+            [
+                {
+                    "trigger": "Test decision",
+                    "context": "Test context",
+                    "options": ["A", "B"],
+                    "decision": "A",
+                    "rationale": "Because",
+                    "confidence": 0.8,
+                }
+            ],
+        )
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -734,10 +838,14 @@ class TestErrorRecoveryWorkflows:
         # Return invalid JSON
         mock_llm.set_default_response("This is not valid JSON at all")
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -767,10 +875,14 @@ class TestErrorRecoveryWorkflows:
         # Return truncated JSON
         mock_llm.set_default_response('[{"trigger": "test", "decision": "A"')
 
-        with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-             patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-             patch('services.extractor.get_settings', return_value=mock_settings):
-
+        with (
+            patch("services.extractor.get_llm_client", return_value=mock_llm),
+            patch(
+                "services.extractor.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
+            patch("services.extractor.get_settings", return_value=mock_settings),
+        ):
             from services.extractor import DecisionExtractor
 
             extractor = DecisionExtractor()
@@ -800,9 +912,9 @@ class TestWebSocketSecurity:
         """Test validation of valid WebSocket message."""
         from routers.capture import validate_websocket_message
 
-        is_valid, error = validate_websocket_message({
-            "content": "This is a valid message"
-        })
+        is_valid, error = validate_websocket_message(
+            {"content": "This is a valid message"}
+        )
 
         assert is_valid is True
         assert error == ""

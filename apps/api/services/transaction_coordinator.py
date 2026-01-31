@@ -32,6 +32,7 @@ T = TypeVar("T")
 
 class SagaStatus(Enum):
     """Status of a saga execution."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -50,6 +51,7 @@ class SagaStep:
         compensate: Async function that undoes the step's action (for rollback)
         retry_count: Number of times to retry on transient failures (default: 2)
     """
+
     name: str
     execute: Callable[..., Coroutine[Any, Any, Any]]
     compensate: Callable[..., Coroutine[Any, Any, None]]
@@ -68,6 +70,7 @@ class SagaContext:
         current_step: Index of the currently executing step
         error: Exception that caused the saga to fail (if any)
     """
+
     saga_id: str = field(default_factory=lambda: str(uuid4()))
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     status: SagaStatus = SagaStatus.PENDING
@@ -134,7 +137,7 @@ class TransactionCoordinator:
                 "saga_id": context.saga_id,
                 "step_count": len(steps),
                 "steps": [s.name for s in steps],
-            }
+            },
         )
 
         completed_steps: list[tuple[SagaStep, Any]] = []
@@ -150,7 +153,7 @@ class TransactionCoordinator:
                         "saga_id": context.saga_id,
                         "step": step.name,
                         "step_index": i,
-                    }
+                    },
                 )
 
                 # Execute step with retry logic
@@ -176,7 +179,7 @@ class TransactionCoordinator:
                     extra={
                         "saga_id": context.saga_id,
                         "step": step.name,
-                    }
+                    },
                 )
 
             # All steps completed successfully
@@ -185,8 +188,11 @@ class TransactionCoordinator:
                 f"Saga {context.saga_id} completed successfully",
                 extra={
                     "saga_id": context.saga_id,
-                    "duration_ms": (datetime.now(UTC) - context.started_at).total_seconds() * 1000,
-                }
+                    "duration_ms": (
+                        datetime.now(UTC) - context.started_at
+                    ).total_seconds()
+                    * 1000,
+                },
             )
 
             return context, current_data
@@ -202,7 +208,7 @@ class TransactionCoordinator:
                     "failed_step": steps[context.current_step].name,
                     "error": str(e),
                     "error_type": type(e).__name__,
-                }
+                },
             )
 
             # Compensate completed steps in reverse order
@@ -246,7 +252,7 @@ class TransactionCoordinator:
                 last_error = e
 
                 if attempt < max_retries:
-                    delay = 0.5 * (2 ** attempt)  # Exponential backoff
+                    delay = 0.5 * (2**attempt)  # Exponential backoff
                     logger.warning(
                         f"Saga step {step_name} failed, retrying in {delay}s",
                         extra={
@@ -255,7 +261,7 @@ class TransactionCoordinator:
                             "attempt": attempt + 1,
                             "max_retries": max_retries + 1,
                             "error": str(e),
-                        }
+                        },
                     )
                     await asyncio.sleep(delay)
 
@@ -277,7 +283,7 @@ class TransactionCoordinator:
             extra={
                 "saga_id": context.saga_id,
                 "steps_to_compensate": len(completed_steps),
-            }
+            },
         )
 
         compensation_errors: list[tuple[str, Exception]] = []
@@ -289,7 +295,7 @@ class TransactionCoordinator:
                     extra={
                         "saga_id": context.saga_id,
                         "step": step.name,
-                    }
+                    },
                 )
 
                 await step.compensate(result, context)
@@ -299,7 +305,7 @@ class TransactionCoordinator:
                     extra={
                         "saga_id": context.saga_id,
                         "step": step.name,
-                    }
+                    },
                 )
 
             except Exception as e:
@@ -312,7 +318,7 @@ class TransactionCoordinator:
                         "step": step.name,
                         "error": str(e),
                         "error_type": type(e).__name__,
-                    }
+                    },
                 )
 
         if compensation_errors:
@@ -322,13 +328,13 @@ class TransactionCoordinator:
                 extra={
                     "saga_id": context.saga_id,
                     "failed_compensations": [name for name, _ in compensation_errors],
-                }
+                },
             )
         else:
             context.status = SagaStatus.COMPENSATED
             logger.info(
                 f"Saga {context.saga_id} fully compensated",
-                extra={"saga_id": context.saga_id}
+                extra={"saga_id": context.saga_id},
             )
 
 
@@ -414,9 +420,7 @@ class DecisionCreationSaga(BaseSaga[dict]):
         context, result = await self.coordinator.execute_saga(steps, decision_data)
         return result
 
-    async def _create_postgres_decision(
-        self, data: dict, context: SagaContext
-    ) -> dict:
+    async def _create_postgres_decision(self, data: dict, context: SagaContext) -> dict:
         """Create decision record in PostgreSQL."""
         from datetime import UTC, datetime
         from uuid import uuid4
@@ -462,9 +466,7 @@ class DecisionCreationSaga(BaseSaga[dict]):
             )
             await session.commit()
 
-    async def _create_neo4j_decision(
-        self, data: dict, context: SagaContext
-    ) -> dict:
+    async def _create_neo4j_decision(self, data: dict, context: SagaContext) -> dict:
         """Create decision node in Neo4j."""
         from db.neo4j import get_neo4j_session
 
@@ -493,13 +495,13 @@ class DecisionCreationSaga(BaseSaga[dict]):
 
             return {"neo4j_node_id": record["id"] if record else None}
 
-    async def _delete_neo4j_decision(
-        self, result: dict, context: SagaContext
-    ) -> None:
+    async def _delete_neo4j_decision(self, result: dict, context: SagaContext) -> None:
         """Compensate: Delete decision node from Neo4j."""
         from db.neo4j import get_neo4j_session
 
-        decision_id = context.results.get("create_postgres_decision", {}).get("decision_id")
+        decision_id = context.results.get("create_postgres_decision", {}).get(
+            "decision_id"
+        )
         if not decision_id:
             return
 
@@ -509,9 +511,7 @@ class DecisionCreationSaga(BaseSaga[dict]):
                 id=decision_id,
             )
 
-    async def _create_entity_links(
-        self, data: dict, context: SagaContext
-    ) -> dict:
+    async def _create_entity_links(self, data: dict, context: SagaContext) -> dict:
         """Create relationships between decision and entities in Neo4j."""
         from db.neo4j import get_neo4j_session
 
@@ -540,13 +540,13 @@ class DecisionCreationSaga(BaseSaga[dict]):
 
         return {"linked_entities": linked}
 
-    async def _delete_entity_links(
-        self, result: dict, context: SagaContext
-    ) -> None:
+    async def _delete_entity_links(self, result: dict, context: SagaContext) -> None:
         """Compensate: Remove entity links from Neo4j."""
         from db.neo4j import get_neo4j_session
 
-        decision_id = context.results.get("create_postgres_decision", {}).get("decision_id")
+        decision_id = context.results.get("create_postgres_decision", {}).get(
+            "decision_id"
+        )
         if not decision_id:
             return
 

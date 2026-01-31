@@ -53,15 +53,15 @@ Types:
 - CONTRADICTS: The decisions fundamentally conflict (choosing opposite approaches)
 - NONE: No significant relationship (different topics or compatible decisions)
 
-## Decision A ({decision_a.get('created_at', 'unknown date')}):
-Trigger: {decision_a.get('trigger', '')}
-Decision: {decision_a.get('decision', '')}
-Rationale: {decision_a.get('rationale', '')}
+## Decision A ({decision_a.get("created_at", "unknown date")}):
+Trigger: {decision_a.get("trigger", "")}
+Decision: {decision_a.get("decision", "")}
+Rationale: {decision_a.get("rationale", "")}
 
-## Decision B ({decision_b.get('created_at', 'unknown date')}):
-Trigger: {decision_b.get('trigger', '')}
-Decision: {decision_b.get('decision', '')}
-Rationale: {decision_b.get('rationale', '')}
+## Decision B ({decision_b.get("created_at", "unknown date")}):
+Trigger: {decision_b.get("trigger", "")}
+Decision: {decision_b.get("decision", "")}
+Rationale: {decision_b.get("rationale", "")}
 
 Important guidelines:
 - SUPERSEDES means the newer decision explicitly changes or replaces the older one
@@ -147,20 +147,24 @@ Return ONLY valid JSON, no markdown or explanation."""
                         else:
                             newer, older = b, a
 
-                        results["supersedes"].append({
-                            "from_id": newer["id"],
-                            "to_id": older["id"],
-                            "confidence": rel["confidence"],
-                            "reasoning": rel.get("reasoning", ""),
-                        })
+                        results["supersedes"].append(
+                            {
+                                "from_id": newer["id"],
+                                "to_id": older["id"],
+                                "confidence": rel["confidence"],
+                                "reasoning": rel.get("reasoning", ""),
+                            }
+                        )
 
                     elif rel_type == "CONTRADICTS":
-                        results["contradicts"].append({
-                            "from_id": a["id"],
-                            "to_id": b["id"],
-                            "confidence": rel["confidence"],
-                            "reasoning": rel.get("reasoning", ""),
-                        })
+                        results["contradicts"].append(
+                            {
+                                "from_id": a["id"],
+                                "to_id": b["id"],
+                                "confidence": rel["confidence"],
+                                "reasoning": rel.get("reasoning", ""),
+                            }
+                        )
 
         return results
 
@@ -249,20 +253,28 @@ Return ONLY valid JSON, no markdown or explanation."""
             return []
 
         # Get decisions with shared entities (user-scoped)
-        similar = await self._get_decisions_with_shared_entities(decision_id, min_shared=1)
+        similar = await self._get_decisions_with_shared_entities(
+            decision_id, min_shared=1
+        )
 
         contradictions = []
         for other in similar:
             rel = await self.analyze_decision_pair(target, other)
-            if rel and rel["type"] == "CONTRADICTS" and rel["confidence"] >= self.min_confidence:
-                contradictions.append({
-                    "id": other["id"],
-                    "trigger": other.get("trigger", ""),
-                    "decision": other.get("decision", ""),
-                    "created_at": other.get("created_at", ""),
-                    "confidence": rel["confidence"],
-                    "reasoning": rel.get("reasoning", ""),
-                })
+            if (
+                rel
+                and rel["type"] == "CONTRADICTS"
+                and rel["confidence"] >= self.min_confidence
+            ):
+                contradictions.append(
+                    {
+                        "id": other["id"],
+                        "trigger": other.get("trigger", ""),
+                        "decision": other.get("decision", ""),
+                        "created_at": other.get("created_at", ""),
+                        "confidence": rel["confidence"],
+                        "reasoning": rel.get("reasoning", ""),
+                    }
+                )
 
                 # Save the relationship
                 await self.session.run(
@@ -370,15 +382,9 @@ Return ONLY valid JSON, no markdown or explanation."""
                 "decision": record["decision"],
                 "created_at": record["created_at"],
             },
-            "influenced_by": [
-                r for r in record["influenced_by"] if r.get("id")
-            ],
-            "supersedes": [
-                r for r in record["supersedes"] if r.get("id")
-            ],
-            "superseded_by": [
-                r for r in record["superseded_by"] if r.get("id")
-            ],
+            "influenced_by": [r for r in record["influenced_by"] if r.get("id")],
+            "supersedes": [r for r in record["supersedes"] if r.get("id")],
+            "superseded_by": [r for r in record["superseded_by"] if r.get("id")],
         }
 
     async def _get_all_decisions_with_entities(self) -> list[dict]:
@@ -496,6 +502,8 @@ Return ONLY valid JSON, no markdown or explanation."""
 
 
 # Factory function
-def get_decision_analyzer(neo4j_session, user_id: str = "anonymous") -> DecisionAnalyzer:
+def get_decision_analyzer(
+    neo4j_session, user_id: str = "anonymous"
+) -> DecisionAnalyzer:
     """Create a DecisionAnalyzer instance with the given Neo4j session."""
     return DecisionAnalyzer(neo4j_session, user_id=user_id)

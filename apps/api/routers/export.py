@@ -55,7 +55,7 @@ class BulkImportRequest(BaseModel):
     decisions: list[DecisionImportItem] = Field(..., min_length=1, max_length=500)
     skip_duplicates: bool = Field(
         True,
-        description="If true, skip decisions that match existing ones by trigger+decision"
+        description="If true, skip decisions that match existing ones by trigger+decision",
     )
 
 
@@ -97,9 +97,9 @@ async def bulk_import_decisions(
     user_id: str = Depends(get_current_user_id),
 ):
     """Import multiple decisions from JSON.
-    
+
     PRODUCT-P2-5: Bulk import functionality.
-    
+
     - Accepts up to 500 decisions per request
     - Creates entities automatically from entity names
     - Optionally skips duplicates (matched by trigger + decision text)
@@ -187,11 +187,15 @@ async def bulk_import_decisions(
 
             except Exception as e:
                 logger.error(f"Error importing decision at index {idx}: {e}")
-                errors.append({
-                    "index": idx,
-                    "trigger": item.trigger[:50] + "..." if len(item.trigger) > 50 else item.trigger,
-                    "error": str(e)
-                })
+                errors.append(
+                    {
+                        "index": idx,
+                        "trigger": item.trigger[:50] + "..."
+                        if len(item.trigger) > 50
+                        else item.trigger,
+                        "error": str(e),
+                    }
+                )
 
     # Invalidate caches since data changed
     if imported_count > 0:
@@ -215,15 +219,15 @@ async def bulk_import_decisions(
 async def bulk_export_decisions(
     source_filter: Optional[str] = Query(
         None,
-        description="Filter by source (claude_logs, interview, manual, import, unknown)"
+        description="Filter by source (claude_logs, interview, manual, import, unknown)",
     ),
     limit: int = Query(1000, ge=1, le=10000),
     user_id: str = Depends(get_current_user_id),
 ):
     """Export all user's decisions as JSON.
-    
+
     PRODUCT-P2-5: Bulk export functionality.
-    
+
     - Returns all decisions owned by the current user
     - Includes all entity relationships
     - Optionally filter by source type
@@ -279,8 +283,7 @@ async def bulk_export_decisions(
                 decisions.append(export_decision)
 
             logger.info(
-                f"Bulk export for user {user_id}: "
-                f"exported={len(decisions)} decisions"
+                f"Bulk export for user {user_id}: exported={len(decisions)} decisions"
             )
 
             return BulkExportResult(
@@ -303,7 +306,7 @@ async def download_export(
     user_id: str = Depends(get_current_user_id),
 ):
     """Download decisions as a JSON file.
-    
+
     Returns the export with Content-Disposition header for file download.
     """
     export_result = await bulk_export_decisions(

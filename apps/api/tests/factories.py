@@ -15,14 +15,33 @@ class EntityFactory:
     TYPES = ["technology", "concept", "pattern", "system", "person", "organization"]
 
     TECHNOLOGY_NAMES = [
-        "PostgreSQL", "MongoDB", "Redis", "Neo4j", "Elasticsearch",
-        "React", "Vue.js", "Angular", "Next.js", "FastAPI",
-        "Docker", "Kubernetes", "AWS", "GCP", "Azure",
+        "PostgreSQL",
+        "MongoDB",
+        "Redis",
+        "Neo4j",
+        "Elasticsearch",
+        "React",
+        "Vue.js",
+        "Angular",
+        "Next.js",
+        "FastAPI",
+        "Docker",
+        "Kubernetes",
+        "AWS",
+        "GCP",
+        "Azure",
     ]
 
     CONCEPT_NAMES = [
-        "Microservices", "REST API", "GraphQL", "Caching", "Authentication",
-        "Rate Limiting", "Load Balancing", "Event Sourcing", "CQRS",
+        "Microservices",
+        "REST API",
+        "GraphQL",
+        "Caching",
+        "Authentication",
+        "Rate Limiting",
+        "Load Balancing",
+        "Event Sourcing",
+        "CQRS",
     ]
 
     @classmethod
@@ -150,8 +169,19 @@ class DecisionFactory:
 class RelationshipFactory:
     """Factory for creating test relationships."""
 
-    ENTITY_RELATIONSHIPS = ["IS_A", "PART_OF", "DEPENDS_ON", "RELATED_TO", "ALTERNATIVE_TO"]
-    DECISION_RELATIONSHIPS = ["SIMILAR_TO", "INFLUENCED_BY", "SUPERSEDES", "CONTRADICTS"]
+    ENTITY_RELATIONSHIPS = [
+        "IS_A",
+        "PART_OF",
+        "DEPENDS_ON",
+        "RELATED_TO",
+        "ALTERNATIVE_TO",
+    ]
+    DECISION_RELATIONSHIPS = [
+        "SIMILAR_TO",
+        "INFLUENCED_BY",
+        "SUPERSEDES",
+        "CONTRADICTS",
+    ]
 
     @classmethod
     def create_entity_relationship(
@@ -222,9 +252,7 @@ class Neo4jRecordFactory:
         }
 
     @classmethod
-    def create_similarity_record(
-        cls, entity: dict, similarity: float
-    ) -> dict:
+    def create_similarity_record(cls, entity: dict, similarity: float) -> dict:
         """Create a record for embedding similarity search."""
         return {
             **cls.create_entity_record(entity),

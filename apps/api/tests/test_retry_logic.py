@@ -44,7 +44,7 @@ class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_is_retryable_error_connection_errors(self):
         """Should identify connection errors as retryable."""
-        with patch('services.llm.get_settings') as mock_settings:
+        with patch("services.llm.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
                 nvidia_api_key="test",
                 nvidia_model="test",
@@ -56,20 +56,24 @@ class TestRetryLogic:
                 max_prompt_tokens=12000,
                 prompt_warning_threshold=0.8,
             )
-            mock_settings.return_value.get_nvidia_api_key = MagicMock(return_value="test")
+            mock_settings.return_value.get_nvidia_api_key = MagicMock(
+                return_value="test"
+            )
 
-            with patch('services.llm.AsyncOpenAI'):
+            with patch("services.llm.AsyncOpenAI"):
                 client = LLMClient()
 
                 assert client._is_retryable_error(TimeoutError())
                 assert client._is_retryable_error(ConnectionError())
-                assert client._is_retryable_error(APIConnectionError(request=MagicMock()))
+                assert client._is_retryable_error(
+                    APIConnectionError(request=MagicMock())
+                )
                 assert client._is_retryable_error(APITimeoutError(request=MagicMock()))
 
     @pytest.mark.asyncio
     async def test_is_retryable_error_status_codes(self):
         """Should identify retryable HTTP status codes."""
-        with patch('services.llm.get_settings') as mock_settings:
+        with patch("services.llm.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
                 nvidia_api_key="test",
                 nvidia_model="test",
@@ -81,9 +85,11 @@ class TestRetryLogic:
                 max_prompt_tokens=12000,
                 prompt_warning_threshold=0.8,
             )
-            mock_settings.return_value.get_nvidia_api_key = MagicMock(return_value="test")
+            mock_settings.return_value.get_nvidia_api_key = MagicMock(
+                return_value="test"
+            )
 
-            with patch('services.llm.AsyncOpenAI'):
+            with patch("services.llm.AsyncOpenAI"):
                 client = LLMClient()
 
                 # Create mock API errors
@@ -109,7 +115,7 @@ class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_calculate_backoff(self):
         """Should calculate exponential backoff with jitter."""
-        with patch('services.llm.get_settings') as mock_settings:
+        with patch("services.llm.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
                 nvidia_api_key="test",
                 nvidia_model="test",
@@ -121,9 +127,11 @@ class TestRetryLogic:
                 max_prompt_tokens=12000,
                 prompt_warning_threshold=0.8,
             )
-            mock_settings.return_value.get_nvidia_api_key = MagicMock(return_value="test")
+            mock_settings.return_value.get_nvidia_api_key = MagicMock(
+                return_value="test"
+            )
 
-            with patch('services.llm.AsyncOpenAI'):
+            with patch("services.llm.AsyncOpenAI"):
                 client = LLMClient()
 
                 # Test multiple times to account for jitter
@@ -140,7 +148,7 @@ class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_calculate_backoff_cap(self):
         """Should cap backoff at 8 seconds base."""
-        with patch('services.llm.get_settings') as mock_settings:
+        with patch("services.llm.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
                 nvidia_api_key="test",
                 nvidia_model="test",
@@ -152,9 +160,11 @@ class TestRetryLogic:
                 max_prompt_tokens=12000,
                 prompt_warning_threshold=0.8,
             )
-            mock_settings.return_value.get_nvidia_api_key = MagicMock(return_value="test")
+            mock_settings.return_value.get_nvidia_api_key = MagicMock(
+                return_value="test"
+            )
 
-            with patch('services.llm.AsyncOpenAI'):
+            with patch("services.llm.AsyncOpenAI"):
                 client = LLMClient()
 
                 # High attempt numbers should be capped
@@ -164,7 +174,7 @@ class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_generate_success_no_retry(self, mock_openai_response, mock_redis):
         """Should succeed without retry on first attempt."""
-        with patch('services.llm.get_settings') as mock_settings:
+        with patch("services.llm.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
                 nvidia_api_key="test",
                 nvidia_model="test",
@@ -176,14 +186,18 @@ class TestRetryLogic:
                 max_prompt_tokens=12000,
                 prompt_warning_threshold=0.8,
             )
-            mock_settings.return_value.get_nvidia_api_key = MagicMock(return_value="test")
+            mock_settings.return_value.get_nvidia_api_key = MagicMock(
+                return_value="test"
+            )
 
-            with patch('services.llm.AsyncOpenAI') as mock_client_class:
+            with patch("services.llm.AsyncOpenAI") as mock_client_class:
                 mock_client = AsyncMock()
-                mock_client.chat.completions.create = AsyncMock(return_value=mock_openai_response)
+                mock_client.chat.completions.create = AsyncMock(
+                    return_value=mock_openai_response
+                )
                 mock_client_class.return_value = mock_client
 
-                with patch('services.llm.redis') as mock_redis_module:
+                with patch("services.llm.redis") as mock_redis_module:
                     mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
                     client = LLMClient()
@@ -194,9 +208,11 @@ class TestRetryLogic:
                     assert mock_client.chat.completions.create.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_generate_retry_on_transient_error(self, mock_openai_response, mock_redis):
+    async def test_generate_retry_on_transient_error(
+        self, mock_openai_response, mock_redis
+    ):
         """Should retry on transient errors."""
-        with patch('services.llm.get_settings') as mock_settings:
+        with patch("services.llm.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
                 nvidia_api_key="test",
                 nvidia_model="test",
@@ -208,9 +224,11 @@ class TestRetryLogic:
                 max_prompt_tokens=12000,
                 prompt_warning_threshold=0.8,
             )
-            mock_settings.return_value.get_nvidia_api_key = MagicMock(return_value="test")
+            mock_settings.return_value.get_nvidia_api_key = MagicMock(
+                return_value="test"
+            )
 
-            with patch('services.llm.AsyncOpenAI') as mock_client_class:
+            with patch("services.llm.AsyncOpenAI") as mock_client_class:
                 mock_client = AsyncMock()
                 # First call fails, second succeeds
                 mock_client.chat.completions.create = AsyncMock(
@@ -221,11 +239,11 @@ class TestRetryLogic:
                 )
                 mock_client_class.return_value = mock_client
 
-                with patch('services.llm.redis') as mock_redis_module:
+                with patch("services.llm.redis") as mock_redis_module:
                     mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
                     # Patch sleep to avoid waiting
-                    with patch('asyncio.sleep', new_callable=AsyncMock):
+                    with patch("asyncio.sleep", new_callable=AsyncMock):
                         client = LLMClient()
                         result = await client.generate("Test prompt", max_retries=3)
 
@@ -236,7 +254,7 @@ class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_generate_max_retries_exceeded(self, mock_redis):
         """Should raise after max retries exceeded."""
-        with patch('services.llm.get_settings') as mock_settings:
+        with patch("services.llm.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
                 nvidia_api_key="test",
                 nvidia_model="test",
@@ -248,9 +266,11 @@ class TestRetryLogic:
                 max_prompt_tokens=12000,
                 prompt_warning_threshold=0.8,
             )
-            mock_settings.return_value.get_nvidia_api_key = MagicMock(return_value="test")
+            mock_settings.return_value.get_nvidia_api_key = MagicMock(
+                return_value="test"
+            )
 
-            with patch('services.llm.AsyncOpenAI') as mock_client_class:
+            with patch("services.llm.AsyncOpenAI") as mock_client_class:
                 mock_client = AsyncMock()
                 # Always fail with retryable error
                 mock_client.chat.completions.create = AsyncMock(
@@ -258,11 +278,11 @@ class TestRetryLogic:
                 )
                 mock_client_class.return_value = mock_client
 
-                with patch('services.llm.redis') as mock_redis_module:
+                with patch("services.llm.redis") as mock_redis_module:
                     mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
                     # Patch sleep to avoid waiting
-                    with patch('asyncio.sleep', new_callable=AsyncMock):
+                    with patch("asyncio.sleep", new_callable=AsyncMock):
                         client = LLMClient()
 
                         with pytest.raises(ConnectionError):
@@ -274,7 +294,7 @@ class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_generate_no_retry_on_non_retryable_error(self, mock_redis):
         """Should not retry on non-retryable errors."""
-        with patch('services.llm.get_settings') as mock_settings:
+        with patch("services.llm.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(
                 nvidia_api_key="test",
                 nvidia_model="test",
@@ -286,9 +306,11 @@ class TestRetryLogic:
                 max_prompt_tokens=12000,
                 prompt_warning_threshold=0.8,
             )
-            mock_settings.return_value.get_nvidia_api_key = MagicMock(return_value="test")
+            mock_settings.return_value.get_nvidia_api_key = MagicMock(
+                return_value="test"
+            )
 
-            with patch('services.llm.AsyncOpenAI') as mock_client_class:
+            with patch("services.llm.AsyncOpenAI") as mock_client_class:
                 mock_client = AsyncMock()
 
                 # Create a 400 Bad Request error (non-retryable)
@@ -303,7 +325,7 @@ class TestRetryLogic:
                 )
                 mock_client_class.return_value = mock_client
 
-                with patch('services.llm.redis') as mock_redis_module:
+                with patch("services.llm.redis") as mock_redis_module:
                     mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
                     client = LLMClient()

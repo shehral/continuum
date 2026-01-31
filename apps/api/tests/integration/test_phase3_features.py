@@ -146,26 +146,39 @@ class TestHybridSearch:
         ]
 
         async def mock_run(cypher, **params):
-            if "db.index.fulltext.queryNodes" in cypher and "decision_fulltext" in cypher:
+            if (
+                "db.index.fulltext.queryNodes" in cypher
+                and "decision_fulltext" in cypher
+            ):
                 return create_async_result_mock(lexical_results)
-            elif "db.index.fulltext.queryNodes" in cypher and "entity_fulltext" in cypher:
+            elif (
+                "db.index.fulltext.queryNodes" in cypher and "entity_fulltext" in cypher
+            ):
                 return create_async_result_mock([])
-            elif "db.index.vector.queryNodes" in cypher and "decision_embedding" in cypher:
+            elif (
+                "db.index.vector.queryNodes" in cypher
+                and "decision_embedding" in cypher
+            ):
                 return create_async_result_mock(semantic_results)
-            elif "db.index.vector.queryNodes" in cypher and "entity_embedding" in cypher:
+            elif (
+                "db.index.vector.queryNodes" in cypher and "entity_embedding" in cypher
+            ):
                 return create_async_result_mock([])
             else:
                 return create_async_result_mock([])
 
         mock_session.run = mock_run
 
-        with patch(
-            "routers.graph.get_neo4j_session",
-            new_callable=AsyncMock,
-            return_value=mock_session,
-        ), patch(
-            "routers.graph.get_embedding_service",
-            return_value=mock_embedding_service,
+        with (
+            patch(
+                "routers.graph.get_neo4j_session",
+                new_callable=AsyncMock,
+                return_value=mock_session,
+            ),
+            patch(
+                "routers.graph.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
         ):
             from models.schemas import HybridSearchRequest
             from routers.graph import hybrid_search
@@ -215,13 +228,16 @@ class TestHybridSearch:
 
         mock_session.run = mock_run
 
-        with patch(
-            "routers.graph.get_neo4j_session",
-            new_callable=AsyncMock,
-            return_value=mock_session,
-        ), patch(
-            "routers.graph.get_embedding_service",
-            return_value=mock_embedding_service,
+        with (
+            patch(
+                "routers.graph.get_neo4j_session",
+                new_callable=AsyncMock,
+                return_value=mock_session,
+            ),
+            patch(
+                "routers.graph.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
         ):
             from models.schemas import HybridSearchRequest
             from routers.graph import hybrid_search
@@ -261,13 +277,16 @@ class TestHybridSearch:
 
         mock_session.run = mock_run
 
-        with patch(
-            "routers.graph.get_neo4j_session",
-            new_callable=AsyncMock,
-            return_value=mock_session,
-        ), patch(
-            "routers.graph.get_embedding_service",
-            return_value=mock_embedding_service,
+        with (
+            patch(
+                "routers.graph.get_neo4j_session",
+                new_callable=AsyncMock,
+                return_value=mock_session,
+            ),
+            patch(
+                "routers.graph.get_embedding_service",
+                return_value=mock_embedding_service,
+            ),
         ):
             from models.schemas import HybridSearchRequest
             from routers.graph import hybrid_search
@@ -556,7 +575,9 @@ class TestDecisionEdit:
             from routers.decisions import update_decision
 
             update_data = DecisionUpdate(trigger="New trigger")
-            result = await update_decision(decision_id, update_data, user_id="test-user")
+            result = await update_decision(
+                decision_id, update_data, user_id="test-user"
+            )
             assert result.trigger == "New trigger"
 
     @pytest.mark.asyncio
@@ -582,7 +603,9 @@ class TestDecisionEdit:
             from routers.decisions import update_decision
 
             with pytest.raises(HTTPException) as exc_info:
-                await update_decision(decision_id, DecisionUpdate(), user_id="test-user")
+                await update_decision(
+                    decision_id, DecisionUpdate(), user_id="test-user"
+                )
 
             assert exc_info.value.status_code == 400
             assert "No fields to update" in exc_info.value.detail
@@ -920,10 +943,12 @@ class TestSimilarDecisions:
             call_count[0] += 1
             result = MagicMock()
             if call_count[0] == 1:
-                result.single = AsyncMock(return_value={
-                    "embedding": source_embedding,
-                    "trigger": "Source decision",
-                })
+                result.single = AsyncMock(
+                    return_value={
+                        "embedding": source_embedding,
+                        "trigger": "Source decision",
+                    }
+                )
                 return result
             else:
                 return create_async_result_mock([similar_decision])
@@ -983,10 +1008,12 @@ class TestSimilarDecisions:
         source_id = str(uuid4())
 
         mock_result = AsyncMock()
-        mock_result.single = AsyncMock(return_value={
-            "embedding": None,
-            "trigger": "Decision without embedding",
-        })
+        mock_result.single = AsyncMock(
+            return_value={
+                "embedding": None,
+                "trigger": "Decision without embedding",
+            }
+        )
         mock_session.run = AsyncMock(return_value=mock_result)
 
         with patch(

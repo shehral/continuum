@@ -74,7 +74,7 @@ class TestEntityCache:
     @pytest.mark.asyncio
     async def test_get_by_exact_name_cache_miss(self, mock_redis):
         """Should return None on cache miss."""
-        with patch('services.entity_cache.redis') as mock_redis_module:
+        with patch("services.entity_cache.redis") as mock_redis_module:
             mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
             cache = EntityCache()
@@ -88,7 +88,7 @@ class TestEntityCache:
         """Should return cached entity on cache hit."""
         mock_redis.get = AsyncMock(return_value=json.dumps(sample_entity))
 
-        with patch('services.entity_cache.redis') as mock_redis_module:
+        with patch("services.entity_cache.redis") as mock_redis_module:
             mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
             cache = EntityCache()
@@ -99,7 +99,7 @@ class TestEntityCache:
     @pytest.mark.asyncio
     async def test_set_by_exact_name_caches_entity(self, mock_redis, sample_entity):
         """Should cache entity with configured TTL."""
-        with patch('services.entity_cache.redis') as mock_redis_module:
+        with patch("services.entity_cache.redis") as mock_redis_module:
             mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
             cache = EntityCache()
@@ -113,7 +113,7 @@ class TestEntityCache:
     @pytest.mark.asyncio
     async def test_set_by_exact_name_caches_negative_result(self, mock_redis):
         """Should cache None for negative lookups."""
-        with patch('services.entity_cache.redis') as mock_redis_module:
+        with patch("services.entity_cache.redis") as mock_redis_module:
             mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
             cache = EntityCache()
@@ -126,7 +126,7 @@ class TestEntityCache:
     @pytest.mark.asyncio
     async def test_invalidate_entity(self, mock_redis):
         """Should delete cache keys for an entity."""
-        with patch('services.entity_cache.redis') as mock_redis_module:
+        with patch("services.entity_cache.redis") as mock_redis_module:
             mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
             cache = EntityCache()
@@ -148,7 +148,7 @@ class TestEntityCache:
         mock_redis.scan = AsyncMock(return_value=(0, ["entity:user-123:exact:test"]))
         mock_redis.delete = AsyncMock(return_value=1)
 
-        with patch('services.entity_cache.redis') as mock_redis_module:
+        with patch("services.entity_cache.redis") as mock_redis_module:
             mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
             cache = EntityCache()
@@ -160,7 +160,7 @@ class TestEntityCache:
     @pytest.mark.asyncio
     async def test_cache_disabled(self):
         """Should return None when cache is disabled."""
-        with patch('services.entity_cache.get_settings') as mock_settings:
+        with patch("services.entity_cache.get_settings") as mock_settings:
             mock_settings.return_value.entity_cache_enabled = False
             mock_settings.return_value.redis_url = "redis://localhost:6379"
 
@@ -172,7 +172,7 @@ class TestEntityCache:
     @pytest.mark.asyncio
     async def test_redis_connection_failure_graceful(self):
         """Should work gracefully when Redis is unavailable."""
-        with patch('services.entity_cache.redis') as mock_redis_module:
+        with patch("services.entity_cache.redis") as mock_redis_module:
             mock_redis = AsyncMock()
             mock_redis.ping = AsyncMock(side_effect=Exception("Connection refused"))
             mock_redis_module.from_url = MagicMock(return_value=mock_redis)

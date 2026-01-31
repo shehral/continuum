@@ -51,7 +51,7 @@ class TestEmbeddingCache:
         assert len(key.split(":")) == 4
 
         # Hash should be MD5
-        expected_hash = hashlib.md5("test text".encode('utf-8')).hexdigest()
+        expected_hash = hashlib.md5("test text".encode("utf-8")).hexdigest()
         assert key.endswith(expected_hash)
 
     def test_cache_key_different_types(self):
@@ -68,16 +68,20 @@ class TestEmbeddingCache:
     @pytest.mark.asyncio
     async def test_embed_text_cache_miss(self, mock_embedding_response, mock_redis):
         """Should call API and cache result on cache miss."""
-        with patch('services.embeddings.AsyncOpenAI') as mock_client_class:
+        with patch("services.embeddings.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.embeddings.create = AsyncMock(return_value=mock_embedding_response)
+            mock_client.embeddings.create = AsyncMock(
+                return_value=mock_embedding_response
+            )
             mock_client_class.return_value = mock_client
 
-            with patch('services.embeddings.redis') as mock_redis_module:
+            with patch("services.embeddings.redis") as mock_redis_module:
                 mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
                 service = EmbeddingService()
-                result = await service.embed_text("This is a test sentence that is long enough")
+                result = await service.embed_text(
+                    "This is a test sentence that is long enough"
+                )
 
                 # Should return embedding
                 assert len(result) == 2048
@@ -94,15 +98,17 @@ class TestEmbeddingCache:
         cached_embedding = [0.5] * 2048
         mock_redis.get = AsyncMock(return_value=json.dumps(cached_embedding))
 
-        with patch('services.embeddings.AsyncOpenAI') as mock_client_class:
+        with patch("services.embeddings.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
 
-            with patch('services.embeddings.redis') as mock_redis_module:
+            with patch("services.embeddings.redis") as mock_redis_module:
                 mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
                 service = EmbeddingService()
-                result = await service.embed_text("This is a test sentence that is long enough")
+                result = await service.embed_text(
+                    "This is a test sentence that is long enough"
+                )
 
                 # Should return cached embedding
                 assert result == cached_embedding
@@ -111,14 +117,18 @@ class TestEmbeddingCache:
                 mock_client.embeddings.create.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_embed_text_skip_cache_short_text(self, mock_embedding_response, mock_redis):
+    async def test_embed_text_skip_cache_short_text(
+        self, mock_embedding_response, mock_redis
+    ):
         """Should skip caching for very short texts."""
-        with patch('services.embeddings.AsyncOpenAI') as mock_client_class:
+        with patch("services.embeddings.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.embeddings.create = AsyncMock(return_value=mock_embedding_response)
+            mock_client.embeddings.create = AsyncMock(
+                return_value=mock_embedding_response
+            )
             mock_client_class.return_value = mock_client
 
-            with patch('services.embeddings.redis') as mock_redis_module:
+            with patch("services.embeddings.redis") as mock_redis_module:
                 mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
                 service = EmbeddingService()
@@ -135,7 +145,9 @@ class TestEmbeddingCache:
                 mock_redis.setex.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_embed_texts_batch_caching(self, mock_batch_embedding_response, mock_redis):
+    async def test_embed_texts_batch_caching(
+        self, mock_batch_embedding_response, mock_redis
+    ):
         """Should handle batch caching correctly."""
         # First text is cached, others are not
         mock_redis.get = AsyncMock(
@@ -146,7 +158,7 @@ class TestEmbeddingCache:
             ]
         )
 
-        with patch('services.embeddings.AsyncOpenAI') as mock_client_class:
+        with patch("services.embeddings.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             # API should only be called for uncached texts
             mock_response = MagicMock()
@@ -157,7 +169,7 @@ class TestEmbeddingCache:
             mock_client.embeddings.create = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
 
-            with patch('services.embeddings.redis') as mock_redis_module:
+            with patch("services.embeddings.redis") as mock_redis_module:
                 mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
                 service = EmbeddingService()
@@ -177,24 +189,28 @@ class TestEmbeddingCache:
                 # API should only be called once for the 2 uncached texts
                 mock_client.embeddings.create.assert_called_once()
                 call_args = mock_client.embeddings.create.call_args
-                assert len(call_args.kwargs['input']) == 2
+                assert len(call_args.kwargs["input"]) == 2
 
     @pytest.mark.asyncio
     async def test_embed_text_redis_failure_graceful(self, mock_embedding_response):
         """Should work gracefully when Redis is unavailable."""
-        with patch('services.embeddings.AsyncOpenAI') as mock_client_class:
+        with patch("services.embeddings.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.embeddings.create = AsyncMock(return_value=mock_embedding_response)
+            mock_client.embeddings.create = AsyncMock(
+                return_value=mock_embedding_response
+            )
             mock_client_class.return_value = mock_client
 
-            with patch('services.embeddings.redis') as mock_redis_module:
+            with patch("services.embeddings.redis") as mock_redis_module:
                 # Redis connection fails
                 mock_redis = AsyncMock()
                 mock_redis.ping = AsyncMock(side_effect=Exception("Connection refused"))
                 mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
                 service = EmbeddingService()
-                result = await service.embed_text("Test text that is long enough to cache")
+                result = await service.embed_text(
+                    "Test text that is long enough to cache"
+                )
 
                 # Should still return embedding from API
                 assert len(result) == 2048
@@ -202,12 +218,14 @@ class TestEmbeddingCache:
     @pytest.mark.asyncio
     async def test_cache_ttl_setting(self, mock_embedding_response, mock_redis):
         """Should use configured TTL for cache entries."""
-        with patch('services.embeddings.AsyncOpenAI') as mock_client_class:
+        with patch("services.embeddings.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.embeddings.create = AsyncMock(return_value=mock_embedding_response)
+            mock_client.embeddings.create = AsyncMock(
+                return_value=mock_embedding_response
+            )
             mock_client_class.return_value = mock_client
 
-            with patch('services.embeddings.redis') as mock_redis_module:
+            with patch("services.embeddings.redis") as mock_redis_module:
                 mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
                 service = EmbeddingService()

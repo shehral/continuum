@@ -49,7 +49,9 @@ NEO4J_RETRYABLE_EXCEPTIONS = (
 )
 
 
-def _calculate_backoff(attempt: int, base_delay: float = 1.0, max_delay: float = 8.0) -> float:
+def _calculate_backoff(
+    attempt: int, base_delay: float = 1.0, max_delay: float = 8.0
+) -> float:
     """Calculate exponential backoff with jitter (SD-009).
 
     Args:
@@ -60,7 +62,7 @@ def _calculate_backoff(attempt: int, base_delay: float = 1.0, max_delay: float =
     Returns:
         Delay in seconds with jitter
     """
-    delay = min(base_delay * (2 ** attempt), max_delay)
+    delay = min(base_delay * (2**attempt), max_delay)
     # Add jitter to prevent thundering herd
     jitter = random.uniform(0, 1)
     return delay + jitter
@@ -111,7 +113,9 @@ async def with_retry(
             last_exception = e
 
             if not _is_retryable_error(e):
-                logger.error(f"Non-retryable error in {operation_name}: {type(e).__name__}: {e}")
+                logger.error(
+                    f"Non-retryable error in {operation_name}: {type(e).__name__}: {e}"
+                )
                 raise
 
             if attempt >= max_retries:
@@ -281,7 +285,9 @@ async def init_neo4j():
                 )
                 logger.info("Created decision_embedding vector index")
             except (ClientError, DatabaseError) as e:
-                logger.debug(f"Vector index creation skipped (may already exist or Neo4j < 5.11): {e}")
+                logger.debug(
+                    f"Vector index creation skipped (may already exist or Neo4j < 5.11): {e}"
+                )
 
             try:
                 await session.run(
@@ -436,16 +442,18 @@ async def get_all_entity_names(session=None) -> list[dict]:
 
 
 # SEC-008: Whitelist of allowed order_by fields to prevent injection
-ALLOWED_ORDER_BY_FIELDS = frozenset({
-    "created_at",
-    "trigger",
-    "confidence",
-    "decision",
-    "rationale",
-    "source",
-    "name",
-    "type",
-})
+ALLOWED_ORDER_BY_FIELDS = frozenset(
+    {
+        "created_at",
+        "trigger",
+        "confidence",
+        "decision",
+        "rationale",
+        "source",
+        "name",
+        "type",
+    }
+)
 
 
 def validate_order_by(field: str) -> str:

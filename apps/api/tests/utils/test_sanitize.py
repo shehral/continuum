@@ -1,6 +1,5 @@
 """Tests for log sanitization utility (SEC-015)."""
 
-
 from utils.sanitize import (
     hash_identifier,
     mask_email,
@@ -134,12 +133,7 @@ class TestSanitizeDict:
 
     def test_nested_sanitization(self):
         """Should sanitize nested dictionaries."""
-        data = {
-            "user": {
-                "email": "test@example.com",
-                "password": "secret"
-            }
-        }
+        data = {"user": {"email": "test@example.com", "password": "secret"}}
         result = sanitize_dict(data)
         assert result["user"]["password"] == "[MASKED]"
         assert "t***@example.com" in result["user"]["email"]

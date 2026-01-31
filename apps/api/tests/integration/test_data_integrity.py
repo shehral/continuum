@@ -75,14 +75,16 @@ class TestDecisionEntityRelationshipConsistency:
         decision_data = make_decision_dict(decision_id)
 
         mock_result = AsyncMock()
-        mock_result.single = AsyncMock(return_value={
-            "d": decision_data,
-            "entities": [
-                {"id": entity_ids[0], "name": "PostgreSQL", "type": "technology"},
-                {"id": entity_ids[1], "name": "Redis", "type": "technology"},
-                {"id": entity_ids[2], "name": "Caching", "type": "concept"},
-            ],
-        })
+        mock_result.single = AsyncMock(
+            return_value={
+                "d": decision_data,
+                "entities": [
+                    {"id": entity_ids[0], "name": "PostgreSQL", "type": "technology"},
+                    {"id": entity_ids[1], "name": "Redis", "type": "technology"},
+                    {"id": entity_ids[2], "name": "Caching", "type": "concept"},
+                ],
+            }
+        )
         mock_neo4j_session.run = AsyncMock(return_value=mock_result)
 
         with patch(
@@ -104,10 +106,12 @@ class TestDecisionEntityRelationshipConsistency:
         decision_data = make_decision_dict(decision_id)
 
         mock_result = AsyncMock()
-        mock_result.single = AsyncMock(return_value={
-            "d": decision_data,
-            "entities": [],
-        })
+        mock_result.single = AsyncMock(
+            return_value={
+                "d": decision_data,
+                "entities": [],
+            }
+        )
         mock_neo4j_session.run = AsyncMock(return_value=mock_result)
 
         with patch(
@@ -174,8 +178,8 @@ class TestOrphanEntityDetection:
         from services.validator import GraphValidator
 
         validator = GraphValidator(mock_neo4j_session, user_id="test-user")
-        assert hasattr(validator, 'check_orphan_entities')
-        assert hasattr(validator, 'check_duplicate_entities')
+        assert hasattr(validator, "check_orphan_entities")
+        assert hasattr(validator, "check_duplicate_entities")
 
 
 # ============================================================================
@@ -189,7 +193,9 @@ class TestDuplicateEntityDetection:
     @pytest.mark.asyncio
     async def test_same_name_entities_blocked_on_create(self, mock_neo4j_session):
         """Creating entity with existing name should return existing entity."""
-        existing_entity = {"e": {"id": "existing-id", "name": "PostgreSQL", "type": "technology"}}
+        existing_entity = {
+            "e": {"id": "existing-id", "name": "PostgreSQL", "type": "technology"}
+        }
 
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value=existing_entity)
@@ -333,7 +339,7 @@ class TestUserIsolation:
         ):
             from routers.entities import get_all_entities
 
-            results = await get_all_entities(user_id="current-user")
+            _results = await get_all_entities(user_id="current-user")
 
             # Verify query filters by user_id
             call_args = mock_neo4j_session.run.call_args
@@ -385,7 +391,9 @@ class TestCascadingDeleteBehavior:
             # This is verified by the Cypher query using DETACH DELETE on decision only
 
     @pytest.mark.asyncio
-    async def test_force_delete_entity_removes_all_relationships(self, mock_neo4j_session):
+    async def test_force_delete_entity_removes_all_relationships(
+        self, mock_neo4j_session
+    ):
         """Force deleting entity should remove all relationships."""
         entity_id = str(uuid4())
 
@@ -447,10 +455,12 @@ class TestTimestampValidation:
         decision_data = make_decision_dict(decision_id)
 
         mock_result = AsyncMock()
-        mock_result.single = AsyncMock(return_value={
-            "d": decision_data,
-            "entities": [],
-        })
+        mock_result.single = AsyncMock(
+            return_value={
+                "d": decision_data,
+                "entities": [],
+            }
+        )
         mock_neo4j_session.run = AsyncMock(return_value=mock_result)
 
         with patch(
@@ -543,11 +553,21 @@ class TestRelationshipTypeValidation:
         from models.schemas import VALID_RELATIONSHIP_TYPES
 
         expected = {
-            "INVOLVES", "SIMILAR_TO", "SUPERSEDES", "INFLUENCED_BY",
-            "CONTRADICTS", "IS_A", "PART_OF", "RELATED_TO",
-            "DEPENDS_ON", "ALTERNATIVE_TO",
+            "INVOLVES",
+            "SIMILAR_TO",
+            "SUPERSEDES",
+            "INFLUENCED_BY",
+            "CONTRADICTS",
+            "IS_A",
+            "PART_OF",
+            "RELATED_TO",
+            "DEPENDS_ON",
+            "ALTERNATIVE_TO",
             # Phase 5 additions
-            "ENABLES", "PREVENTS", "REQUIRES", "REFINES",
+            "ENABLES",
+            "PREVENTS",
+            "REQUIRES",
+            "REFINES",
         }
         assert expected == VALID_RELATIONSHIP_TYPES
 

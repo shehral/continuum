@@ -16,22 +16,24 @@ from typing import Optional
 
 class ExtractionMethod(Enum):
     """Method used to extract information (KG-P2-4)."""
-    LLM_EXTRACTION = "llm_extraction"      # Extracted via LLM prompt
+
+    LLM_EXTRACTION = "llm_extraction"  # Extracted via LLM prompt
     PATTERN_MATCHING = "pattern_matching"  # Extracted via regex/rules
-    MANUAL_ENTRY = "manual_entry"          # User manually entered
+    MANUAL_ENTRY = "manual_entry"  # User manually entered
     ENTITY_RESOLUTION = "entity_resolution"  # Created during resolution
-    INFERENCE = "inference"                # Inferred from other data
-    IMPORT = "import"                      # Imported from external source
+    INFERENCE = "inference"  # Inferred from other data
+    IMPORT = "import"  # Imported from external source
 
 
 class SourceType(Enum):
     """Type of source the information came from (KG-P2-4)."""
-    CLAUDE_LOG = "claude_log"      # Claude Code conversation log
-    INTERVIEW = "interview"        # AI-guided interview session
-    MANUAL = "manual"              # Manual user input
-    API_IMPORT = "api_import"      # Imported via API
-    FILE_UPLOAD = "file_upload"    # Uploaded document
-    EXTERNAL = "external"          # External system integration
+
+    CLAUDE_LOG = "claude_log"  # Claude Code conversation log
+    INTERVIEW = "interview"  # AI-guided interview session
+    MANUAL = "manual"  # Manual user input
+    API_IMPORT = "api_import"  # Imported via API
+    FILE_UPLOAD = "file_upload"  # Uploaded document
+    EXTERNAL = "external"  # External system integration
 
 
 @dataclass
@@ -40,6 +42,7 @@ class SourceReference:
 
     Provides detailed lineage information for audit and debugging.
     """
+
     # Source identification
     source_type: SourceType
     source_id: Optional[str] = None  # UUID of source (e.g., session_id, file_id)
@@ -47,14 +50,12 @@ class SourceReference:
 
     # Location within source
     line_start: Optional[int] = None  # Starting line number
-    line_end: Optional[int] = None    # Ending line number
+    line_end: Optional[int] = None  # Ending line number
     message_index: Optional[int] = None  # Index within conversation
 
     # Timestamps
     source_timestamp: Optional[datetime] = None  # When source was created
-    extraction_timestamp: datetime = field(
-        default_factory=lambda: datetime.now(UTC)
-    )
+    extraction_timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # Additional context
     snippet: Optional[str] = None  # Relevant text snippet (truncated)
@@ -68,9 +69,13 @@ class SourceReference:
             "line_start": self.line_start,
             "line_end": self.line_end,
             "message_index": self.message_index,
-            "source_timestamp": self.source_timestamp.isoformat() if self.source_timestamp else None,
+            "source_timestamp": self.source_timestamp.isoformat()
+            if self.source_timestamp
+            else None,
             "extraction_timestamp": self.extraction_timestamp.isoformat(),
-            "snippet": self.snippet[:500] if self.snippet else None,  # Limit snippet size
+            "snippet": self.snippet[:500]
+            if self.snippet
+            else None,  # Limit snippet size
         }
 
     @classmethod
@@ -83,8 +88,12 @@ class SourceReference:
             line_start=data.get("line_start"),
             line_end=data.get("line_end"),
             message_index=data.get("message_index"),
-            source_timestamp=datetime.fromisoformat(data["source_timestamp"]) if data.get("source_timestamp") else None,
-            extraction_timestamp=datetime.fromisoformat(data["extraction_timestamp"]) if data.get("extraction_timestamp") else datetime.now(UTC),
+            source_timestamp=datetime.fromisoformat(data["source_timestamp"])
+            if data.get("source_timestamp")
+            else None,
+            extraction_timestamp=datetime.fromisoformat(data["extraction_timestamp"])
+            if data.get("extraction_timestamp")
+            else datetime.now(UTC),
             snippet=data.get("snippet"),
         )
 
@@ -95,6 +104,7 @@ class ExtractionMetadata:
 
     Tracks extraction quality metrics for confidence calibration.
     """
+
     # Extraction method
     method: ExtractionMethod
 
@@ -159,6 +169,7 @@ class Provenance:
 
     Combines source reference and extraction metadata for full lineage.
     """
+
     source: SourceReference
     extraction: ExtractionMetadata
 
@@ -177,7 +188,9 @@ class Provenance:
             "extraction": self.extraction.to_dict(),
             "created_by": self.created_by,
             "last_modified_by": self.last_modified_by,
-            "last_modified_at": self.last_modified_at.isoformat() if self.last_modified_at else None,
+            "last_modified_at": self.last_modified_at.isoformat()
+            if self.last_modified_at
+            else None,
             "modification_count": self.modification_count,
         }
 
@@ -189,7 +202,9 @@ class Provenance:
             extraction=ExtractionMetadata.from_dict(data.get("extraction", {})),
             created_by=data.get("created_by"),
             last_modified_by=data.get("last_modified_by"),
-            last_modified_at=datetime.fromisoformat(data["last_modified_at"]) if data.get("last_modified_at") else None,
+            last_modified_at=datetime.fromisoformat(data["last_modified_at"])
+            if data.get("last_modified_at")
+            else None,
             modification_count=data.get("modification_count", 0),
         )
 

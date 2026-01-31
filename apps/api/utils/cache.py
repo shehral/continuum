@@ -33,20 +33,20 @@ CACHE_PREFIXES = {
 # Default TTLs in seconds
 DEFAULT_TTLS = {
     "dashboard_stats": 30,  # 30 seconds - changes frequently with new decisions
-    "graph_stats": 30,      # 30 seconds - similar to dashboard
-    "graph_sources": 60,    # 60 seconds - changes less frequently
+    "graph_stats": 30,  # 30 seconds - similar to dashboard
+    "graph_sources": 60,  # 60 seconds - changes less frequently
 }
 
 
 def _build_cache_key(prefix: str, user_id: str, *args: Any, **kwargs: Any) -> str:
     """Build a cache key from prefix, user_id, and function arguments.
-    
+
     Args:
         prefix: Cache key prefix (e.g., "dashboard_stats")
         user_id: User ID for multi-tenant isolation
         *args: Positional arguments to hash
         **kwargs: Keyword arguments to hash
-        
+
     Returns:
         Cache key string
     """
@@ -65,12 +65,12 @@ async def get_cached(
     **kwargs: Any,
 ) -> Optional[Any]:
     """Get a cached value.
-    
+
     Args:
         prefix: Cache key prefix
         user_id: User ID for isolation
         *args, **kwargs: Additional arguments for cache key
-        
+
     Returns:
         Cached value or None if not found
     """
@@ -101,14 +101,14 @@ async def set_cached(
     **kwargs: Any,
 ) -> bool:
     """Set a cached value.
-    
+
     Args:
         prefix: Cache key prefix
         user_id: User ID for isolation
         value: Value to cache (must be JSON serializable)
         ttl: Time-to-live in seconds (uses default if not specified)
         *args, **kwargs: Additional arguments for cache key
-        
+
     Returns:
         True if cached successfully, False otherwise
     """
@@ -133,11 +133,11 @@ async def set_cached(
 
 async def invalidate_cache(prefix: str, user_id: str) -> int:
     """Invalidate all cache entries for a prefix and user.
-    
+
     Args:
         prefix: Cache key prefix to invalidate
         user_id: User ID
-        
+
     Returns:
         Number of keys deleted
     """
@@ -169,12 +169,12 @@ async def invalidate_cache(prefix: str, user_id: str) -> int:
 
 async def invalidate_user_caches(user_id: str) -> int:
     """Invalidate all cache entries for a user.
-    
+
     Call this when user data changes significantly (e.g., after decision creation).
-    
+
     Args:
         user_id: User ID
-        
+
     Returns:
         Total number of keys deleted
     """
@@ -190,20 +190,21 @@ def cached(
     user_id_param: str = "user_id",
 ):
     """Decorator for caching async function results (SD-024).
-    
+
     The decorated function must have a user_id parameter (or specified by user_id_param).
-    
+
     Args:
         key_prefix: Cache key prefix (e.g., "dashboard_stats")
         ttl: Cache TTL in seconds (uses default if not specified)
         user_id_param: Name of the user_id parameter in the function
-        
+
     Example:
         @cached(key_prefix="dashboard_stats", ttl=30)
         async def get_dashboard_stats(user_id: str) -> dict:
             # expensive query
             return {"total": 100}
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> T:
@@ -212,6 +213,7 @@ def cached(
             if user_id is None and args:
                 # Try to get from positional args based on function signature
                 import inspect
+
                 sig = inspect.signature(func)
                 params = list(sig.parameters.keys())
                 try:
@@ -227,15 +229,21 @@ def cached(
                 return await func(*args, **kwargs)
 
             # Build cache key from remaining args (exclude user_id)
-            cache_args = [a for i, a in enumerate(args) if i != (params.index(user_id_param) if user_id_param in params else -1)] if 'params' in dir() else list(args)
+            cache_args = (
+                [
+                    a
+                    for i, a in enumerate(args)
+                    if i
+                    != (params.index(user_id_param) if user_id_param in params else -1)
+                ]
+                if "params" in dir()
+                else list(args)
+            )
             cache_kwargs = {k: v for k, v in kwargs.items() if k != user_id_param}
 
             # Try to get from cache
             cached_value = await get_cached(
-                key_prefix,
-                user_id,
-                *cache_args,
-                **cache_kwargs
+                key_prefix, user_id, *cache_args, **cache_kwargs
             )
             if cached_value is not None:
                 return cached_value
@@ -264,4 +272,5 @@ def cached(
             return result
 
         return wrapper
+
     return decorator

@@ -108,7 +108,11 @@ class TestGetGraph:
             elif "DecisionTrace" in query and "SKIP" in query and "LIMIT" in query:
                 return create_async_result_mock(sample_decisions)
             # Entity query
-            elif "INVOLVES" in query and "e:Entity" in query and "(a)-[r]->(b)" not in query:
+            elif (
+                "INVOLVES" in query
+                and "e:Entity" in query
+                and "(a)-[r]->(b)" not in query
+            ):
                 return create_async_result_mock(sample_entities)
             # Relationship query
             elif "(a)-[r]->(b)" in query or "a.id as source" in query:
@@ -125,11 +129,7 @@ class TestGetGraph:
         ):
             from routers.graph import get_graph
 
-            result = await get_graph(
-                page=1,
-                page_size=100,
-                user_id="test-user"
-            )
+            result = await get_graph(page=1, page_size=100, user_id="test-user")
 
             # Check pagination metadata
             assert result.pagination.page == 1
@@ -162,11 +162,7 @@ class TestGetGraph:
         ):
             from routers.graph import get_graph
 
-            result = await get_graph(
-                page=1,
-                page_size=100,
-                user_id="test-user"
-            )
+            result = await get_graph(page=1, page_size=100, user_id="test-user")
 
             assert result.nodes == []
             assert result.edges == []
@@ -212,10 +208,7 @@ class TestGetGraph:
             from routers.graph import get_graph
 
             await get_graph(
-                page=1,
-                page_size=100,
-                source_filter="manual",
-                user_id="test-user"
+                page=1, page_size=100, source_filter="manual", user_id="test-user"
             )
 
             # Verify at least one query includes source filter
@@ -242,22 +235,14 @@ class TestGetGraph:
         ):
             from routers.graph import get_graph
 
-            result = await get_graph(
-                page=1,
-                page_size=100,
-                user_id="test-user"
-            )
+            result = await get_graph(page=1, page_size=100, user_id="test-user")
 
             assert result.pagination.total_count == 250
             assert result.pagination.total_pages == 3
             assert result.pagination.has_more is True
 
             # Test last page
-            result2 = await get_graph(
-                page=3,
-                page_size=100,
-                user_id="test-user"
-            )
+            result2 = await get_graph(page=3, page_size=100, user_id="test-user")
             assert result2.pagination.has_more is False
 
 
@@ -336,7 +321,7 @@ class TestGetNodeNeighbors:
                     node_id="nonexistent-id",
                     limit=50,
                     relationship_types=None,
-                    user_id="test-user"
+                    user_id="test-user",
                 )
             assert exc_info.value.status_code == 404
 
@@ -388,10 +373,7 @@ class TestGetNodeNeighbors:
             from routers.graph import get_node_neighbors
 
             result = await get_node_neighbors(
-                node_id=node_id,
-                limit=50,
-                relationship_types=None,
-                user_id="test-user"
+                node_id=node_id, limit=50, relationship_types=None, user_id="test-user"
             )
 
             assert result.source_node_id == node_id
@@ -428,12 +410,13 @@ class TestGetNodeNeighbors:
                 node_id=node_id,
                 limit=50,
                 relationship_types="INVOLVES,SIMILAR_TO",
-                user_id="test-user"
+                user_id="test-user",
             )
 
             # Check that rel_types parameter was passed
             rel_types_passed = any(
-                "rel_types" in params and params["rel_types"] == ["INVOLVES", "SIMILAR_TO"]
+                "rel_types" in params
+                and params["rel_types"] == ["INVOLVES", "SIMILAR_TO"]
                 for _, params in queries_called
             )
             assert rel_types_passed

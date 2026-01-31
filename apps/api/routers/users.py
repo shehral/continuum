@@ -204,7 +204,7 @@ async def delete_current_user(
     if not confirm:
         return {
             "status": "aborted",
-            "message": "Pass confirm=true to delete your account and all data"
+            "message": "Pass confirm=true to delete your account and all data",
         }
 
     # Verify user exists
@@ -237,9 +237,7 @@ async def delete_current_user(
         )
 
     # Delete capture sessions from PostgreSQL
-    await db.execute(
-        delete(CaptureSession).where(CaptureSession.user_id == user_id)
-    )
+    await db.execute(delete(CaptureSession).where(CaptureSession.user_id == user_id))
 
     # Delete user from PostgreSQL
     await db.execute(delete(User).where(User.id == user_id))
@@ -249,5 +247,5 @@ async def delete_current_user(
 
     return {
         "status": "deleted",
-        "message": "Your account and all associated data have been permanently deleted"
+        "message": "Your account and all associated data have been permanently deleted",
     }

@@ -37,16 +37,18 @@ T = TypeVar("T")
 # Exceptions that should trigger a retry (SD-009)
 REDIS_RETRYABLE_EXCEPTIONS = (
     RedisConnectionError,  # Connection lost
-    RedisTimeoutError,     # Operation timeout
-    BusyLoadingError,      # Redis is loading data
-    ReadOnlyError,         # Replica is read-only (during failover)
-    ConnectionError,       # Socket-level errors
-    TimeoutError,          # General timeouts
-    OSError,               # Low-level I/O errors
+    RedisTimeoutError,  # Operation timeout
+    BusyLoadingError,  # Redis is loading data
+    ReadOnlyError,  # Replica is read-only (during failover)
+    ConnectionError,  # Socket-level errors
+    TimeoutError,  # General timeouts
+    OSError,  # Low-level I/O errors
 )
 
 
-def _calculate_backoff(attempt: int, base_delay: float = 0.5, max_delay: float = 4.0) -> float:
+def _calculate_backoff(
+    attempt: int, base_delay: float = 0.5, max_delay: float = 4.0
+) -> float:
     """Calculate exponential backoff with jitter (SD-009).
 
     Args:
@@ -57,7 +59,7 @@ def _calculate_backoff(attempt: int, base_delay: float = 0.5, max_delay: float =
     Returns:
         Delay in seconds with jitter
     """
-    delay = min(base_delay * (2 ** attempt), max_delay)
+    delay = min(base_delay * (2**attempt), max_delay)
     # Add jitter to prevent thundering herd
     jitter = random.uniform(0, 0.5)
     return delay + jitter
@@ -108,7 +110,9 @@ async def with_retry(
             last_exception = e
 
             if not _is_retryable_error(e):
-                logger.error(f"Non-retryable error in {operation_name}: {type(e).__name__}: {e}")
+                logger.error(
+                    f"Non-retryable error in {operation_name}: {type(e).__name__}: {e}"
+                )
                 raise
 
             if attempt >= max_retries:
@@ -194,7 +198,9 @@ def get_pool_stats() -> dict:
 
     return {
         "max_size": getattr(settings, "redis_pool_max_size", 10),
-        "in_use": len(pool._in_use_connections) if hasattr(pool, "_in_use_connections") else 0,
+        "in_use": len(pool._in_use_connections)
+        if hasattr(pool, "_in_use_connections")
+        else 0,
     }
 
 

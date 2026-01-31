@@ -66,9 +66,14 @@ def mock_redis():
 @pytest.fixture
 def extractor_with_mocks(mock_llm, mock_embedding_service):
     """Create DecisionExtractor with mocked dependencies and disabled cache."""
-    with patch('services.extractor.get_llm_client', return_value=mock_llm), \
-         patch('services.extractor.get_embedding_service', return_value=mock_embedding_service), \
-         patch('services.extractor.get_settings') as mock_settings:
+    with (
+        patch("services.extractor.get_llm_client", return_value=mock_llm),
+        patch(
+            "services.extractor.get_embedding_service",
+            return_value=mock_embedding_service,
+        ),
+        patch("services.extractor.get_settings") as mock_settings,
+    ):
         mock_settings.return_value.llm_cache_enabled = False  # Disable cache for tests
         mock_settings.return_value.similarity_threshold = 0.7
         mock_settings.return_value.high_confidence_similarity_threshold = 0.85
@@ -85,7 +90,10 @@ def sample_conversation():
         {"role": "user", "content": "We need to choose a database for our project."},
         {"role": "assistant", "content": "What are your main requirements?"},
         {"role": "user", "content": "We need ACID compliance and good JSON support."},
-        {"role": "assistant", "content": "I recommend PostgreSQL for those requirements."},
+        {
+            "role": "assistant",
+            "content": "I recommend PostgreSQL for those requirements.",
+        },
     ]
     return Conversation(
         messages=messages,
@@ -220,7 +228,7 @@ class TestConfidenceCalibration:
             "options": ["A", "B", "C", "D", "E"],
             "decision": "Selected option A",
             "rationale": "Because option A is better due to performance, compared to others, "
-                        "considering the trade-off between cost and benefit",
+            "considering the trade-off between cost and benefit",
             "confidence": 1.0,
         }
         result = calibrate_confidence(decision)
@@ -310,18 +318,23 @@ class TestDecisionExtraction:
         unique_id = str(uuid4())
         conversation = create_unique_conversation(unique_id)
 
-        mock_llm.set_json_response(unique_id, [
-            {
-                "trigger": "Need to choose a database",
-                "context": "Building a web application",
-                "options": ["PostgreSQL", "MongoDB"],
-                "decision": "Use PostgreSQL",
-                "rationale": "Better for relational data",
-                "confidence": 0.9,
-            }
-        ])
+        mock_llm.set_json_response(
+            unique_id,
+            [
+                {
+                    "trigger": "Need to choose a database",
+                    "context": "Building a web application",
+                    "options": ["PostgreSQL", "MongoDB"],
+                    "decision": "Use PostgreSQL",
+                    "rationale": "Better for relational data",
+                    "confidence": 0.9,
+                }
+            ],
+        )
 
-        decisions = await extractor_with_mocks.extract_decisions(conversation, bypass_cache=True)
+        decisions = await extractor_with_mocks.extract_decisions(
+            conversation, bypass_cache=True
+        )
 
         assert len(decisions) == 1
         assert decisions[0].trigger == "Need to choose a database"
@@ -333,26 +346,31 @@ class TestDecisionExtraction:
         unique_id = str(uuid4())
         conversation = create_unique_conversation(unique_id)
 
-        mock_llm.set_json_response(unique_id, [
-            {
-                "trigger": "Database choice",
-                "context": "Context A",
-                "options": ["PostgreSQL", "MongoDB"],
-                "decision": "PostgreSQL",
-                "rationale": "Rationale A",
-                "confidence": 0.9,
-            },
-            {
-                "trigger": "Framework choice",
-                "context": "Context B",
-                "options": ["FastAPI", "Django"],
-                "decision": "FastAPI",
-                "rationale": "Rationale B",
-                "confidence": 0.85,
-            },
-        ])
+        mock_llm.set_json_response(
+            unique_id,
+            [
+                {
+                    "trigger": "Database choice",
+                    "context": "Context A",
+                    "options": ["PostgreSQL", "MongoDB"],
+                    "decision": "PostgreSQL",
+                    "rationale": "Rationale A",
+                    "confidence": 0.9,
+                },
+                {
+                    "trigger": "Framework choice",
+                    "context": "Context B",
+                    "options": ["FastAPI", "Django"],
+                    "decision": "FastAPI",
+                    "rationale": "Rationale B",
+                    "confidence": 0.85,
+                },
+            ],
+        )
 
-        decisions = await extractor_with_mocks.extract_decisions(conversation, bypass_cache=True)
+        decisions = await extractor_with_mocks.extract_decisions(
+            conversation, bypass_cache=True
+        )
 
         assert len(decisions) == 2
         assert decisions[0].decision == "PostgreSQL"
@@ -366,7 +384,9 @@ class TestDecisionExtraction:
 
         mock_llm.set_json_response(unique_id, [])
 
-        decisions = await extractor_with_mocks.extract_decisions(conversation, bypass_cache=True)
+        decisions = await extractor_with_mocks.extract_decisions(
+            conversation, bypass_cache=True
+        )
 
         assert len(decisions) == 0
 
@@ -378,7 +398,9 @@ class TestDecisionExtraction:
 
         mock_llm.set_response(unique_id, "This is not valid JSON at all")
 
-        decisions = await extractor_with_mocks.extract_decisions(conversation, bypass_cache=True)
+        decisions = await extractor_with_mocks.extract_decisions(
+            conversation, bypass_cache=True
+        )
 
         assert len(decisions) == 0
 
@@ -388,9 +410,13 @@ class TestDecisionExtraction:
         unique_id = str(uuid4())
         conversation = create_unique_conversation(unique_id)
 
-        extractor_with_mocks.llm.generate = AsyncMock(side_effect=Exception("API Error"))
+        extractor_with_mocks.llm.generate = AsyncMock(
+            side_effect=Exception("API Error")
+        )
 
-        decisions = await extractor_with_mocks.extract_decisions(conversation, bypass_cache=True)
+        decisions = await extractor_with_mocks.extract_decisions(
+            conversation, bypass_cache=True
+        )
 
         assert len(decisions) == 0
 
@@ -400,72 +426,94 @@ class TestDecisionExtraction:
         unique_id = str(uuid4())
         conversation = create_unique_conversation(unique_id)
 
-        extractor_with_mocks.llm.generate = AsyncMock(side_effect=TimeoutError("Request timed out"))
+        extractor_with_mocks.llm.generate = AsyncMock(
+            side_effect=TimeoutError("Request timed out")
+        )
 
-        decisions = await extractor_with_mocks.extract_decisions(conversation, bypass_cache=True)
+        decisions = await extractor_with_mocks.extract_decisions(
+            conversation, bypass_cache=True
+        )
 
         assert len(decisions) == 0
 
     @pytest.mark.asyncio
-    async def test_extract_handles_connection_error(self, extractor_with_mocks, mock_llm):
+    async def test_extract_handles_connection_error(
+        self, extractor_with_mocks, mock_llm
+    ):
         """Should return empty list on connection error."""
         unique_id = str(uuid4())
         conversation = create_unique_conversation(unique_id)
 
-        extractor_with_mocks.llm.generate = AsyncMock(side_effect=ConnectionError("Connection failed"))
+        extractor_with_mocks.llm.generate = AsyncMock(
+            side_effect=ConnectionError("Connection failed")
+        )
 
-        decisions = await extractor_with_mocks.extract_decisions(conversation, bypass_cache=True)
+        decisions = await extractor_with_mocks.extract_decisions(
+            conversation, bypass_cache=True
+        )
 
         assert len(decisions) == 0
 
     @pytest.mark.asyncio
-    async def test_extract_filters_empty_decisions(self, extractor_with_mocks, mock_llm):
+    async def test_extract_filters_empty_decisions(
+        self, extractor_with_mocks, mock_llm
+    ):
         """Should filter out decisions with empty decision field."""
         unique_id = str(uuid4())
         conversation = create_unique_conversation(unique_id)
 
-        mock_llm.set_json_response(unique_id, [
-            {
-                "trigger": "Database choice",
-                "context": "Context",
-                "options": ["A", "B"],
-                "decision": "A",
-                "rationale": "Rationale",
-                "confidence": 0.9,
-            },
-            {
-                "trigger": "Another choice",
-                "context": "Context",
-                "options": [],
-                "decision": "",  # Empty - should be filtered
-                "rationale": "",
-                "confidence": 0.5,
-            },
-        ])
+        mock_llm.set_json_response(
+            unique_id,
+            [
+                {
+                    "trigger": "Database choice",
+                    "context": "Context",
+                    "options": ["A", "B"],
+                    "decision": "A",
+                    "rationale": "Rationale",
+                    "confidence": 0.9,
+                },
+                {
+                    "trigger": "Another choice",
+                    "context": "Context",
+                    "options": [],
+                    "decision": "",  # Empty - should be filtered
+                    "rationale": "",
+                    "confidence": 0.5,
+                },
+            ],
+        )
 
-        decisions = await extractor_with_mocks.extract_decisions(conversation, bypass_cache=True)
+        decisions = await extractor_with_mocks.extract_decisions(
+            conversation, bypass_cache=True
+        )
 
         assert len(decisions) == 1
 
     @pytest.mark.asyncio
-    async def test_extract_with_specialized_prompt(self, extractor_with_mocks, mock_llm):
+    async def test_extract_with_specialized_prompt(
+        self, extractor_with_mocks, mock_llm
+    ):
         """Should use specialized prompt for specific decision types."""
         unique_id = str(uuid4())
         conversation = create_unique_conversation(unique_id)
 
-        mock_llm.set_json_response("architecture", [
-            {
-                "trigger": "Architecture decision",
-                "context": "Scalability needs",
-                "options": ["Monolith", "Microservices"],
-                "decision": "Microservices",
-                "rationale": "Better for scaling",
-                "confidence": 0.85,
-                "decision_type": "architecture",
-            }
-        ])
+        mock_llm.set_json_response(
+            "architecture",
+            [
+                {
+                    "trigger": "Architecture decision",
+                    "context": "Scalability needs",
+                    "options": ["Monolith", "Microservices"],
+                    "decision": "Microservices",
+                    "rationale": "Better for scaling",
+                    "confidence": 0.85,
+                    "decision_type": "architecture",
+                }
+            ],
+        )
 
-        decisions = await extractor_with_mocks.extract_decisions(
+        _decisions = await extractor_with_mocks.extract_decisions(
             conversation,
             decision_type=DecisionType.ARCHITECTURE,
             bypass_cache=True,
@@ -487,17 +535,24 @@ class TestEntityExtraction:
     @pytest.mark.asyncio
     async def test_extract_technology_entities(self, extractor_with_mocks, mock_llm):
         """Should extract technology entities."""
-        unique_text = f"We chose PostgreSQL for persistence and Redis for caching {uuid4()}"
+        unique_text = (
+            f"We chose PostgreSQL for persistence and Redis for caching {uuid4()}"
+        )
 
-        mock_llm.set_json_response("postgresql", {
-            "entities": [
-                {"name": "PostgreSQL", "type": "technology", "confidence": 0.95},
-                {"name": "Redis", "type": "technology", "confidence": 0.9},
-            ],
-            "reasoning": "Both are database technologies",
-        })
+        mock_llm.set_json_response(
+            "postgresql",
+            {
+                "entities": [
+                    {"name": "PostgreSQL", "type": "technology", "confidence": 0.95},
+                    {"name": "Redis", "type": "technology", "confidence": 0.9},
+                ],
+                "reasoning": "Both are database technologies",
+            },
+        )
 
-        entities = await extractor_with_mocks.extract_entities(unique_text, bypass_cache=True)
+        entities = await extractor_with_mocks.extract_entities(
+            unique_text, bypass_cache=True
+        )
 
         assert len(entities) == 2
         assert entities[0]["name"] == "PostgreSQL"
@@ -506,17 +561,24 @@ class TestEntityExtraction:
     @pytest.mark.asyncio
     async def test_extract_concept_entities(self, extractor_with_mocks, mock_llm):
         """Should extract concept entities."""
-        unique_text = f"Using microservices architecture with REST API communication {uuid4()}"
+        unique_text = (
+            f"Using microservices architecture with REST API communication {uuid4()}"
+        )
 
-        mock_llm.set_json_response("microservices", {
-            "entities": [
-                {"name": "microservices", "type": "concept", "confidence": 0.85},
-                {"name": "REST API", "type": "concept", "confidence": 0.9},
-            ],
-            "reasoning": "Architectural concepts",
-        })
+        mock_llm.set_json_response(
+            "microservices",
+            {
+                "entities": [
+                    {"name": "microservices", "type": "concept", "confidence": 0.85},
+                    {"name": "REST API", "type": "concept", "confidence": 0.9},
+                ],
+                "reasoning": "Architectural concepts",
+            },
+        )
 
-        entities = await extractor_with_mocks.extract_entities(unique_text, bypass_cache=True)
+        entities = await extractor_with_mocks.extract_entities(
+            unique_text, bypass_cache=True
+        )
 
         assert len(entities) == 2
         assert any(e["type"] == "concept" for e in entities)
@@ -526,14 +588,23 @@ class TestEntityExtraction:
         """Should extract pattern entities."""
         unique_text = f"Implementing the repository pattern for data access {uuid4()}"
 
-        mock_llm.set_json_response("repository pattern", {
-            "entities": [
-                {"name": "repository pattern", "type": "pattern", "confidence": 0.9},
-            ],
-            "reasoning": "Design pattern for data access",
-        })
+        mock_llm.set_json_response(
+            "repository pattern",
+            {
+                "entities": [
+                    {
+                        "name": "repository pattern",
+                        "type": "pattern",
+                        "confidence": 0.9,
+                    },
+                ],
+                "reasoning": "Design pattern for data access",
+            },
+        )
 
-        entities = await extractor_with_mocks.extract_entities(unique_text, bypass_cache=True)
+        entities = await extractor_with_mocks.extract_entities(
+            unique_text, bypass_cache=True
+        )
 
         assert len(entities) == 1
         assert entities[0]["type"] == "pattern"
@@ -543,37 +614,55 @@ class TestEntityExtraction:
         """Should return empty list for text with no entities."""
         unique_text = f"Just a general conversation without technical content {uuid4()}"
 
-        mock_llm.set_json_response(unique_text[:20], {
-            "entities": [],
-            "reasoning": "No technical entities found",
-        })
+        mock_llm.set_json_response(
+            unique_text[:20],
+            {
+                "entities": [],
+                "reasoning": "No technical entities found",
+            },
+        )
 
-        entities = await extractor_with_mocks.extract_entities(unique_text, bypass_cache=True)
+        entities = await extractor_with_mocks.extract_entities(
+            unique_text, bypass_cache=True
+        )
 
         assert len(entities) == 0
 
     @pytest.mark.asyncio
-    async def test_extract_handles_malformed_response(self, extractor_with_mocks, mock_llm):
+    async def test_extract_handles_malformed_response(
+        self, extractor_with_mocks, mock_llm
+    ):
         """Should return empty list for malformed LLM response."""
         unique_text = f"Some technical text {uuid4()}"
 
         mock_llm.set_response(unique_text[:10], "Invalid response without JSON")
 
-        entities = await extractor_with_mocks.extract_entities(unique_text, bypass_cache=True)
+        entities = await extractor_with_mocks.extract_entities(
+            unique_text, bypass_cache=True
+        )
 
         assert len(entities) == 0
 
     @pytest.mark.asyncio
-    async def test_extract_entities_with_bypass_cache(self, extractor_with_mocks, mock_llm):
+    async def test_extract_entities_with_bypass_cache(
+        self, extractor_with_mocks, mock_llm
+    ):
         """Should bypass cache when requested."""
         unique_text = f"Using Python for development {uuid4()}"
 
-        mock_llm.set_json_response("python", {
-            "entities": [{"name": "Python", "type": "technology", "confidence": 0.9}],
-            "reasoning": "Programming language",
-        })
+        mock_llm.set_json_response(
+            "python",
+            {
+                "entities": [
+                    {"name": "Python", "type": "technology", "confidence": 0.9}
+                ],
+                "reasoning": "Programming language",
+            },
+        )
 
-        entities = await extractor_with_mocks.extract_entities(unique_text, bypass_cache=True)
+        entities = await extractor_with_mocks.extract_entities(
+            unique_text, bypass_cache=True
+        )
 
         assert len(entities) == 1
 
@@ -587,19 +676,24 @@ class TestEntityRelationshipExtraction:
     """Test extraction of relationships between entities."""
 
     @pytest.mark.asyncio
-    async def test_extract_alternative_relationship(self, extractor_with_mocks, mock_llm):
+    async def test_extract_alternative_relationship(
+        self, extractor_with_mocks, mock_llm
+    ):
         """Should extract ALTERNATIVE_TO relationship."""
-        mock_llm.set_json_response("identify", {
-            "relationships": [
-                {
-                    "from": "PostgreSQL",
-                    "to": "MongoDB",
-                    "type": "ALTERNATIVE_TO",
-                    "confidence": 0.9,
-                }
-            ],
-            "reasoning": "Both are databases that can be used instead of each other",
-        })
+        mock_llm.set_json_response(
+            "identify",
+            {
+                "relationships": [
+                    {
+                        "from": "PostgreSQL",
+                        "to": "MongoDB",
+                        "type": "ALTERNATIVE_TO",
+                        "confidence": 0.9,
+                    }
+                ],
+                "reasoning": "Both are databases that can be used instead of each other",
+            },
+        )
 
         entities = [
             {"name": "PostgreSQL", "type": "technology"},
@@ -607,26 +701,33 @@ class TestEntityRelationshipExtraction:
         ]
 
         relationships = await extractor_with_mocks.extract_entity_relationships(
-            entities, context=f"Choosing between PostgreSQL and MongoDB {uuid4()}", bypass_cache=True
+            entities,
+            context=f"Choosing between PostgreSQL and MongoDB {uuid4()}",
+            bypass_cache=True,
         )
 
         assert len(relationships) == 1
         assert relationships[0]["type"] == "ALTERNATIVE_TO"
 
     @pytest.mark.asyncio
-    async def test_extract_depends_on_relationship(self, extractor_with_mocks, mock_llm):
+    async def test_extract_depends_on_relationship(
+        self, extractor_with_mocks, mock_llm
+    ):
         """Should extract DEPENDS_ON relationship."""
-        mock_llm.set_json_response("identify", {
-            "relationships": [
-                {
-                    "from": "Next.js",
-                    "to": "React",
-                    "type": "DEPENDS_ON",
-                    "confidence": 0.95,
-                }
-            ],
-            "reasoning": "Next.js is built on React",
-        })
+        mock_llm.set_json_response(
+            "identify",
+            {
+                "relationships": [
+                    {
+                        "from": "Next.js",
+                        "to": "React",
+                        "type": "DEPENDS_ON",
+                        "confidence": 0.95,
+                    }
+                ],
+                "reasoning": "Next.js is built on React",
+            },
+        )
 
         entities = [
             {"name": "Next.js", "type": "technology"},
@@ -634,7 +735,9 @@ class TestEntityRelationshipExtraction:
         ]
 
         relationships = await extractor_with_mocks.extract_entity_relationships(
-            entities, context=f"Building frontend with Next.js {uuid4()}", bypass_cache=True
+            entities,
+            context=f"Building frontend with Next.js {uuid4()}",
+            bypass_cache=True,
         )
 
         assert len(relationships) == 1
@@ -643,14 +746,32 @@ class TestEntityRelationshipExtraction:
     @pytest.mark.asyncio
     async def test_extract_multiple_relationships(self, extractor_with_mocks, mock_llm):
         """Should extract multiple relationships."""
-        mock_llm.set_json_response("identify", {
-            "relationships": [
-                {"from": "PostgreSQL", "to": "database", "type": "IS_A", "confidence": 0.95},
-                {"from": "Redis", "to": "caching", "type": "PART_OF", "confidence": 0.9},
-                {"from": "Redis", "to": "database", "type": "IS_A", "confidence": 0.85},
-            ],
-            "reasoning": "Both are databases with different purposes",
-        })
+        mock_llm.set_json_response(
+            "identify",
+            {
+                "relationships": [
+                    {
+                        "from": "PostgreSQL",
+                        "to": "database",
+                        "type": "IS_A",
+                        "confidence": 0.95,
+                    },
+                    {
+                        "from": "Redis",
+                        "to": "caching",
+                        "type": "PART_OF",
+                        "confidence": 0.9,
+                    },
+                    {
+                        "from": "Redis",
+                        "to": "database",
+                        "type": "IS_A",
+                        "confidence": 0.85,
+                    },
+                ],
+                "reasoning": "Both are databases with different purposes",
+            },
+        )
 
         entities = [
             {"name": "PostgreSQL", "type": "technology"},
@@ -666,7 +787,9 @@ class TestEntityRelationshipExtraction:
         assert len(relationships) == 3
 
     @pytest.mark.asyncio
-    async def test_extract_no_relationships_for_single_entity(self, extractor_with_mocks):
+    async def test_extract_no_relationships_for_single_entity(
+        self, extractor_with_mocks
+    ):
         """Should return empty list for single entity."""
         entities = [{"name": "PostgreSQL", "type": "technology"}]
 
@@ -679,13 +802,16 @@ class TestEntityRelationshipExtraction:
     @pytest.mark.asyncio
     async def test_validates_relationship_types(self, extractor_with_mocks, mock_llm):
         """Should validate and filter invalid relationship types."""
-        mock_llm.set_json_response("identify", {
-            "relationships": [
-                {"from": "A", "to": "B", "type": "INVALID_TYPE", "confidence": 0.9},
-                {"from": "C", "to": "D", "type": "RELATED_TO", "confidence": 0.8},
-            ],
-            "reasoning": "Test relationships",
-        })
+        mock_llm.set_json_response(
+            "identify",
+            {
+                "relationships": [
+                    {"from": "A", "to": "B", "type": "INVALID_TYPE", "confidence": 0.9},
+                    {"from": "C", "to": "D", "type": "RELATED_TO", "confidence": 0.8},
+                ],
+                "reasoning": "Test relationships",
+            },
+        )
 
         entities = [
             {"name": "A", "type": "technology"},
@@ -699,8 +825,11 @@ class TestEntityRelationshipExtraction:
         )
 
         # Invalid type should be converted to RELATED_TO with lower confidence
-        assert all(r["type"] in ["RELATED_TO", "IS_A", "PART_OF", "DEPENDS_ON", "ALTERNATIVE_TO"]
-                   for r in relationships)
+        assert all(
+            r["type"]
+            in ["RELATED_TO", "IS_A", "PART_OF", "DEPENDS_ON", "ALTERNATIVE_TO"]
+            for r in relationships
+        )
 
 
 # ============================================================================
@@ -714,11 +843,14 @@ class TestDecisionRelationshipExtraction:
     @pytest.mark.asyncio
     async def test_detect_supersedes_relationship(self, extractor_with_mocks, mock_llm):
         """Should detect SUPERSEDES relationship."""
-        mock_llm.set_json_response("analyze", {
-            "relationship": "SUPERSEDES",
-            "confidence": 0.9,
-            "reasoning": "New decision explicitly replaces the old one",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "SUPERSEDES",
+                "confidence": 0.9,
+                "reasoning": "New decision explicitly replaces the old one",
+            },
+        )
 
         decision_a = {
             "created_at": "2024-01-01",
@@ -742,13 +874,18 @@ class TestDecisionRelationshipExtraction:
         assert result["confidence"] == 0.9
 
     @pytest.mark.asyncio
-    async def test_detect_contradicts_relationship(self, extractor_with_mocks, mock_llm):
+    async def test_detect_contradicts_relationship(
+        self, extractor_with_mocks, mock_llm
+    ):
         """Should detect CONTRADICTS relationship."""
-        mock_llm.set_json_response("analyze", {
-            "relationship": "CONTRADICTS",
-            "confidence": 0.85,
-            "reasoning": "Decisions recommend conflicting approaches",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "CONTRADICTS",
+                "confidence": 0.85,
+                "reasoning": "Decisions recommend conflicting approaches",
+            },
+        )
 
         decision_a = {
             "created_at": "2024-01-01",
@@ -773,11 +910,14 @@ class TestDecisionRelationshipExtraction:
     @pytest.mark.asyncio
     async def test_detect_no_relationship(self, extractor_with_mocks, mock_llm):
         """Should return None when no significant relationship."""
-        mock_llm.set_json_response("analyze", {
-            "relationship": None,
-            "confidence": 0.0,
-            "reasoning": "Decisions are about different topics",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": None,
+                "confidence": 0.0,
+                "reasoning": "Decisions are about different topics",
+            },
+        )
 
         decision_a = {
             "created_at": "2024-01-01",
@@ -799,12 +939,26 @@ class TestDecisionRelationshipExtraction:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_handles_decision_relationship_error(self, extractor_with_mocks, mock_llm):
+    async def test_handles_decision_relationship_error(
+        self, extractor_with_mocks, mock_llm
+    ):
         """Should return None on error."""
-        extractor_with_mocks.llm.generate = AsyncMock(side_effect=Exception("API Error"))
+        extractor_with_mocks.llm.generate = AsyncMock(
+            side_effect=Exception("API Error")
+        )
 
-        decision_a = {"created_at": "2024-01-01", "trigger": "A", "decision": "A", "rationale": "A"}
-        decision_b = {"created_at": "2024-01-02", "trigger": "B", "decision": "B", "rationale": "B"}
+        decision_a = {
+            "created_at": "2024-01-01",
+            "trigger": "A",
+            "decision": "A",
+            "rationale": "A",
+        }
+        decision_b = {
+            "created_at": "2024-01-02",
+            "trigger": "B",
+            "decision": "B",
+            "rationale": "B",
+        }
 
         result = await extractor_with_mocks.extract_decision_relationship(
             decision_a, decision_b
@@ -824,7 +978,7 @@ class TestLLMResponseCache:
     @pytest.mark.asyncio
     async def test_cache_generates_correct_key(self):
         """Should generate deterministic cache keys."""
-        with patch('services.extractor.get_settings') as mock_settings:
+        with patch("services.extractor.get_settings") as mock_settings:
             mock_settings.return_value.llm_extraction_prompt_version = "v1"
             cache = LLMResponseCache()
 
@@ -844,7 +998,7 @@ class TestLLMResponseCache:
     @pytest.mark.asyncio
     async def test_cache_miss_returns_none(self, mock_redis):
         """Should return None on cache miss."""
-        with patch('services.extractor.get_settings') as mock_settings:
+        with patch("services.extractor.get_settings") as mock_settings:
             mock_settings.return_value.llm_cache_enabled = True
             mock_settings.return_value.redis_url = "redis://localhost:6379"
             mock_settings.return_value.llm_extraction_prompt_version = "v1"
@@ -860,7 +1014,7 @@ class TestLLMResponseCache:
     @pytest.mark.asyncio
     async def test_cache_disabled_returns_none(self):
         """Should return None when cache is disabled."""
-        with patch('services.extractor.get_settings') as mock_settings:
+        with patch("services.extractor.get_settings") as mock_settings:
             mock_settings.return_value.llm_cache_enabled = False
 
             cache = LLMResponseCache()
@@ -915,9 +1069,11 @@ class TestGetExtractor:
 
     def test_creates_singleton_instance(self):
         """Should return the same instance on multiple calls."""
-        with patch('services.extractor.get_llm_client'), \
-             patch('services.extractor.get_embedding_service'), \
-             patch('services.extractor.get_settings') as mock_settings:
+        with (
+            patch("services.extractor.get_llm_client"),
+            patch("services.extractor.get_embedding_service"),
+            patch("services.extractor.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.similarity_threshold = 0.7
             mock_settings.return_value.high_confidence_similarity_threshold = 0.85
 
@@ -928,14 +1084,17 @@ class TestGetExtractor:
 
     def test_creates_extractor_with_dependencies(self):
         """Should create extractor with LLM and embedding service."""
-        with patch('services.extractor.get_llm_client') as mock_llm, \
-             patch('services.extractor.get_embedding_service') as mock_embed, \
-             patch('services.extractor.get_settings') as mock_settings:
+        with (
+            patch("services.extractor.get_llm_client") as _mock_llm,
+            patch("services.extractor.get_embedding_service") as _mock_embed,
+            patch("services.extractor.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.similarity_threshold = 0.7
             mock_settings.return_value.high_confidence_similarity_threshold = 0.85
 
             # Reset singleton
             import services.extractor
+
             services.extractor._extractor = None
 
             extractor = get_extractor()
@@ -956,12 +1115,19 @@ class TestEdgeCases:
         """Should handle unicode text correctly."""
         unique_text = f"使用 PostgreSQL 数据库 emoji:  {uuid4()}"
 
-        mock_llm.set_json_response("postgresql", {
-            "entities": [{"name": "PostgreSQL", "type": "technology", "confidence": 0.9}],
-            "reasoning": "Database",
-        })
+        mock_llm.set_json_response(
+            "postgresql",
+            {
+                "entities": [
+                    {"name": "PostgreSQL", "type": "technology", "confidence": 0.9}
+                ],
+                "reasoning": "Database",
+            },
+        )
 
-        entities = await extractor_with_mocks.extract_entities(unique_text, bypass_cache=True)
+        entities = await extractor_with_mocks.extract_entities(
+            unique_text, bypass_cache=True
+        )
 
         assert len(entities) >= 0  # Should not raise error
 
@@ -979,29 +1145,43 @@ class TestEdgeCases:
         """Should handle very long text."""
         long_text = f"PostgreSQL {uuid4()} " * 1000  # Very long text
 
-        mock_llm.set_json_response("postgresql", {
-            "entities": [{"name": "PostgreSQL", "type": "technology", "confidence": 0.9}],
-            "reasoning": "Found in long text",
-        })
+        mock_llm.set_json_response(
+            "postgresql",
+            {
+                "entities": [
+                    {"name": "PostgreSQL", "type": "technology", "confidence": 0.9}
+                ],
+                "reasoning": "Found in long text",
+            },
+        )
 
-        entities = await extractor_with_mocks.extract_entities(long_text, bypass_cache=True)
+        entities = await extractor_with_mocks.extract_entities(
+            long_text, bypass_cache=True
+        )
 
         # Should not raise error
         assert isinstance(entities, list)
 
     @pytest.mark.asyncio
-    async def test_extract_with_markdown_json_response(self, extractor_with_mocks, mock_llm):
+    async def test_extract_with_markdown_json_response(
+        self, extractor_with_mocks, mock_llm
+    ):
         """Should parse JSON wrapped in markdown code blocks."""
         unique_text = f"Using Python {uuid4()}"
 
-        mock_llm.set_response("python", '''```json
+        mock_llm.set_response(
+            "python",
+            """```json
 {
     "entities": [{"name": "Python", "type": "technology", "confidence": 0.9}],
     "reasoning": "Programming language"
 }
-```''')
+```""",
+        )
 
-        entities = await extractor_with_mocks.extract_entities(unique_text, bypass_cache=True)
+        entities = await extractor_with_mocks.extract_entities(
+            unique_text, bypass_cache=True
+        )
 
         assert len(entities) == 1
         assert entities[0]["name"] == "Python"

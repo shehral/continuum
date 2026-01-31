@@ -52,8 +52,8 @@ def create_mock_settings():
 @pytest.fixture
 def embedding_service(mock_openai_client):
     """Create EmbeddingService with mock client."""
-    with patch('services.embeddings.AsyncOpenAI', return_value=mock_openai_client):
-        with patch('services.embeddings.get_settings') as mock_settings:
+    with patch("services.embeddings.AsyncOpenAI", return_value=mock_openai_client):
+        with patch("services.embeddings.get_settings") as mock_settings:
             mock_settings.return_value = create_mock_settings()
             service = EmbeddingService()
             service.client = mock_openai_client
@@ -71,7 +71,9 @@ class TestEmbedText:
     """Test single text embedding."""
 
     @pytest.mark.asyncio
-    async def test_returns_embedding_vector(self, embedding_service, mock_openai_client):
+    async def test_returns_embedding_vector(
+        self, embedding_service, mock_openai_client
+    ):
         """Should return embedding vector for text."""
         embedding = await embedding_service.embed_text("Test text")
 
@@ -80,7 +82,9 @@ class TestEmbedText:
         assert all(isinstance(x, float) for x in embedding)
 
     @pytest.mark.asyncio
-    async def test_calls_api_with_correct_params(self, embedding_service, mock_openai_client):
+    async def test_calls_api_with_correct_params(
+        self, embedding_service, mock_openai_client
+    ):
         """Should call API with correct parameters."""
         await embedding_service.embed_text("Sample text", input_type="query")
 
@@ -106,7 +110,9 @@ class TestEmbedText:
         assert call_kwargs["extra_body"]["input_type"] == "query"
 
     @pytest.mark.asyncio
-    async def test_default_input_type_is_passage(self, embedding_service, mock_openai_client):
+    async def test_default_input_type_is_passage(
+        self, embedding_service, mock_openai_client
+    ):
         """Should default to passage input type."""
         await embedding_service.embed_text("Default type text")
 
@@ -123,7 +129,9 @@ class TestEmbedTexts:
     """Test batch text embedding."""
 
     @pytest.mark.asyncio
-    async def test_returns_list_of_embeddings(self, embedding_service, mock_openai_client):
+    async def test_returns_list_of_embeddings(
+        self, embedding_service, mock_openai_client
+    ):
         """Should return list of embedding vectors."""
         # Mock response for batch
         response = MagicMock()
@@ -146,12 +154,16 @@ class TestEmbedTexts:
         texts = [f"Text number {i:04d} is long enough for the cache" for i in range(25)]
 
         def create_response_with_correct_size(*args, **kwargs):
-            batch_input = kwargs.get('input', [])
+            batch_input = kwargs.get("input", [])
             response = MagicMock()
-            response.data = [MagicMock(embedding=[0.1] * 2048) for _ in range(len(batch_input))]
+            response.data = [
+                MagicMock(embedding=[0.1] * 2048) for _ in range(len(batch_input))
+            ]
             return response
 
-        mock_openai_client.embeddings.create = AsyncMock(side_effect=create_response_with_correct_size)
+        mock_openai_client.embeddings.create = AsyncMock(
+            side_effect=create_response_with_correct_size
+        )
 
         await embedding_service.embed_texts(texts, batch_size=10)
 
@@ -159,18 +171,24 @@ class TestEmbedTexts:
         assert mock_openai_client.embeddings.create.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_respects_custom_batch_size(self, embedding_service, mock_openai_client):
+    async def test_respects_custom_batch_size(
+        self, embedding_service, mock_openai_client
+    ):
         """Should use custom batch size."""
         # Use longer texts to exceed min_text_length threshold
         texts = [f"Text number {i:04d} is long enough" for i in range(10)]
 
         def create_response_with_correct_size(*args, **kwargs):
-            batch_input = kwargs.get('input', [])
+            batch_input = kwargs.get("input", [])
             response = MagicMock()
-            response.data = [MagicMock(embedding=[0.1] * 2048) for _ in range(len(batch_input))]
+            response.data = [
+                MagicMock(embedding=[0.1] * 2048) for _ in range(len(batch_input))
+            ]
             return response
 
-        mock_openai_client.embeddings.create = AsyncMock(side_effect=create_response_with_correct_size)
+        mock_openai_client.embeddings.create = AsyncMock(
+            side_effect=create_response_with_correct_size
+        )
 
         await embedding_service.embed_texts(texts, batch_size=5)
 
@@ -178,7 +196,9 @@ class TestEmbedTexts:
         assert mock_openai_client.embeddings.create.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_empty_list_returns_empty(self, embedding_service, mock_openai_client):
+    async def test_empty_list_returns_empty(
+        self, embedding_service, mock_openai_client
+    ):
         """Should return empty list for empty input."""
         embeddings = await embedding_service.embed_texts([])
 
@@ -195,7 +215,9 @@ class TestEmbedDecision:
     """Test decision embedding."""
 
     @pytest.mark.asyncio
-    async def test_combines_decision_fields(self, embedding_service, mock_openai_client):
+    async def test_combines_decision_fields(
+        self, embedding_service, mock_openai_client
+    ):
         """Should combine all decision fields for embedding."""
         decision = {
             "trigger": "Need to choose a database",
@@ -304,14 +326,18 @@ class TestSemanticSearch:
         response.data = [MagicMock(embedding=[0.9] * 2048)]
         mock_openai_client.embeddings.create = AsyncMock(return_value=response)
 
-        results = await embedding_service.semantic_search("PostgreSQL", candidates, top_k=2)
+        results = await embedding_service.semantic_search(
+            "PostgreSQL", candidates, top_k=2
+        )
 
         assert len(results) == 2
         # Results should be ordered by similarity
         assert results[0]["similarity"] >= results[1]["similarity"]
 
     @pytest.mark.asyncio
-    async def test_includes_similarity_score(self, embedding_service, mock_openai_client):
+    async def test_includes_similarity_score(
+        self, embedding_service, mock_openai_client
+    ):
         """Should include similarity score in results."""
         candidates = [
             {"id": "1", "text": "Test", "embedding": [0.5] * 2048},
@@ -327,7 +353,9 @@ class TestSemanticSearch:
         assert 0 <= results[0]["similarity"] <= 1
 
     @pytest.mark.asyncio
-    async def test_skips_candidates_without_embedding(self, embedding_service, mock_openai_client):
+    async def test_skips_candidates_without_embedding(
+        self, embedding_service, mock_openai_client
+    ):
         """Should skip candidates missing embedding field."""
         candidates = [
             {"id": "1", "text": "Has embedding", "embedding": [0.5] * 2048},
@@ -354,7 +382,9 @@ class TestSemanticSearch:
         assert call_kwargs["extra_body"]["input_type"] == "query"
 
     @pytest.mark.asyncio
-    async def test_empty_candidates_returns_empty(self, embedding_service, mock_openai_client):
+    async def test_empty_candidates_returns_empty(
+        self, embedding_service, mock_openai_client
+    ):
         """Should return empty list for no candidates."""
         results = await embedding_service.semantic_search("Query", [])
 
@@ -411,8 +441,9 @@ class TestCosineSimilarity:
     def test_normalized_vectors(self):
         """Should handle normalized vectors correctly."""
         import math
+
         # Create a normalized vector
-        vec = [1/math.sqrt(3), 1/math.sqrt(3), 1/math.sqrt(3)]
+        vec = [1 / math.sqrt(3), 1 / math.sqrt(3), 1 / math.sqrt(3)]
         result = cosine_similarity(vec, vec)
 
         assert abs(result - 1.0) < 0.0001
@@ -447,10 +478,11 @@ class TestGetEmbeddingService:
         """Should return EmbeddingService instance."""
         # Reset singleton
         import services.embeddings
+
         services.embeddings._embedding_service = None
 
-        with patch('services.embeddings.AsyncOpenAI'):
-            with patch('services.embeddings.get_settings') as mock_settings:
+        with patch("services.embeddings.AsyncOpenAI"):
+            with patch("services.embeddings.get_settings") as mock_settings:
                 mock_settings.return_value = create_mock_settings()
                 service = get_embedding_service()
 
@@ -459,10 +491,11 @@ class TestGetEmbeddingService:
     def test_returns_same_instance(self):
         """Should return same instance on subsequent calls."""
         import services.embeddings
+
         services.embeddings._embedding_service = None
 
-        with patch('services.embeddings.AsyncOpenAI'):
-            with patch('services.embeddings.get_settings') as mock_settings:
+        with patch("services.embeddings.AsyncOpenAI"):
+            with patch("services.embeddings.get_settings") as mock_settings:
                 mock_settings.return_value = create_mock_settings()
                 service1 = get_embedding_service()
                 service2 = get_embedding_service()

@@ -36,6 +36,7 @@ CHARS_PER_TOKEN_ESTIMATE = 4  # Rough estimate
 @dataclass
 class BatchItem:
     """Single item in a batch processing job."""
+
     id: str
     text: str
     source: str = ""
@@ -47,6 +48,7 @@ class BatchItem:
 @dataclass
 class BatchResult:
     """Result of a batch processing job."""
+
     batch_id: str
     total_items: int
     successful: int
@@ -113,9 +115,7 @@ class BatchProcessor:
         return len(text) // CHARS_PER_TOKEN_ESTIMATE + 1
 
     def _create_text_batches(
-        self,
-        texts: list[str],
-        max_tokens: int = MAX_TOKENS_PER_BATCH
+        self, texts: list[str], max_tokens: int = MAX_TOKENS_PER_BATCH
     ) -> list[list[tuple[int, str]]]:
         """Split texts into batches respecting token limits.
 
@@ -165,7 +165,7 @@ class BatchProcessor:
         for idx, text in batch:
             # Truncate very long texts and use 1-based indexing
             truncated = text[:1000] if len(text) > 1000 else text
-            lines.append(f"Text {idx + 1}: \"{truncated}\"")
+            lines.append(f'Text {idx + 1}: "{truncated}"')
         return "\n".join(lines)
 
     async def extract_entities_batch(
@@ -218,7 +218,9 @@ class BatchProcessor:
         # Process each batch
         extractor = get_extractor()
 
-        async def process_batch(batch: list[tuple[int, str]]) -> list[tuple[int, list[dict]]]:
+        async def process_batch(
+            batch: list[tuple[int, str]],
+        ) -> list[tuple[int, list[dict]]]:
             """Process a single batch with rate limiting."""
             async with self._semaphore:
                 batch_results = []
@@ -241,7 +243,9 @@ class BatchProcessor:
                     if parsed is None:
                         # Fallback to individual processing
                         for local_idx, text in batch:
-                            entities = await extractor.extract_entities(text, bypass_cache=True)
+                            entities = await extractor.extract_entities(
+                                text, bypass_cache=True
+                            )
                             await self.cache.set(text, "entities", entities)
                             batch_results.append((local_idx, entities))
                         return batch_results
@@ -251,7 +255,11 @@ class BatchProcessor:
                         key = str(local_idx + 1)  # 1-based in prompt
                         if key in parsed:
                             entry = parsed[key]
-                            entities = entry.get("entities", []) if isinstance(entry, dict) else []
+                            entities = (
+                                entry.get("entities", [])
+                                if isinstance(entry, dict)
+                                else []
+                            )
                         else:
                             entities = []
                         await self.cache.set(text, "entities", entities)
@@ -262,7 +270,9 @@ class BatchProcessor:
                     # Fallback to individual processing
                     for local_idx, text in batch:
                         try:
-                            entities = await extractor.extract_entities(text, bypass_cache=True)
+                            entities = await extractor.extract_entities(
+                                text, bypass_cache=True
+                            )
                             await self.cache.set(text, "entities", entities)
                         except Exception:
                             entities = []
@@ -272,8 +282,7 @@ class BatchProcessor:
 
         # Process all batches
         all_batch_results = await asyncio.gather(
-            *[process_batch(batch) for batch in batches],
-            return_exceptions=True
+            *[process_batch(batch) for batch in batches], return_exceptions=True
         )
 
         # Collect results
@@ -309,11 +318,13 @@ class BatchProcessor:
 
         # Create batch items
         for file_path in file_paths:
-            items.append(BatchItem(
-                id=str(uuid4()),
-                text="",  # Will be populated after parsing
-                source=file_path,
-            ))
+            items.append(
+                BatchItem(
+                    id=str(uuid4()),
+                    text="",  # Will be populated after parsing
+                    source=file_path,
+                )
+            )
 
         # Process files
         extractor = get_extractor()
@@ -328,7 +339,10 @@ class BatchProcessor:
                     # Parse the log file
                     conversations = parse_claude_log(file_path)
                     if not conversations:
-                        item.result = {"decisions": [], "message": "No conversations found"}
+                        item.result = {
+                            "decisions": [],
+                            "message": "No conversations found",
+                        }
                         return
 
                     # Process the first conversation (most recent)
@@ -378,9 +392,7 @@ class BatchProcessor:
 
         # Calculate total decisions extracted
         total_decisions = sum(
-            len(item.result.get("decisions", []))
-            for item in items
-            if item.result
+            len(item.result.get("decisions", [])) for item in items if item.result
         )
 
         logger.info(

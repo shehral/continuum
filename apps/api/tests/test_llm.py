@@ -207,12 +207,14 @@ class TestLLMClient:
     @pytest.mark.asyncio
     async def test_generate_success(self, mock_openai_response):
         """Should generate completion successfully."""
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=mock_openai_response)
+            mock_client.chat.completions.create = AsyncMock(
+                return_value=mock_openai_response
+            )
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 mock_pipe.execute = AsyncMock(return_value=[None, 5, None, None])
@@ -227,12 +229,14 @@ class TestLLMClient:
     @pytest.mark.asyncio
     async def test_generate_with_system_prompt(self, mock_openai_response):
         """Should include system prompt in messages."""
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.chat.completions.create = AsyncMock(return_value=mock_openai_response)
+            mock_client.chat.completions.create = AsyncMock(
+                return_value=mock_openai_response
+            )
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 mock_pipe.execute = AsyncMock(return_value=[None, 5, None, None])
@@ -244,18 +248,18 @@ class TestLLMClient:
 
                 # Verify system prompt was included
                 call_args = mock_client.chat.completions.create.call_args
-                messages = call_args.kwargs['messages']
-                assert messages[0]['role'] == 'system'
-                assert messages[0]['content'] == 'You are helpful'
+                messages = call_args.kwargs["messages"]
+                assert messages[0]["role"] == "system"
+                assert messages[0]["content"] == "You are helpful"
 
     @pytest.mark.asyncio
     async def test_generate_rate_limited(self):
         """Should raise exception when rate limited."""
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 # Always at limit
@@ -274,14 +278,16 @@ class TestLLMClient:
         """Should strip thinking tags from response."""
         response = MagicMock()
         response.choices = [MagicMock()]
-        response.choices[0].message.content = "<think>reasoning here</think>actual answer"
+        response.choices[
+            0
+        ].message.content = "<think>reasoning here</think>actual answer"
 
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=response)
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 mock_pipe.execute = AsyncMock(return_value=[None, 5, None, None])
@@ -306,14 +312,14 @@ class TestLLMEdgeCases:
     @pytest.mark.asyncio
     async def test_timeout_handling(self):
         """Should handle API timeout errors."""
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(
                 side_effect=APITimeoutError(request=MagicMock())
             )
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 mock_pipe.execute = AsyncMock(return_value=[None, 5, None, None])
@@ -332,7 +338,7 @@ class TestLLMEdgeCases:
         response_ok.choices = [MagicMock()]
         response_ok.choices[0].message.content = "Success after retry"
 
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             # First call: 429 error, second call: success
             mock_response = MagicMock()
@@ -349,14 +355,14 @@ class TestLLMEdgeCases:
             )
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 mock_pipe.execute = AsyncMock(return_value=[None, 5, None, None])
                 mock_redis.pipeline = MagicMock(return_value=mock_pipe)
                 mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
-                with patch('services.llm.asyncio.sleep', new_callable=AsyncMock):
+                with patch("services.llm.asyncio.sleep", new_callable=AsyncMock):
                     client = LLMClient()
                     result = await client.generate("Test prompt", max_retries=3)
 
@@ -369,12 +375,12 @@ class TestLLMEdgeCases:
         response.choices = [MagicMock()]
         response.choices[0].message.content = None  # Null content
 
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=response)
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 mock_pipe.execute = AsyncMock(return_value=[None, 5, None, None])
@@ -394,12 +400,12 @@ class TestLLMEdgeCases:
         response.choices = [MagicMock()]
         response.choices[0].message.content = ""
 
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(return_value=response)
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 mock_pipe.execute = AsyncMock(return_value=[None, 5, None, None])
@@ -414,7 +420,7 @@ class TestLLMEdgeCases:
     @pytest.mark.asyncio
     async def test_retry_logic_exhaustion(self):
         """Should fail after exhausting all retries."""
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.status_code = 503
@@ -427,14 +433,14 @@ class TestLLMEdgeCases:
             )
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 mock_pipe.execute = AsyncMock(return_value=[None, 5, None, None])
                 mock_redis.pipeline = MagicMock(return_value=mock_pipe)
                 mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
-                with patch('services.llm.asyncio.sleep', new_callable=AsyncMock):
+                with patch("services.llm.asyncio.sleep", new_callable=AsyncMock):
                     client = LLMClient()
 
                     with pytest.raises(APIStatusError):
@@ -443,7 +449,7 @@ class TestLLMEdgeCases:
     @pytest.mark.asyncio
     async def test_non_retryable_error_not_retried(self):
         """Should not retry non-retryable errors (e.g., 400, 401)."""
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.status_code = 400  # Bad request - not retryable
@@ -456,7 +462,7 @@ class TestLLMEdgeCases:
             )
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 mock_pipe.execute = AsyncMock(return_value=[None, 5, None, None])
@@ -478,7 +484,7 @@ class TestLLMEdgeCases:
         response_ok.choices = [MagicMock()]
         response_ok.choices[0].message.content = "Success"
 
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.chat.completions.create = AsyncMock(
                 side_effect=[
@@ -488,14 +494,14 @@ class TestLLMEdgeCases:
             )
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 mock_pipe.execute = AsyncMock(return_value=[None, 5, None, None])
                 mock_redis.pipeline = MagicMock(return_value=mock_pipe)
                 mock_redis_module.from_url = MagicMock(return_value=mock_redis)
 
-                with patch('services.llm.asyncio.sleep', new_callable=AsyncMock):
+                with patch("services.llm.asyncio.sleep", new_callable=AsyncMock):
                     client = LLMClient()
                     result = await client.generate("Test prompt", max_retries=3)
 
@@ -510,8 +516,8 @@ class TestLLMEdgeCases:
     @pytest.mark.asyncio
     async def test_backoff_calculation(self):
         """Should calculate exponential backoff with jitter."""
-        with patch('services.llm.AsyncOpenAI'):
-            with patch('services.llm.redis'):
+        with patch("services.llm.AsyncOpenAI"):
+            with patch("services.llm.redis"):
                 client = LLMClient()
 
                 # Test backoff increases with attempts
@@ -538,7 +544,7 @@ class TestDecisionExtractor:
     @pytest.mark.asyncio
     async def test_extract_decisions_parses_json(self):
         """Should parse JSON response into DecisionCreate objects."""
-        mock_response = '''[
+        mock_response = """[
             {
                 "trigger": "Need to choose a database",
                 "context": "Building a new application",
@@ -547,9 +553,9 @@ class TestDecisionExtractor:
                 "rationale": "Better for relational data",
                 "confidence": 0.9
             }
-        ]'''
+        ]"""
 
-        with patch('services.extractor.get_llm_client') as mock_get_client:
+        with patch("services.extractor.get_llm_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.generate = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
@@ -558,7 +564,9 @@ class TestDecisionExtractor:
 
             # Create a mock conversation
             mock_conversation = MagicMock()
-            mock_conversation.get_full_text = MagicMock(return_value="Test conversation")
+            mock_conversation.get_full_text = MagicMock(
+                return_value="Test conversation"
+            )
 
             decisions = await extractor.extract_decisions(mock_conversation)
 
@@ -570,7 +578,7 @@ class TestDecisionExtractor:
     @pytest.mark.asyncio
     async def test_extract_decisions_handles_markdown(self):
         """Should handle markdown-wrapped JSON response."""
-        mock_response = '''```json
+        mock_response = """```json
 [
     {
         "trigger": "Test",
@@ -581,9 +589,9 @@ class TestDecisionExtractor:
         "confidence": 0.8
     }
 ]
-```'''
+```"""
 
-        with patch('services.extractor.get_llm_client') as mock_get_client:
+        with patch("services.extractor.get_llm_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.generate = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
@@ -600,15 +608,15 @@ class TestDecisionExtractor:
     @pytest.mark.asyncio
     async def test_extract_entities(self):
         """Should extract entities from text."""
-        mock_response = '''{
+        mock_response = """{
             "entities": [
                 {"name": "PostgreSQL", "type": "technology", "confidence": 0.95},
                 {"name": "Caching", "type": "concept", "confidence": 0.85}
             ],
             "reasoning": "PostgreSQL is a database technology, caching is a concept"
-        }'''
+        }"""
 
-        with patch('services.extractor.get_llm_client') as mock_get_client:
+        with patch("services.extractor.get_llm_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.generate = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
@@ -625,7 +633,7 @@ class TestDecisionExtractor:
     @pytest.mark.asyncio
     async def test_extract_decisions_handles_error(self):
         """Should return empty list on error (with cache bypassed)."""
-        with patch('services.extractor.get_llm_client') as mock_get_client:
+        with patch("services.extractor.get_llm_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.generate = AsyncMock(side_effect=Exception("API Error"))
             mock_get_client.return_value = mock_client
@@ -635,7 +643,9 @@ class TestDecisionExtractor:
             mock_conversation.get_full_text = MagicMock(return_value="Test")
 
             # Bypass cache to ensure we test the LLM error path
-            decisions = await extractor.extract_decisions(mock_conversation, bypass_cache=True)
+            decisions = await extractor.extract_decisions(
+                mock_conversation, bypass_cache=True
+            )
 
             assert decisions == []
 
@@ -644,7 +654,7 @@ class TestDecisionExtractor:
         """Should handle malformed JSON in entity extraction."""
         mock_response = "not valid json {"
 
-        with patch('services.extractor.get_llm_client') as mock_get_client:
+        with patch("services.extractor.get_llm_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.generate = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
@@ -675,26 +685,45 @@ class TestInterviewAgent:
         agent = InterviewAgent()
 
         # Short conversation uses heuristic - 1 response goes to CONTEXT
-        history = [{"role": "user", "content": "We had a problem and needed to fix an issue."}]
+        history = [
+            {"role": "user", "content": "We had a problem and needed to fix an issue."}
+        ]
         assert agent._determine_next_state(history) == InterviewState.CONTEXT
 
         # With trigger and context info, should move to OPTIONS
-        history.append({"role": "user", "content": "We already had a system with budget constraints."})
+        history.append(
+            {
+                "role": "user",
+                "content": "We already had a system with budget constraints.",
+            }
+        )
         state = agent._determine_next_state(history)
         assert state == InterviewState.OPTIONS
 
         # With options added, should move to DECISION
-        history.append({"role": "user", "content": "We considered several alternatives and options."})
+        history.append(
+            {
+                "role": "user",
+                "content": "We considered several alternatives and options.",
+            }
+        )
         state = agent._determine_next_state(history)
         assert state == InterviewState.DECISION
 
         # With decision added, should move to RATIONALE
-        history.append({"role": "user", "content": "We ultimately decided to use PostgreSQL."})
+        history.append(
+            {"role": "user", "content": "We ultimately decided to use PostgreSQL."}
+        )
         state = agent._determine_next_state(history)
         assert state == InterviewState.RATIONALE
 
         # With rationale, should move to SUMMARIZING
-        history.append({"role": "user", "content": "We chose this because of the benefits and trade-offs."})
+        history.append(
+            {
+                "role": "user",
+                "content": "We chose this because of the benefits and trade-offs.",
+            }
+        )
         state = agent._determine_next_state(history)
         assert state == InterviewState.SUMMARIZING
 
@@ -708,35 +737,40 @@ class TestInterviewAgent:
     @pytest.mark.asyncio
     async def test_process_message(self):
         """Should process message and return response with entities."""
-        with patch('agents.interview.get_llm_client') as mock_get_client:
+        with patch("agents.interview.get_llm_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.generate = AsyncMock(return_value="That's interesting! Tell me more about the context.")
+            mock_client.generate = AsyncMock(
+                return_value="That's interesting! Tell me more about the context."
+            )
             mock_get_client.return_value = mock_client
 
-            with patch.object(DecisionExtractor, 'extract_entities', new_callable=AsyncMock) as mock_extract:
+            with patch.object(
+                DecisionExtractor, "extract_entities", new_callable=AsyncMock
+            ) as mock_extract:
                 mock_extract.return_value = []
 
                 agent = InterviewAgent()
                 response, entities = await agent.process_message(
-                    "I needed to choose a database",
-                    []
+                    "I needed to choose a database", []
                 )
 
-                assert "interesting" in response.lower() or "context" in response.lower()
+                assert (
+                    "interesting" in response.lower() or "context" in response.lower()
+                )
 
     @pytest.mark.asyncio
     async def test_synthesize_decision(self):
         """Should synthesize decision from conversation history."""
-        mock_response = '''{
+        mock_response = """{
             "trigger": "Choose database",
             "context": "New project",
             "options": ["PostgreSQL", "MongoDB"],
             "decision": "PostgreSQL",
             "rationale": "Relational data needs",
             "confidence": 0.85
-        }'''
+        }"""
 
-        with patch('agents.interview.get_llm_client') as mock_get_client:
+        with patch("agents.interview.get_llm_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.generate = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client

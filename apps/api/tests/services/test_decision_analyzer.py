@@ -38,7 +38,7 @@ def mock_llm():
 @pytest.fixture
 def analyzer(mock_session, mock_llm):
     """Create DecisionAnalyzer with mocks."""
-    with patch('services.decision_analyzer.get_llm_client', return_value=mock_llm):
+    with patch("services.decision_analyzer.get_llm_client", return_value=mock_llm):
         analyzer = DecisionAnalyzer(mock_session)
         analyzer.llm = mock_llm
         return analyzer
@@ -55,11 +55,14 @@ class TestDecisionAnalyzerPairAnalysis:
     @pytest.mark.asyncio
     async def test_detects_supersedes_relationship(self, analyzer, mock_llm):
         """Should detect when newer decision supersedes older one."""
-        mock_llm.set_json_response("analyze", {
-            "relationship": "SUPERSEDES",
-            "confidence": 0.9,
-            "reasoning": "New decision explicitly replaces old one",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "SUPERSEDES",
+                "confidence": 0.9,
+                "reasoning": "New decision explicitly replaces old one",
+            },
+        )
 
         older, newer = DecisionFactory.create_pair_for_comparison()
 
@@ -72,11 +75,14 @@ class TestDecisionAnalyzerPairAnalysis:
     @pytest.mark.asyncio
     async def test_detects_contradicts_relationship(self, analyzer, mock_llm):
         """Should detect when decisions contradict each other."""
-        mock_llm.set_json_response("analyze", {
-            "relationship": "CONTRADICTS",
-            "confidence": 0.85,
-            "reasoning": "Decisions recommend opposite approaches",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "CONTRADICTS",
+                "confidence": 0.85,
+                "reasoning": "Decisions recommend opposite approaches",
+            },
+        )
 
         decision_a = DecisionFactory.create(
             decision="Use PostgreSQL",
@@ -96,11 +102,14 @@ class TestDecisionAnalyzerPairAnalysis:
     @pytest.mark.asyncio
     async def test_returns_none_for_unrelated_decisions(self, analyzer, mock_llm):
         """Should return None when decisions are not related."""
-        mock_llm.set_json_response("analyze", {
-            "relationship": "NONE",
-            "confidence": 0.0,
-            "reasoning": "Different topics",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "NONE",
+                "confidence": 0.0,
+                "reasoning": "Different topics",
+            },
+        )
 
         decision_a = DecisionFactory.create(trigger="Database choice")
         decision_b = DecisionFactory.create(trigger="UI framework choice")
@@ -136,13 +145,16 @@ class TestDecisionAnalyzerPairAnalysis:
     @pytest.mark.asyncio
     async def test_handles_markdown_wrapped_json(self, analyzer, mock_llm):
         """Should parse JSON wrapped in markdown code blocks."""
-        mock_llm.set_response("analyze", '''```json
+        mock_llm.set_response(
+            "analyze",
+            """```json
 {
     "relationship": "SUPERSEDES",
     "confidence": 0.88,
     "reasoning": "Explicit replacement"
 }
-```''')
+```""",
+        )
 
         older, newer = DecisionFactory.create_pair_for_comparison()
 
@@ -207,11 +219,14 @@ class TestDecisionAnalyzerBatch:
         mock_session.set_response("DecisionTrace", records=decisions)
 
         # Only PostgreSQL decisions are related (share 2 entities)
-        mock_llm.set_json_response("analyze", {
-            "relationship": "SUPERSEDES",
-            "confidence": 0.8,
-            "reasoning": "Later decision supersedes earlier",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "SUPERSEDES",
+                "confidence": 0.8,
+                "reasoning": "Later decision supersedes earlier",
+            },
+        )
 
         results = await analyzer.analyze_all_pairs()
 
@@ -220,7 +235,9 @@ class TestDecisionAnalyzerBatch:
         # d3 should not be compared (different entity group)
 
     @pytest.mark.asyncio
-    async def test_avoids_duplicate_pair_analysis(self, analyzer, mock_session, mock_llm):
+    async def test_avoids_duplicate_pair_analysis(
+        self, analyzer, mock_session, mock_llm
+    ):
         """Should not analyze same pair twice."""
         decisions = [
             DecisionFactory.create(
@@ -236,11 +253,14 @@ class TestDecisionAnalyzerBatch:
         ]
 
         mock_session.set_response("DecisionTrace", records=decisions)
-        mock_llm.set_json_response("analyze", {
-            "relationship": "NONE",
-            "confidence": 0.0,
-            "reasoning": "Compatible decisions",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "NONE",
+                "confidence": 0.0,
+                "reasoning": "Compatible decisions",
+            },
+        )
 
         await analyzer.analyze_all_pairs()
 
@@ -349,15 +369,19 @@ class TestDecisionAnalyzerContradictions:
 
         mock_session.run = mock_run
 
-        with patch('services.decision_analyzer.get_llm_client', return_value=mock_llm):
+        with patch("services.decision_analyzer.get_llm_client", return_value=mock_llm):
             analyzer = DecisionAnalyzer(mock_session)
-            contradictions = await analyzer.detect_contradictions_for_decision("decision-id")
+            contradictions = await analyzer.detect_contradictions_for_decision(
+                "decision-id"
+            )
 
         assert len(contradictions) == 1
         assert contradictions[0]["confidence"] == 0.9
 
     @pytest.mark.asyncio
-    async def test_analyzes_when_no_existing_contradictions(self, mock_session, mock_llm):
+    async def test_analyzes_when_no_existing_contradictions(
+        self, mock_session, mock_llm
+    ):
         """Should analyze similar decisions when no existing contradictions."""
         target_decision = {
             "id": "target-id",
@@ -392,16 +416,21 @@ class TestDecisionAnalyzerContradictions:
 
         mock_session.run = mock_run
 
-        mock_llm.set_json_response("analyze", {
-            "relationship": "CONTRADICTS",
-            "confidence": 0.8,
-            "reasoning": "Different database philosophies",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "CONTRADICTS",
+                "confidence": 0.8,
+                "reasoning": "Different database philosophies",
+            },
+        )
 
-        with patch('services.decision_analyzer.get_llm_client', return_value=mock_llm):
+        with patch("services.decision_analyzer.get_llm_client", return_value=mock_llm):
             analyzer = DecisionAnalyzer(mock_session)
             analyzer.llm = mock_llm
-            contradictions = await analyzer.detect_contradictions_for_decision("target-id")
+            contradictions = await analyzer.detect_contradictions_for_decision(
+                "target-id"
+            )
 
         # May find contradictions depending on analysis
         assert isinstance(contradictions, list)
@@ -627,7 +656,7 @@ class TestDecisionAnalyzerConfidence:
 
     def test_default_confidence_threshold(self, mock_session, mock_llm):
         """Should have default minimum confidence of 0.6."""
-        with patch('services.decision_analyzer.get_llm_client', return_value=mock_llm):
+        with patch("services.decision_analyzer.get_llm_client", return_value=mock_llm):
             analyzer = DecisionAnalyzer(mock_session)
 
         assert analyzer.min_confidence == 0.6
@@ -654,13 +683,16 @@ class TestDecisionAnalyzerConfidence:
         mock_session.run = mock_run
 
         # Return low confidence result
-        mock_llm.set_json_response("analyze", {
-            "relationship": "SUPERSEDES",
-            "confidence": 0.3,  # Below 0.6 threshold
-            "reasoning": "Weak connection",
-        })
+        mock_llm.set_json_response(
+            "analyze",
+            {
+                "relationship": "SUPERSEDES",
+                "confidence": 0.3,  # Below 0.6 threshold
+                "reasoning": "Weak connection",
+            },
+        )
 
-        with patch('services.decision_analyzer.get_llm_client', return_value=mock_llm):
+        with patch("services.decision_analyzer.get_llm_client", return_value=mock_llm):
             analyzer = DecisionAnalyzer(mock_session)
             analyzer.llm = mock_llm
             results = await analyzer.analyze_all_pairs()
@@ -679,7 +711,7 @@ class TestGetDecisionAnalyzer:
 
     def test_creates_analyzer_instance(self, mock_session):
         """Should create DecisionAnalyzer with session."""
-        with patch('services.decision_analyzer.get_llm_client') as mock_get_llm:
+        with patch("services.decision_analyzer.get_llm_client") as mock_get_llm:
             mock_get_llm.return_value = MockLLMClient()
             analyzer = get_decision_analyzer(mock_session)
 

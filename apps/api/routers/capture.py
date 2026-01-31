@@ -51,7 +51,11 @@ class WebSocketRateLimiter:
     Uses a sliding window to limit messages per session.
     """
 
-    def __init__(self, max_messages: int = MAX_MESSAGES_PER_MINUTE, window: int = WEBSOCKET_RATE_WINDOW):
+    def __init__(
+        self,
+        max_messages: int = MAX_MESSAGES_PER_MINUTE,
+        window: int = WEBSOCKET_RATE_WINDOW,
+    ):
         self.max_messages = max_messages
         self.window = window
         self.timestamps: list[float] = []
@@ -209,9 +213,7 @@ async def get_capture_session(
                 role=m.role,
                 content=m.content,
                 timestamp=m.timestamp,
-                extracted_entities=[
-                    Entity(**e) for e in (m.extracted_entities or [])
-                ],
+                extracted_entities=[Entity(**e) for e in (m.extracted_entities or [])],
             )
             for m in messages
         ],
@@ -343,7 +345,9 @@ async def complete_capture_session(
             f"Decision saved with ID: {decision_id} for session {session_id} (source: interview)"
         )
     else:
-        logger.warning(f"No valid decision to save for session {session_id} - missing trigger or empty data")
+        logger.warning(
+            f"No valid decision to save for session {session_id} - missing trigger or empty data"
+        )
 
     await db.commit()
     await db.refresh(session)
@@ -362,9 +366,7 @@ async def complete_capture_session(
                 role=m.role,
                 content=m.content,
                 timestamp=m.timestamp,
-                extracted_entities=[
-                    Entity(**e) for e in (m.extracted_entities or [])
-                ],
+                extracted_entities=[Entity(**e) for e in (m.extracted_entities or [])],
             )
             for m in messages
         ],
@@ -408,34 +410,42 @@ async def capture_websocket(websocket: WebSocket, session_id: str):
                 data = await websocket.receive_json()
             except Exception as parse_error:
                 logger.warning(f"WebSocket parse error: {type(parse_error).__name__}")
-                await websocket.send_json({
-                    "type": "error",
-                    "error": "Invalid JSON format",
-                    "code": "INVALID_JSON",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "error": "Invalid JSON format",
+                        "code": "INVALID_JSON",
+                    }
+                )
                 continue
 
             # SEC-012: Validate message format and size
             is_valid, error_message = validate_websocket_message(data)
             if not is_valid:
                 logger.warning(f"WebSocket validation failed: {error_message}")
-                await websocket.send_json({
-                    "type": "error",
-                    "error": error_message,
-                    "code": "VALIDATION_ERROR",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "error": error_message,
+                        "code": "VALIDATION_ERROR",
+                    }
+                )
                 continue
 
             # SEC-012: Check rate limit
             if not rate_limiter.check():
                 retry_after = rate_limiter.get_retry_after()
-                logger.warning(f"WebSocket rate limit exceeded for session {session_id}")
-                await websocket.send_json({
-                    "type": "error",
-                    "error": f"Rate limit exceeded. Please wait {retry_after:.0f} seconds.",
-                    "code": "RATE_LIMITED",
-                    "retry_after": retry_after,
-                })
+                logger.warning(
+                    f"WebSocket rate limit exceeded for session {session_id}"
+                )
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "error": f"Rate limit exceeded. Please wait {retry_after:.0f} seconds.",
+                        "code": "RATE_LIMITED",
+                        "retry_after": retry_after,
+                    }
+                )
                 continue
 
             user_message = data.get("content", "")
@@ -443,8 +453,10 @@ async def capture_websocket(websocket: WebSocket, session_id: str):
             # SEC-012: Enforce history size limit
             if len(history) >= MAX_HISTORY_SIZE:
                 # Trim oldest messages, keeping recent context
-                history = history[-(MAX_HISTORY_SIZE - 2):]
-                logger.info(f"Trimmed history for session {session_id} (exceeded {MAX_HISTORY_SIZE} messages)")
+                history = history[-(MAX_HISTORY_SIZE - 2) :]
+                logger.info(
+                    f"Trimmed history for session {session_id} (exceeded {MAX_HISTORY_SIZE} messages)"
+                )
 
             # Stream response
             full_response = ""
@@ -462,11 +474,13 @@ async def capture_websocket(websocket: WebSocket, session_id: str):
                     )
             except Exception as llm_error:
                 logger.error(f"LLM error in WebSocket: {type(llm_error).__name__}")
-                await websocket.send_json({
-                    "type": "error",
-                    "error": "Failed to generate response. Please try again.",
-                    "code": "LLM_ERROR",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "error": "Failed to generate response. Please try again.",
+                        "code": "LLM_ERROR",
+                    }
+                )
                 continue
 
             # Send completion
@@ -479,7 +493,9 @@ async def capture_websocket(websocket: WebSocket, session_id: str):
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for session {session_id}")
     except Exception as e:
-        logger.error(f"WebSocket error for session {session_id}: {type(e).__name__}: {e}")
+        logger.error(
+            f"WebSocket error for session {session_id}: {type(e).__name__}: {e}"
+        )
         try:
             await websocket.close(code=1011, reason="Internal server error")
         except Exception:

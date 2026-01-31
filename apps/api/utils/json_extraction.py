@@ -42,7 +42,9 @@ def extract_json_from_response(response: str) -> Any | None:
         pass
 
     # Strategy 2: Extract from ```json code blocks
-    json_block_match = re.search(r'```json\s*\n?(.*?)\n?```', text, re.DOTALL | re.IGNORECASE)
+    json_block_match = re.search(
+        r"```json\s*\n?(.*?)\n?```", text, re.DOTALL | re.IGNORECASE
+    )
     if json_block_match:
         try:
             return json.loads(json_block_match.group(1).strip())
@@ -50,7 +52,7 @@ def extract_json_from_response(response: str) -> Any | None:
             logger.debug(f"Failed to parse ```json block: {e}")
 
     # Strategy 3: Extract from untyped ``` code blocks
-    generic_block_match = re.search(r'```\s*\n?(.*?)\n?```', text, re.DOTALL)
+    generic_block_match = re.search(r"```\s*\n?(.*?)\n?```", text, re.DOTALL)
     if generic_block_match:
         try:
             return json.loads(generic_block_match.group(1).strip())
@@ -59,7 +61,7 @@ def extract_json_from_response(response: str) -> Any | None:
 
     # Strategy 4: Regex fallback - find JSON object or array in text
     # Look for JSON objects
-    json_object_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+    json_object_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL)
     if json_object_match:
         try:
             return json.loads(json_object_match.group(0))
@@ -67,7 +69,7 @@ def extract_json_from_response(response: str) -> Any | None:
             pass
 
     # Look for JSON arrays
-    json_array_match = re.search(r'\[.*\]', text, re.DOTALL)
+    json_array_match = re.search(r"\[.*\]", text, re.DOTALL)
     if json_array_match:
         try:
             return json.loads(json_array_match.group(0))

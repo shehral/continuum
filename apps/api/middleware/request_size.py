@@ -47,13 +47,13 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
                             "path": request.url.path,
                             "content_length": length,
                             "max_size": max_size,
-                        }
+                        },
                     )
                     return JSONResponse(
                         status_code=413,
                         content={
                             "detail": f"Request body too large. Maximum size is {max_size // 1024}KB."
-                        }
+                        },
                     )
             except ValueError:
                 # Invalid Content-Length header, let it pass and fail later

@@ -38,21 +38,24 @@ T = TypeVar("T")
 # Exceptions that should trigger a retry (SD-009)
 POSTGRES_RETRYABLE_EXCEPTIONS = (
     OperationalError,  # Connection issues, server disconnects
-    InterfaceError,    # Interface-level errors
-    DBAPIError,        # Generic database errors (filtered by is_disconnect)
+    InterfaceError,  # Interface-level errors
+    DBAPIError,  # Generic database errors (filtered by is_disconnect)
     SQLAlchemyTimeoutError,  # Query timeouts
-    ConnectionError,   # Socket-level connection errors
-    TimeoutError,      # General timeouts
-    OSError,           # Low-level I/O errors
+    ConnectionError,  # Socket-level connection errors
+    TimeoutError,  # General timeouts
+    OSError,  # Low-level I/O errors
 )
 
 
 class Base(DeclarativeBase):
     """Base class for SQLAlchemy declarative models."""
+
     pass
 
 
-def _calculate_backoff(attempt: int, base_delay: float = 1.0, max_delay: float = 8.0) -> float:
+def _calculate_backoff(
+    attempt: int, base_delay: float = 1.0, max_delay: float = 8.0
+) -> float:
     """Calculate exponential backoff with jitter (SD-009).
 
     Args:
@@ -63,7 +66,7 @@ def _calculate_backoff(attempt: int, base_delay: float = 1.0, max_delay: float =
     Returns:
         Delay in seconds with jitter
     """
-    delay = min(base_delay * (2 ** attempt), max_delay)
+    delay = min(base_delay * (2**attempt), max_delay)
     # Add jitter to prevent thundering herd
     jitter = random.uniform(0, 1)
     return delay + jitter
@@ -119,7 +122,9 @@ async def with_retry(
             last_exception = e
 
             if not _is_retryable_error(e):
-                logger.error(f"Non-retryable error in {operation_name}: {type(e).__name__}: {e}")
+                logger.error(
+                    f"Non-retryable error in {operation_name}: {type(e).__name__}: {e}"
+                )
                 raise
 
             if attempt >= max_retries:

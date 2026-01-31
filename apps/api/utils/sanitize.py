@@ -8,19 +8,40 @@ import re
 from typing import Any
 
 # Patterns for sensitive data detection
-EMAIL_PATTERN = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
-IP_PATTERN = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
-JWT_PATTERN = re.compile(r'\beyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*\b')
-API_KEY_PATTERN = re.compile(r'\b(?:api[_-]?key|apikey|bearer|token|secret|password|credential)[\s:=]+[\'"]?([^\s\'"]+)', re.IGNORECASE)
-UUID_PATTERN = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.IGNORECASE)
+EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+IP_PATTERN = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+JWT_PATTERN = re.compile(r"\beyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*\b")
+API_KEY_PATTERN = re.compile(
+    r'\b(?:api[_-]?key|apikey|bearer|token|secret|password|credential)[\s:=]+[\'"]?([^\s\'"]+)',
+    re.IGNORECASE,
+)
+UUID_PATTERN = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE
+)
 
 # Fields that should always be masked when found in dicts
-SENSITIVE_FIELDS = frozenset({
-    'password', 'passwd', 'secret', 'api_key', 'apikey', 'api-key',
-    'token', 'access_token', 'refresh_token', 'authorization',
-    'auth', 'credential', 'credentials', 'private_key', 'secret_key',
-    'client_secret', 'api_secret', 'bearer',
-})
+SENSITIVE_FIELDS = frozenset(
+    {
+        "password",
+        "passwd",
+        "secret",
+        "api_key",
+        "apikey",
+        "api-key",
+        "token",
+        "access_token",
+        "refresh_token",
+        "authorization",
+        "auth",
+        "credential",
+        "credentials",
+        "private_key",
+        "secret_key",
+        "client_secret",
+        "api_secret",
+        "bearer",
+    }
+)
 
 
 def hash_identifier(value: str, length: int = 8) -> str:
@@ -44,9 +65,9 @@ def mask_email(email: str) -> str:
 
     Example: user@example.com -> u***@example.com
     """
-    if '@' not in email:
+    if "@" not in email:
         return "***@***"
-    local, domain = email.rsplit('@', 1)
+    local, domain = email.rsplit("@", 1)
     if len(local) <= 1:
         masked_local = "*"
     else:
@@ -59,7 +80,7 @@ def mask_ip(ip: str) -> str:
 
     Example: 192.168.1.100 -> 192.***.***.**
     """
-    parts = ip.split('.')
+    parts = ip.split(".")
     if len(parts) != 4:
         return "***.***.***.***"
     return f"{parts[0]}.***.***.**"
@@ -90,7 +111,7 @@ def sanitize_string(text: str) -> str:
     result = text
 
     # Mask JWTs
-    result = JWT_PATTERN.sub('[MASKED_JWT]', result)
+    result = JWT_PATTERN.sub("[MASKED_JWT]", result)
 
     # Mask emails
     for match in EMAIL_PATTERN.finditer(result):
@@ -101,7 +122,7 @@ def sanitize_string(text: str) -> str:
     for match in IP_PATTERN.finditer(result):
         ip = match.group()
         # Only mask if all octets are valid IP ranges
-        parts = ip.split('.')
+        parts = ip.split(".")
         if all(0 <= int(p) <= 255 for p in parts):
             result = result.replace(ip, mask_ip(ip))
 
@@ -109,12 +130,15 @@ def sanitize_string(text: str) -> str:
     def mask_api_key(m):
         prefix = m.group(0).split(m.group(1))[0]
         return prefix + "[MASKED]"
+
     result = API_KEY_PATTERN.sub(mask_api_key, result)
 
     return result
 
 
-def sanitize_dict(data: dict[str, Any], depth: int = 0, max_depth: int = 10) -> dict[str, Any]:
+def sanitize_dict(
+    data: dict[str, Any], depth: int = 0, max_depth: int = 10
+) -> dict[str, Any]:
     """Recursively sanitize a dictionary, masking sensitive fields.
 
     Args:

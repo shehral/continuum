@@ -61,7 +61,9 @@ class TestGetDashboardStats:
                     "confidence": 0.9,
                     "created_at": "2024-01-15T00:00:00Z",
                 },
-                "entities": [{"id": str(uuid4()), "name": "Entity1", "type": "technology"}],
+                "entities": [
+                    {"id": str(uuid4()), "name": "Entity1", "type": "technology"}
+                ],
             },
             {
                 "d": {
@@ -102,13 +104,16 @@ class TestGetDashboardStats:
 
         mock_neo4j_session.run = mock_neo4j_run
 
-        with patch(
-            "routers.dashboard.get_neo4j_session",
-            new_callable=AsyncMock,
-            return_value=mock_neo4j_session,
-        ), patch(
-            "routers.dashboard.get_db",
-            return_value=mock_postgres_session,
+        with (
+            patch(
+                "routers.dashboard.get_neo4j_session",
+                new_callable=AsyncMock,
+                return_value=mock_neo4j_session,
+            ),
+            patch(
+                "routers.dashboard.get_db",
+                return_value=mock_postgres_session,
+            ),
         ):
             from routers.dashboard import get_dashboard_stats
 
@@ -137,6 +142,7 @@ class TestGetDashboardStats:
             elif "count(e)" in query.lower():
                 result.single = AsyncMock(return_value={"count": 0})
             else:
+
                 async def empty_iter():
                     return
                     yield
@@ -179,6 +185,7 @@ class TestGetDashboardStats:
             elif "count(e)" in query.lower():
                 result.single = AsyncMock(return_value={"count": 10})
             else:
+
                 async def empty_iter():
                     return
                     yield
@@ -256,6 +263,7 @@ class TestRecentDecisions:
             elif "count(e)" in query.lower():
                 result.single = AsyncMock(return_value={"count": 0})
             else:
+
                 async def async_iter():
                     for r in recent_decisions:
                         yield r

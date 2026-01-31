@@ -58,7 +58,7 @@ def calculate_backoff(
         Delay in seconds before next retry
     """
     # Exponential backoff: base * 2^attempt, capped at max_delay
-    delay = min(base * (2 ** attempt), max_delay)
+    delay = min(base * (2**attempt), max_delay)
 
     # Add jitter to prevent thundering herd
     if jitter:
@@ -107,7 +107,9 @@ def retry(
 
                     # Check if this exception is retryable
                     if retryable_exceptions is not None:
-                        if not any(isinstance(e, exc_type) for exc_type in retryable_exceptions):
+                        if not any(
+                            isinstance(e, exc_type) for exc_type in retryable_exceptions
+                        ):
                             # Not retryable, raise immediately
                             raise
 
@@ -120,7 +122,9 @@ def retry(
                         raise
 
                     # Calculate backoff
-                    delay = calculate_backoff(attempt, backoff_base, backoff_max, jitter)
+                    delay = calculate_backoff(
+                        attempt, backoff_base, backoff_max, jitter
+                    )
 
                     # Call retry callback if provided
                     if on_retry:
@@ -141,6 +145,7 @@ def retry(
         @wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> T:
             import time as sync_time
+
             last_exception: Optional[Exception] = None
 
             for attempt in range(max_attempts):
@@ -151,13 +156,17 @@ def retry(
 
                     # Check if this exception is retryable
                     if retryable_exceptions is not None:
-                        if not any(isinstance(e, exc_type) for exc_type in retryable_exceptions):
+                        if not any(
+                            isinstance(e, exc_type) for exc_type in retryable_exceptions
+                        ):
                             raise
 
                     if attempt >= max_attempts - 1:
                         raise
 
-                    delay = calculate_backoff(attempt, backoff_base, backoff_max, jitter)
+                    delay = calculate_backoff(
+                        attempt, backoff_base, backoff_max, jitter
+                    )
 
                     if on_retry:
                         on_retry(e, attempt)

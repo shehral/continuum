@@ -24,7 +24,9 @@ class Settings(BaseSettings):
             return v.replace("postgresql://", "postgresql+asyncpg://", 1)
         return v
 
-    neo4j_uri: str = ""  # e.g., bolt://localhost:7687 or neo4j+s://xxx.databases.neo4j.io
+    neo4j_uri: str = (
+        ""  # e.g., bolt://localhost:7687 or neo4j+s://xxx.databases.neo4j.io
+    )
     neo4j_user: str = ""
     neo4j_password: SecretStr = SecretStr("")  # SEC-007: Use SecretStr for passwords
     redis_url: str = ""  # e.g., redis://localhost:6379
@@ -62,7 +64,9 @@ class Settings(BaseSettings):
     # LLM response cache settings (KG-P0-2)
     llm_cache_enabled: bool = True  # Enable/disable LLM response caching
     llm_cache_ttl: int = 86400  # 24 hours in seconds (default)
-    llm_extraction_prompt_version: str = "v1"  # Bump when prompts change to invalidate cache
+    llm_extraction_prompt_version: str = (
+        "v1"  # Bump when prompts change to invalidate cache
+    )
     # LLM model fallback settings (ML-QW-2)
     # If primary model fails, fall back to a secondary model
     llm_fallback_model: str = "nvidia/llama-3.1-nemotron-70b-instruct"  # Fallback model
@@ -81,8 +85,12 @@ class Settings(BaseSettings):
     similarity_threshold: float = 0.85  # Minimum similarity for SIMILAR_TO edges
     high_confidence_similarity_threshold: float = 0.90  # For high-confidence matches
     # Entity resolution thresholds
-    fuzzy_match_threshold: float = 0.85  # Fuzzy string matching threshold (0-1 scale, 85%)
-    embedding_similarity_threshold: float = 0.90  # Embedding cosine similarity threshold
+    fuzzy_match_threshold: float = (
+        0.85  # Fuzzy string matching threshold (0-1 scale, 85%)
+    )
+    embedding_similarity_threshold: float = (
+        0.90  # Embedding cosine similarity threshold
+    )
 
     # Decision embedding field weights (KG-P1-5)
     # Higher weights increase importance in semantic search
@@ -133,6 +141,7 @@ class Settings(BaseSettings):
             return url
         # Simple masking for URLs with passwords
         import re
+
         return re.sub(r":([^:@]+)@", ":***@", url)
 
     def get_nvidia_api_key(self) -> str:

@@ -234,7 +234,9 @@ def log_startup_banner(settings, services_status: dict[str, bool]):
             "services": {
                 "connected": connected_services,
                 "failed": failed_services,
-                "postgres": "connected" if services_status.get("postgres") else "failed",
+                "postgres": "connected"
+                if services_status.get("postgres")
+                else "failed",
                 "neo4j": "connected" if services_status.get("neo4j") else "failed",
                 "redis": "connected" if services_status.get("redis") else "failed",
             },
@@ -305,7 +307,9 @@ async def lifespan(app: FastAPI):
 
     # Give in-flight requests time to complete (configurable timeout)
     shutdown_timeout = getattr(settings, "shutdown_timeout", 30)
-    logger.info(f"Waiting up to {shutdown_timeout}s for in-flight requests to complete...")
+    logger.info(
+        f"Waiting up to {shutdown_timeout}s for in-flight requests to complete..."
+    )
 
     # Note: Uvicorn handles request draining automatically when receiving SIGTERM
     # The timeout here is for our cleanup operations
@@ -337,11 +341,13 @@ async def validation_exception_handler(
     errors = []
     for error in exc.errors():
         field = ".".join(str(loc) for loc in error.get("loc", []))
-        errors.append({
-            "field": field,
-            "message": error.get("msg", "Validation error"),
-            "type": error.get("type", "value_error"),
-        })
+        errors.append(
+            {
+                "field": field,
+                "message": error.get("msg", "Validation error"),
+                "type": error.get("type", "value_error"),
+            }
+        )
 
     response = create_validation_error_response(
         message="Request validation failed",
@@ -366,11 +372,13 @@ async def pydantic_validation_exception_handler(
     errors = []
     for error in exc.errors():
         field = ".".join(str(loc) for loc in error.get("loc", []))
-        errors.append({
-            "field": field,
-            "message": error.get("msg", "Validation error"),
-            "type": error.get("type", "value_error"),
-        })
+        errors.append(
+            {
+                "field": field,
+                "message": error.get("msg", "Validation error"),
+                "type": error.get("type", "value_error"),
+            }
+        )
 
     response = create_validation_error_response(
         message="Data validation failed",
@@ -442,9 +450,7 @@ async def circuit_breaker_exception_handler(
 
 
 @app.exception_handler(Exception)
-async def generic_exception_handler(
-    request: Request, exc: Exception
-) -> JSONResponse:
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handle unexpected exceptions with standardized format (SD-016)."""
     # Log the full exception for debugging
     logger.exception(

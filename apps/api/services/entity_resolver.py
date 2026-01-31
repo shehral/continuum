@@ -231,9 +231,7 @@ class EntityResolver:
             aliases=[name] if final_name != name else [],
         )
 
-    async def resolve_batch(
-        self, entities: list[dict]
-    ) -> list[ResolvedEntity]:
+    async def resolve_batch(self, entities: list[dict]) -> list[ResolvedEntity]:
         """Resolve multiple entities, returning resolved versions.
 
         Args:
@@ -332,7 +330,9 @@ class EntityResolver:
         record = await result.single()
         return dict(record) if record else None
 
-    async def _find_by_fuzzy_with_fulltext(self, normalized_name: str) -> Optional[dict]:
+    async def _find_by_fuzzy_with_fulltext(
+        self, normalized_name: str
+    ) -> Optional[dict]:
         """Find entity using fulltext index for candidates, then fuzzy match.
 
         This is more efficient than loading all entities:
@@ -488,7 +488,9 @@ class EntityResolver:
 
         Returns user's entities first, then global entities.
         """
-        logger.warning("_get_all_entity_names is deprecated. Use _find_by_fuzzy_with_fulltext instead.")
+        logger.warning(
+            "_get_all_entity_names is deprecated. Use _find_by_fuzzy_with_fulltext instead."
+        )
         return await self._get_entity_names_batched()
 
     async def _find_by_embedding_similarity(
@@ -623,13 +625,11 @@ class EntityResolver:
             group = [entity]
             processed.add(entity["id"])
 
-            for other in all_entities[i + 1:]:
+            for other in all_entities[i + 1 :]:
                 if other["id"] in processed:
                     continue
 
-                score = fuzz.ratio(
-                    entity["name"].lower(), other["name"].lower()
-                )
+                score = fuzz.ratio(entity["name"].lower(), other["name"].lower())
                 if score >= self.fuzzy_threshold:
                     group.append(other)
                     processed.add(other["id"])
@@ -685,7 +685,13 @@ class EntityResolver:
         )
 
         # Step 2: Transfer each relationship type separately (Cypher limitation)
-        for rel_type in ['IS_A', 'PART_OF', 'RELATED_TO', 'DEPENDS_ON', 'ALTERNATIVE_TO']:
+        for rel_type in [
+            "IS_A",
+            "PART_OF",
+            "RELATED_TO",
+            "DEPENDS_ON",
+            "ALTERNATIVE_TO",
+        ]:
             # Outgoing relationships
             await self.session.run(
                 f"""

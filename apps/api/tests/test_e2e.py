@@ -429,12 +429,15 @@ class TestErrorHandling:
     def test_missing_required_fields(self, client):
         """Test validation of required fields."""
         # Missing trigger
-        response = client.post("/decisions", json={
-            "context": "test",
-            "options": [],
-            "decision": "test",
-            "rationale": "test",
-        })
+        response = client.post(
+            "/decisions",
+            json={
+                "context": "test",
+                "options": [],
+                "decision": "test",
+                "rationale": "test",
+            },
+        )
         assert response.status_code == 422
 
     def test_empty_search_query(self, client):

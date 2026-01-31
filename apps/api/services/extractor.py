@@ -79,7 +79,6 @@ def apply_decision_defaults(decision_data: dict) -> dict:
     return result
 
 
-
 # Few-shot decision extraction prompt with Chain-of-Thought reasoning
 DECISION_EXTRACTION_PROMPT = """Analyze this conversation and extract any technical decisions made.
 
@@ -166,6 +165,7 @@ Return ONLY valid JSON, no markdown code blocks or explanation."""
 # ML-P2-2: Decision Type Enumeration
 class DecisionType:
     """Enumeration of decision types for specialized extraction (ML-P2-2)."""
+
     ARCHITECTURE = "architecture"
     TECHNOLOGY = "technology"
     PROCESS = "process"
@@ -238,16 +238,40 @@ DECISION_TYPE_PROMPTS = {
 # ML-P2-2: Keywords for auto-detecting decision type
 DECISION_TYPE_KEYWORDS = {
     DecisionType.ARCHITECTURE: [
-        "architecture", "microservice", "monolith", "distributed", "scalability",
-        "api gateway", "event-driven", "message queue", "load balancer",
+        "architecture",
+        "microservice",
+        "monolith",
+        "distributed",
+        "scalability",
+        "api gateway",
+        "event-driven",
+        "message queue",
+        "load balancer",
     ],
     DecisionType.TECHNOLOGY: [
-        "framework", "library", "database", "postgres", "mongodb", "redis",
-        "react", "vue", "python", "typescript", "aws", "docker",
+        "framework",
+        "library",
+        "database",
+        "postgres",
+        "mongodb",
+        "redis",
+        "react",
+        "vue",
+        "python",
+        "typescript",
+        "aws",
+        "docker",
     ],
     DecisionType.PROCESS: [
-        "workflow", "process", "ci/cd", "deployment", "code review",
-        "branching", "agile", "sprint", "release",
+        "workflow",
+        "process",
+        "ci/cd",
+        "deployment",
+        "code review",
+        "branching",
+        "agile",
+        "sprint",
+        "release",
     ],
 }
 
@@ -323,13 +347,19 @@ def calibrate_confidence(decision_data: dict) -> float:
         calibrated += 0.03
 
     # Quality phrases bonus
-    quality_phrases = ["because", "since", "due to", "trade-off", "benefit", "compared to"]
+    quality_phrases = [
+        "because",
+        "since",
+        "due to",
+        "trade-off",
+        "benefit",
+        "compared to",
+    ]
     rationale_lower = rationale.lower()
     quality_matches = sum(1 for p in quality_phrases if p in rationale_lower)
     calibrated += min(quality_matches * 0.02, 0.08)
 
     return round(max(0.1, min(1.0, calibrated)), 3)
-
 
 
 # Few-shot entity extraction prompt with Chain-of-Thought reasoning
@@ -545,7 +575,7 @@ class LLMResponseCache:
 
         Format: llm:{version}:{type}:{hash(text)}
         """
-        text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
+        text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
         version = self._settings.llm_extraction_prompt_version
         return f"llm:{version}:{extraction_type}:{text_hash}"
 
@@ -646,10 +676,21 @@ class DecisionExtractor:
                 logger.info(f"Using cached decision extraction (type={decision_type})")
                 # Apply defaults and calibration for missing fields (ML-QW-3, ML-P2-3)
                 return [
-                    DecisionCreate(**{
-                        k: v for k, v in apply_decision_defaults(d).items()
-                        if k in ("trigger", "context", "options", "decision", "rationale", "confidence")
-                    })
+                    DecisionCreate(
+                        **{
+                            k: v
+                            for k, v in apply_decision_defaults(d).items()
+                            if k
+                            in (
+                                "trigger",
+                                "context",
+                                "options",
+                                "decision",
+                                "rationale",
+                                "confidence",
+                            )
+                        }
+                    )
                     for d in cached
                     if apply_decision_defaults(d).get("decision")
                 ]
@@ -659,7 +700,9 @@ class DecisionExtractor:
         if specialized_prompt is not None:
             prompt = specialized_prompt.format(conversation_text=conversation_text)
         else:
-            prompt = DECISION_EXTRACTION_PROMPT.format(conversation_text=conversation_text)
+            prompt = DECISION_EXTRACTION_PROMPT.format(
+                conversation_text=conversation_text
+            )
 
         try:
             response = await self.llm.generate(prompt, temperature=0.3)
@@ -689,8 +732,15 @@ class DecisionExtractor:
             # Log extraction summary (KG-QW-4: Extraction reasoning logging)
             if decisions_data:
                 confidence_scores = [d.get("confidence", 0.5) for d in decisions_data]
-                raw_scores = [d.get("raw_confidence", d.get("confidence", 0.5)) for d in decisions_data]
-                avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
+                raw_scores = [
+                    d.get("raw_confidence", d.get("confidence", 0.5))
+                    for d in decisions_data
+                ]
+                avg_confidence = (
+                    sum(confidence_scores) / len(confidence_scores)
+                    if confidence_scores
+                    else 0
+                )
                 avg_raw = sum(raw_scores) / len(raw_scores) if raw_scores else 0
                 logger.info(
                     "Decision extraction completed",
@@ -702,14 +752,20 @@ class DecisionExtractor:
                         "avg_raw_confidence": round(avg_raw, 3),
                         "calibration_delta": round(avg_confidence - avg_raw, 3),
                         "confidence_range": {
-                            "min": round(min(confidence_scores), 3) if confidence_scores else 0,
-                            "max": round(max(confidence_scores), 3) if confidence_scores else 0,
+                            "min": round(min(confidence_scores), 3)
+                            if confidence_scores
+                            else 0,
+                            "max": round(max(confidence_scores), 3)
+                            if confidence_scores
+                            else 0,
                         },
                         "decisions_summary": [
                             {
                                 "trigger_preview": d.get("trigger", "")[:50],
                                 "confidence": d.get("confidence", 0.5),
-                                "raw_confidence": d.get("raw_confidence", d.get("confidence", 0.5)),
+                                "raw_confidence": d.get(
+                                    "raw_confidence", d.get("confidence", 0.5)
+                                ),
                             }
                             for d in decisions_data[:5]  # Limit to first 5 for log size
                         ],
@@ -718,12 +774,25 @@ class DecisionExtractor:
 
             # Apply defaults for missing fields (ML-QW-3)
             return [
-                DecisionCreate(**{
-                    k: v for k, v in apply_decision_defaults(d).items()
-                    if k in ("trigger", "context", "options", "decision", "rationale", "confidence")
-                })
+                DecisionCreate(
+                    **{
+                        k: v
+                        for k, v in apply_decision_defaults(d).items()
+                        if k
+                        in (
+                            "trigger",
+                            "context",
+                            "options",
+                            "decision",
+                            "rationale",
+                            "confidence",
+                        )
+                    }
+                )
                 for d in decisions_data
-                if apply_decision_defaults(d).get("decision")  # Skip entries without a decision
+                if apply_decision_defaults(d).get(
+                    "decision"
+                )  # Skip entries without a decision
             ]
 
         except (TimeoutError, ConnectionError) as e:
@@ -734,9 +803,7 @@ class DecisionExtractor:
             return []
 
     async def extract_entities(
-        self,
-        text: str,
-        bypass_cache: bool = False
+        self, text: str, bypass_cache: bool = False
     ) -> list[dict]:
         """Extract entities from text using few-shot CoT prompt.
 
@@ -793,16 +860,25 @@ class DecisionExtractor:
                         "type_distribution": type_counts,
                         "avg_confidence_by_type": avg_confidence_by_type,
                         "entities": [
-                            {"name": e.get("name"), "type": e.get("type"), "confidence": e.get("confidence")}
+                            {
+                                "name": e.get("name"),
+                                "type": e.get("type"),
+                                "confidence": e.get("confidence"),
+                            }
                             for e in entities
                         ],
-                        "llm_reasoning": reasoning[:500] if reasoning else None,  # Truncate for log size
+                        "llm_reasoning": reasoning[:500]
+                        if reasoning
+                        else None,  # Truncate for log size
                     },
                 )
             else:
                 logger.debug(
                     "No entities extracted from text",
-                    extra={"text_length": len(text), "llm_reasoning": reasoning[:200] if reasoning else None},
+                    extra={
+                        "text_length": len(text),
+                        "llm_reasoning": reasoning[:200] if reasoning else None,
+                    },
                 )
 
             # Cache the result (KG-P0-2)
@@ -818,10 +894,7 @@ class DecisionExtractor:
             return []
 
     async def extract_entity_relationships(
-        self,
-        entities: list[Entity],
-        context: str = "",
-        bypass_cache: bool = False
+        self, entities: list[Entity], context: str = "", bypass_cache: bool = False
     ) -> list[dict]:
         """Extract relationships between entities using few-shot CoT prompt.
 
@@ -831,13 +904,16 @@ class DecisionExtractor:
             return []
 
         import json as json_module
-        entity_names = [e.name if hasattr(e, 'name') else e.get('name', '') for e in entities]
+
+        entity_names = [
+            e.name if hasattr(e, "name") else e.get("name", "") for e in entities
+        ]
 
         # Build entity type lookup for validation
         entity_types = {}
         for e in entities:
-            name = e.name if hasattr(e, 'name') else e.get('name', '')
-            etype = e.type if hasattr(e, 'type') else e.get('type', 'concept')
+            name = e.name if hasattr(e, "name") else e.get("name", "")
+            etype = e.type if hasattr(e, "type") else e.get("type", "concept")
             entity_types[name.lower()] = etype
 
         # Cache key includes entities and context
@@ -917,12 +993,15 @@ class DecisionExtractor:
                     # Try to suggest a valid alternative
                     if rel_type in ENTITY_ONLY_RELATIONSHIPS:
                         # Fall back to RELATED_TO if the specific type doesn't work
-                        validated_relationships.append({
-                            "from": from_name,
-                            "to": to_name,
-                            "type": "RELATED_TO",
-                            "confidence": confidence * 0.8,  # Lower confidence for fallback
-                        })
+                        validated_relationships.append(
+                            {
+                                "from": from_name,
+                                "to": to_name,
+                                "type": "RELATED_TO",
+                                "confidence": confidence
+                                * 0.8,  # Lower confidence for fallback
+                            }
+                        )
                         validation_stats["fallback"] += 1
                         logger.debug(
                             "Relationship type fallback applied",
@@ -1008,7 +1087,9 @@ class DecisionExtractor:
             }
 
         except (TimeoutError, ConnectionError) as e:
-            logger.error(f"LLM connection error during decision relationship analysis: {e}")
+            logger.error(
+                f"LLM connection error during decision relationship analysis: {e}"
+            )
             return None
         except Exception as e:
             logger.error(f"Unexpected error during decision relationship analysis: {e}")
@@ -1043,7 +1124,7 @@ class DecisionExtractor:
         decision_id = str(uuid4())
         created_at = datetime.now(UTC).isoformat()
         # Use source from decision if provided, otherwise use parameter
-        decision_source = getattr(decision, 'source', None) or source
+        decision_source = getattr(decision, "source", None) or source
 
         # KG-P2-4: Build provenance if not provided
         if provenance is None:
@@ -1056,7 +1137,7 @@ class DecisionExtractor:
             provenance = create_llm_provenance(
                 source_type=source_type_map.get(decision_source, SourceType.MANUAL),
                 source_path=source_path,
-                model_name=self.llm.model if hasattr(self.llm, 'model') else None,
+                model_name=self.llm.model if hasattr(self.llm, "model") else None,
                 prompt_version=get_settings().llm_extraction_prompt_version,
                 confidence=decision.confidence,
                 created_by=user_id,
@@ -1120,7 +1201,9 @@ class DecisionExtractor:
                     user_id=user_id,
                     embedding=embedding,
                     provenance=provenance_json,
-                    extraction_method=provenance.extraction.method.value if provenance else "unknown",
+                    extraction_method=provenance.extraction.method.value
+                    if provenance
+                    else "unknown",
                     created_by=provenance.created_by if provenance else user_id,
                 )
             else:
@@ -1153,7 +1236,9 @@ class DecisionExtractor:
                     source=decision_source,
                     user_id=user_id,
                     provenance=provenance_json,
-                    extraction_method=provenance.extraction.method.value if provenance else "unknown",
+                    extraction_method=provenance.extraction.method.value
+                    if provenance
+                    else "unknown",
                     created_by=provenance.created_by if provenance else user_id,
                 )
 
@@ -1192,10 +1277,12 @@ class DecisionExtractor:
                 entity_embedding = None
                 if resolved.is_new:
                     try:
-                        entity_embedding = await self.embedding_service.embed_entity({
-                            "name": resolved.name,
-                            "type": resolved.type,
-                        })
+                        entity_embedding = await self.embedding_service.embed_entity(
+                            {
+                                "name": resolved.name,
+                                "type": resolved.type,
+                            }
+                        )
                     except (TimeoutError, ConnectionError, ValueError):
                         pass
 
@@ -1281,12 +1368,16 @@ class DecisionExtractor:
                     "total_extracted": len(entities_data),
                     "total_resolved": len(resolved_entities),
                     "new_entities": sum(1 for e in resolved_entities if e.is_new),
-                    "existing_entities": sum(1 for e in resolved_entities if not e.is_new),
+                    "existing_entities": sum(
+                        1 for e in resolved_entities if not e.is_new
+                    ),
                     "match_methods": {},
                 }
                 for e in resolved_entities:
                     method = e.match_method
-                    resolution_summary["match_methods"][method] = resolution_summary["match_methods"].get(method, 0) + 1
+                    resolution_summary["match_methods"][method] = (
+                        resolution_summary["match_methods"].get(method, 0) + 1
+                    )
 
                 logger.info(
                     "Entity resolution completed",
@@ -1329,13 +1420,24 @@ class DecisionExtractor:
 
                     # Validate relationship type (already done in extract_entity_relationships)
                     # KG-P2-1: Include extended relationship types
-                    valid_types = ["IS_A", "PART_OF", "RELATED_TO", "DEPENDS_ON", "ALTERNATIVE_TO",
-                                   "ENABLES", "PREVENTS", "REQUIRES", "REFINES"]
+                    valid_types = [
+                        "IS_A",
+                        "PART_OF",
+                        "RELATED_TO",
+                        "DEPENDS_ON",
+                        "ALTERNATIVE_TO",
+                        "ENABLES",
+                        "PREVENTS",
+                        "REQUIRES",
+                        "REFINES",
+                    ]
                     if rel_type not in valid_types:
                         rel_type = "RELATED_TO"
 
                     # Resolve entity names to canonical forms
-                    from_canonical = get_canonical_name(from_name) if from_name else None
+                    from_canonical = (
+                        get_canonical_name(from_name) if from_name else None
+                    )
                     to_canonical = get_canonical_name(to_name) if to_name else None
 
                     if from_canonical and to_canonical:
@@ -1360,7 +1462,9 @@ class DecisionExtractor:
             # Find and link similar decisions (if embedding exists)
             # Only compare with decisions from the same user for isolation
             if embedding:
-                await self._link_similar_decisions(session, decision_id, embedding, user_id)
+                await self._link_similar_decisions(
+                    session, decision_id, embedding, user_id
+                )
 
             # Create temporal chains (INFLUENCED_BY)
             # Only within the same user's decisions
@@ -1406,7 +1510,11 @@ class DecisionExtractor:
                 similarity = record["similarity"]
 
                 # Determine confidence tier
-                confidence_tier = "high" if similarity >= self.high_confidence_threshold else "moderate"
+                confidence_tier = (
+                    "high"
+                    if similarity >= self.high_confidence_threshold
+                    else "moderate"
+                )
 
                 await session.run(
                     """
@@ -1420,12 +1528,16 @@ class DecisionExtractor:
                     score=similarity,
                     tier=confidence_tier,
                 )
-                logger.info(f"Linked similar decision {similar_id} (score: {similarity:.3f}, tier: {confidence_tier})")
+                logger.info(
+                    f"Linked similar decision {similar_id} (score: {similarity:.3f}, tier: {confidence_tier})"
+                )
 
         except (ClientError, DatabaseError) as e:
             # GDS library may not be installed, fall back to manual calculation
             logger.debug(f"Vector search failed (GDS may not be installed): {e}")
-            await self._link_similar_decisions_manual(session, decision_id, embedding, user_id)
+            await self._link_similar_decisions_manual(
+                session, decision_id, embedding, user_id
+            )
 
     async def _link_similar_decisions_manual(
         self,
@@ -1461,7 +1573,11 @@ class DecisionExtractor:
 
                 if similarity > self.similarity_threshold:
                     # Determine confidence tier
-                    confidence_tier = "high" if similarity >= self.high_confidence_threshold else "moderate"
+                    confidence_tier = (
+                        "high"
+                        if similarity >= self.high_confidence_threshold
+                        else "moderate"
+                    )
 
                     await session.run(
                         """
@@ -1475,7 +1591,9 @@ class DecisionExtractor:
                         score=similarity,
                         tier=confidence_tier,
                     )
-                    logger.info(f"Linked similar decision {other_id} (score: {similarity:.3f}, tier: {confidence_tier})")
+                    logger.info(
+                        f"Linked similar decision {other_id} (score: {similarity:.3f}, tier: {confidence_tier})"
+                    )
 
         except (ClientError, DatabaseError) as e:
             logger.error(f"Manual similarity linking failed: {e}")

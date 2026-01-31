@@ -23,14 +23,14 @@ import pytest
 
 # Test configuration
 PERFORMANCE_TARGETS = {
-    "health_check": 50,      # ms
+    "health_check": 50,  # ms
     "dashboard_stats": 100,  # ms
-    "list_decisions": 200,   # ms
-    "get_decision": 150,     # ms
+    "list_decisions": 200,  # ms
+    "get_decision": 150,  # ms
     "create_decision": 300,  # ms
-    "search": 500,          # ms
-    "graph_stats": 200,     # ms
-    "graph_data": 300,      # ms
+    "search": 500,  # ms
+    "graph_stats": 200,  # ms
+    "graph_data": 300,  # ms
 }
 
 # Number of iterations for statistical significance
@@ -55,9 +55,11 @@ def mock_neo4j_fast():
         result.single = AsyncMock(return_value=None)
         result._records = []
         result.__aiter__ = lambda self: self._async_iter()
+
         async def _async_iter():
             return
             yield
+
         result._async_iter = _async_iter
         return result
 
@@ -100,6 +102,7 @@ def mock_postgres_fast():
 @pytest.fixture
 def performance_timer():
     """Create a timer utility for performance measurements."""
+
     class Timer:
         def __init__(self):
             self.times = []
@@ -163,11 +166,14 @@ class TestDatabaseOperationPerformance:
             )
             performance_timer.stop()
 
-        assert performance_timer.p99 < 50, f"Neo4j query p99 ({performance_timer.p99:.2f}ms) exceeds 50ms"
+        assert performance_timer.p99 < 50, (
+            f"Neo4j query p99 ({performance_timer.p99:.2f}ms) exceeds 50ms"
+        )
 
     @pytest.mark.asyncio
     async def test_concurrent_queries(self, mock_neo4j_fast, performance_timer):
         """Test performance under concurrent query load."""
+
         async def run_query(session, query_id: int):
             return await session.run(
                 "MATCH (n) WHERE n.id = $id RETURN n",
@@ -181,7 +187,9 @@ class TestDatabaseOperationPerformance:
         elapsed = performance_timer.stop()
 
         # Concurrent queries should complete in reasonable time
-        assert elapsed < 100, f"10 concurrent queries took {elapsed:.2f}ms (target: <100ms)"
+        assert elapsed < 100, (
+            f"10 concurrent queries took {elapsed:.2f}ms (target: <100ms)"
+        )
 
 
 class TestDataProcessingPerformance:
@@ -224,7 +232,9 @@ class TestDataProcessingPerformance:
             json.loads(json_str)
             performance_timer.stop()
 
-        assert performance_timer.p99 < 10, f"JSON parsing p99 ({performance_timer.p99:.2f}ms) exceeds 10ms"
+        assert performance_timer.p99 < 10, (
+            f"JSON parsing p99 ({performance_timer.p99:.2f}ms) exceeds 10ms"
+        )
 
     def test_list_filtering_performance(self, performance_timer):
         """Test list filtering performance for search results."""
@@ -241,19 +251,28 @@ class TestDataProcessingPerformance:
 
         # Warmup
         for _ in range(WARMUP_ITERATIONS):
-            [item for item in items if item["score"] > 0.5 and item["type"] == "technology"]
+            [
+                item
+                for item in items
+                if item["score"] > 0.5 and item["type"] == "technology"
+            ]
 
         # Measure filtering
         for _ in range(TEST_ITERATIONS):
             performance_timer.start()
             filtered = [
-                item for item in items
+                item
+                for item in items
                 if item["score"] > 0.5 and item["type"] == "technology"
             ]
-            sorted_filtered = sorted(filtered, key=lambda x: x["score"], reverse=True)[:10]
+            _sorted_filtered = sorted(filtered, key=lambda x: x["score"], reverse=True)[
+                :10
+            ]
             performance_timer.stop()
 
-        assert performance_timer.p99 < 5, f"List filtering p99 ({performance_timer.p99:.2f}ms) exceeds 5ms"
+        assert performance_timer.p99 < 5, (
+            f"List filtering p99 ({performance_timer.p99:.2f}ms) exceeds 5ms"
+        )
 
 
 class TestEmbeddingOperationPerformance:
@@ -277,7 +296,9 @@ class TestEmbeddingOperationPerformance:
             cosine_similarity(vec_a, vec_b)
             performance_timer.stop()
 
-        assert performance_timer.p99 < 1, f"Cosine similarity p99 ({performance_timer.p99:.2f}ms) exceeds 1ms"
+        assert performance_timer.p99 < 1, (
+            f"Cosine similarity p99 ({performance_timer.p99:.2f}ms) exceeds 1ms"
+        )
 
     def test_batch_similarity_performance(self, performance_timer):
         """Test batch similarity calculations."""
@@ -287,10 +308,7 @@ class TestEmbeddingOperationPerformance:
         query_vec = [0.1 * (i % 10) for i in range(2048)]
 
         # 100 candidate vectors
-        candidates = [
-            [0.1 * ((i + j) % 10) for i in range(2048)]
-            for j in range(100)
-        ]
+        candidates = [[0.1 * ((i + j) % 10) for i in range(2048)] for j in range(100)]
 
         # Warmup
         for _ in range(WARMUP_ITERATIONS):
@@ -300,10 +318,14 @@ class TestEmbeddingOperationPerformance:
         for _ in range(TEST_ITERATIONS):
             performance_timer.start()
             similarities = [cosine_similarity(query_vec, c) for c in candidates]
-            top_10 = sorted(range(len(similarities)), key=lambda i: similarities[i], reverse=True)[:10]
+            _top_10 = sorted(
+                range(len(similarities)), key=lambda i: similarities[i], reverse=True
+            )[:10]
             performance_timer.stop()
 
-        assert performance_timer.p99 < 50, f"Batch similarity p99 ({performance_timer.p99:.2f}ms) exceeds 50ms"
+        assert performance_timer.p99 < 50, (
+            f"Batch similarity p99 ({performance_timer.p99:.2f}ms) exceeds 50ms"
+        )
 
 
 class TestValidationPerformance:
@@ -333,7 +355,9 @@ class TestValidationPerformance:
             DecisionCreate(**decision_data)
             performance_timer.stop()
 
-        assert performance_timer.p99 < 2, f"Validation p99 ({performance_timer.p99:.2f}ms) exceeds 2ms"
+        assert performance_timer.p99 < 2, (
+            f"Validation p99 ({performance_timer.p99:.2f}ms) exceeds 2ms"
+        )
 
     def test_uuid_validation_performance(self, performance_timer):
         """Test UUID validation speed."""
@@ -353,7 +377,9 @@ class TestValidationPerformance:
             performance_timer.stop()
 
         # 100 validations should be very fast
-        assert performance_timer.p99 < 5, f"UUID validation p99 ({performance_timer.p99:.2f}ms) exceeds 5ms"
+        assert performance_timer.p99 < 5, (
+            f"UUID validation p99 ({performance_timer.p99:.2f}ms) exceeds 5ms"
+        )
 
 
 class TestEntityResolutionPerformance:
@@ -369,9 +395,19 @@ class TestEntityResolutionPerformance:
         # Test strings
         query = "PostgreSQL"
         candidates = [
-            "PostgreSQL", "Postgresql", "postgres", "POSTGRESQL",
-            "MySQL", "MariaDB", "Redis", "MongoDB", "Neo4j",
-            "Cassandra", "DynamoDB", "CockroachDB", "TimescaleDB",
+            "PostgreSQL",
+            "Postgresql",
+            "postgres",
+            "POSTGRESQL",
+            "MySQL",
+            "MariaDB",
+            "Redis",
+            "MongoDB",
+            "Neo4j",
+            "Cassandra",
+            "DynamoDB",
+            "CockroachDB",
+            "TimescaleDB",
         ] * 10  # 130 candidates
 
         # Warmup
@@ -382,10 +418,12 @@ class TestEntityResolutionPerformance:
         for _ in range(TEST_ITERATIONS):
             performance_timer.start()
             scores = [fuzz.ratio(query.lower(), c.lower()) for c in candidates]
-            best_match = max(range(len(scores)), key=lambda i: scores[i])
+            _best_match = max(range(len(scores)), key=lambda i: scores[i])
             performance_timer.stop()
 
-        assert performance_timer.p99 < 10, f"Fuzzy matching p99 ({performance_timer.p99:.2f}ms) exceeds 10ms"
+        assert performance_timer.p99 < 10, (
+            f"Fuzzy matching p99 ({performance_timer.p99:.2f}ms) exceeds 10ms"
+        )
 
     def test_canonical_lookup_performance(self, performance_timer):
         """Test canonical name lookup speed."""
@@ -393,8 +431,16 @@ class TestEntityResolutionPerformance:
 
         # Test names
         test_names = [
-            "postgres", "k8s", "js", "ts", "py",
-            "mongo", "redis", "react", "vue", "angular",
+            "postgres",
+            "k8s",
+            "js",
+            "ts",
+            "py",
+            "mongo",
+            "redis",
+            "react",
+            "vue",
+            "angular",
         ] * 100  # 1000 lookups
 
         # Warmup
@@ -408,7 +454,9 @@ class TestEntityResolutionPerformance:
             performance_timer.stop()
 
         # 1000 lookups should be very fast (dict lookup)
-        assert performance_timer.p99 < 5, f"Canonical lookup p99 ({performance_timer.p99:.2f}ms) exceeds 5ms"
+        assert performance_timer.p99 < 5, (
+            f"Canonical lookup p99 ({performance_timer.p99:.2f}ms) exceeds 5ms"
+        )
 
 
 class TestDataSizeScaling:
@@ -446,7 +494,7 @@ class TestDataSizeScaling:
             times = []
             for _ in range(TEST_ITERATIONS):
                 performance_timer.start()
-                nodes = [GraphNode(**d) for d in decisions]
+                _nodes = [GraphNode(**d) for d in decisions]
                 elapsed = performance_timer.stop()
                 times.append(elapsed)
 
@@ -455,7 +503,9 @@ class TestDataSizeScaling:
         # Check scaling is roughly linear (not exponential)
         # Time for 200 items should be less than 5x time for 10 items
         scaling_factor = results[200] / results[10] if results[10] > 0 else 0
-        assert scaling_factor < 30, f"Scaling factor {scaling_factor:.2f} exceeds 30x (indicates non-linear scaling)"
+        assert scaling_factor < 30, (
+            f"Scaling factor {scaling_factor:.2f} exceeds 30x (indicates non-linear scaling)"
+        )
 
     def test_graph_edge_scaling(self, performance_timer):
         """Test how graph edge processing scales."""
@@ -486,7 +536,7 @@ class TestDataSizeScaling:
             times = []
             for _ in range(TEST_ITERATIONS):
                 performance_timer.start()
-                graph_edges = [GraphEdge(**e) for e in edges]
+                _graph_edges = [GraphEdge(**e) for e in edges]
                 elapsed = performance_timer.stop()
                 times.append(elapsed)
 
@@ -494,7 +544,9 @@ class TestDataSizeScaling:
 
         # Check linear scaling
         scaling_factor = results[500] / results[50] if results[50] > 0 else 0
-        assert scaling_factor < 15, f"Edge scaling factor {scaling_factor:.2f} exceeds 15x"
+        assert scaling_factor < 15, (
+            f"Edge scaling factor {scaling_factor:.2f} exceeds 15x"
+        )
 
 
 # ============================================================================
@@ -509,13 +561,14 @@ class TestPerformanceBaseline:
         """Establish and verify performance baseline."""
         baselines = {
             "json_parse_50_decisions": 10,  # ms
-            "list_filter_1000_items": 5,    # ms
-            "cosine_similarity_2048d": 1,   # ms
-            "pydantic_validation": 2,       # ms
+            "list_filter_1000_items": 5,  # ms
+            "cosine_similarity_2048d": 1,  # ms
+            "pydantic_validation": 2,  # ms
         }
 
         # JSON parsing baseline
         import json
+
         data = {"decisions": [{"id": str(uuid4())} for _ in range(50)]}
         json_str = json.dumps(data)
 
@@ -524,8 +577,9 @@ class TestPerformanceBaseline:
             json.loads(json_str)
             performance_timer.stop()
 
-        assert performance_timer.p99 < baselines["json_parse_50_decisions"], \
+        assert performance_timer.p99 < baselines["json_parse_50_decisions"], (
             f"JSON parsing regression: {performance_timer.p99:.2f}ms > {baselines['json_parse_50_decisions']}ms"
+        )
 
 
 # ============================================================================

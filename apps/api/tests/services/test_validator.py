@@ -12,7 +12,6 @@ Tests all validation checks:
 Target: 85%+ coverage for validator.py
 """
 
-
 import pytest
 
 from services.validator import (
@@ -87,7 +86,11 @@ class TestValidatorCircularDependencies:
         assert len(issues) == 1
         assert issues[0].type == IssueType.CIRCULAR_DEPENDENCY
         # Phase 5: Message format changed to include relationship type
-        assert "A" in issues[0].message and "B" in issues[0].message and "C" in issues[0].message
+        assert (
+            "A" in issues[0].message
+            and "B" in issues[0].message
+            and "C" in issues[0].message
+        )
 
     @pytest.mark.asyncio
     async def test_no_cycles_returns_empty(self, validator, mock_session):
@@ -132,7 +135,10 @@ class TestValidatorCircularDependencies:
 
         assert issues[0].suggested_action is not None
         # Phase 5: Suggested action changed to "review" instead of "remove"
-        assert "review" in issues[0].suggested_action.lower() or "identify" in issues[0].suggested_action.lower()
+        assert (
+            "review" in issues[0].suggested_action.lower()
+            or "identify" in issues[0].suggested_action.lower()
+        )
 
 
 # ============================================================================
@@ -162,7 +168,9 @@ class TestValidatorOrphanEntities:
     @pytest.mark.asyncio
     async def test_no_orphans_returns_empty(self, validator, mock_session):
         """Should return empty list when all entities have relationships."""
-        mock_session.set_response("IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO", records=[])
+        mock_session.set_response(
+            "IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO", records=[]
+        )
 
         issues = await validator.check_orphan_entities()
 
@@ -244,12 +252,16 @@ class TestValidatorLowConfidenceRelationships:
         }
         mock_session.set_response("confidence", records=[medium_conf_record])
 
-        issues_high_threshold = await validator.check_low_confidence_relationships(threshold=0.7)
+        issues_high_threshold = await validator.check_low_confidence_relationships(
+            threshold=0.7
+        )
 
         # Reset and check with lower threshold
         mock_session.reset()
         mock_session.set_response("confidence", records=[medium_conf_record])
-        issues_low_threshold = await validator.check_low_confidence_relationships(threshold=0.5)
+        issues_low_threshold = await validator.check_low_confidence_relationships(
+            threshold=0.5
+        )
 
         # 0.6 is below 0.7 but above 0.5
         assert len(issues_high_threshold) == 1
@@ -378,6 +390,7 @@ class TestValidatorMissingEmbeddings:
     @pytest.mark.asyncio
     async def test_detects_decisions_without_embeddings(self, validator, mock_session):
         """Should detect decisions missing embeddings."""
+
         async def mock_run(query, **params):
             if "DecisionTrace" in query and "embedding IS NULL" in query:
                 # Return count of decisions without embeddings
@@ -392,14 +405,14 @@ class TestValidatorMissingEmbeddings:
 
         assert any(i.type == IssueType.MISSING_EMBEDDING for i in issues)
         decision_issue = next(
-            (i for i in issues if i.details.get("type") == "decision"),
-            None
+            (i for i in issues if i.details.get("type") == "decision"), None
         )
         assert decision_issue is not None
 
     @pytest.mark.asyncio
     async def test_detects_entities_without_embeddings(self, validator, mock_session):
         """Should detect entities missing embeddings."""
+
         async def mock_run(query, **params):
             # Decision query: "d.embedding IS NULL" and "count(d)"
             if "d.embedding IS NULL" in query:
@@ -414,8 +427,7 @@ class TestValidatorMissingEmbeddings:
         issues = await validator.check_missing_embeddings()
 
         entity_issue = next(
-            (i for i in issues if i.details.get("type") == "entity"),
-            None
+            (i for i in issues if i.details.get("type") == "entity"), None
         )
         assert entity_issue is not None
         assert entity_issue.details["count"] == 5
@@ -423,6 +435,7 @@ class TestValidatorMissingEmbeddings:
     @pytest.mark.asyncio
     async def test_no_missing_embeddings_returns_empty(self, validator, mock_session):
         """Should return empty list when all nodes have embeddings."""
+
         async def mock_run(query, **params):
             # All queries return count of 0
             return MockNeo4jResult(single_value={"count": 0})
@@ -436,6 +449,7 @@ class TestValidatorMissingEmbeddings:
     @pytest.mark.asyncio
     async def test_includes_suggested_action(self, validator, mock_session):
         """Should suggest running enhance endpoint."""
+
         async def mock_run(query, **params):
             if "DecisionTrace" in query:
                 return MockNeo4jResult(single_value={"count": 3})
@@ -504,11 +518,18 @@ class TestValidatorInvalidRelationships:
         d2d_issues = [i for i in issues if i.type == IssueType.INVALID_RELATIONSHIP]
         if d2d_issues:
             # Should suggest using decision relationships instead
-            assert any("SIMILAR_TO" in str(i.suggested_action) or "INFLUENCED_BY" in str(i.suggested_action) for i in d2d_issues)
+            assert any(
+                "SIMILAR_TO" in str(i.suggested_action)
+                or "INFLUENCED_BY" in str(i.suggested_action)
+                for i in d2d_issues
+            )
 
     @pytest.mark.asyncio
-    async def test_no_invalid_relationships_returns_empty(self, validator, mock_session):
+    async def test_no_invalid_relationships_returns_empty(
+        self, validator, mock_session
+    ):
         """Should return empty list when all relationships are valid."""
+
         async def mock_run(query, **params):
             return MockNeo4jResult(records=[])
 
@@ -575,6 +596,7 @@ class TestValidatorSummary:
     @pytest.mark.asyncio
     async def test_get_validation_summary_structure(self, validator, mock_session):
         """Should return properly structured summary."""
+
         # Set up empty responses for all checks
         async def mock_run(query, **params):
             if "count(e)" in query:
@@ -595,19 +617,28 @@ class TestValidatorSummary:
     @pytest.mark.asyncio
     async def test_summary_counts_by_severity(self, mock_session):
         """Should count issues by severity correctly."""
+
         # Create some issues by mocking responses
         async def mock_run(query, **params):
             # Circular dependency check - return a cycle
             # Phase 5: Query pattern changed to use dynamic relationship type
-            if "DEPENDS_ON*2.." in query or "REQUIRES*2.." in query or "nodes(path)" in query:
-                return MockNeo4jResult(records=[
-                    Neo4jRecordFactory.create_cycle_record(["A", "B", "A"], ["1", "2", "1"])
-                ])
+            if (
+                "DEPENDS_ON*2.." in query
+                or "REQUIRES*2.." in query
+                or "nodes(path)" in query
+            ):
+                return MockNeo4jResult(
+                    records=[
+                        Neo4jRecordFactory.create_cycle_record(
+                            ["A", "B", "A"], ["1", "2", "1"]
+                        )
+                    ]
+                )
             # Orphan entity check
             if "IS_A|PART_OF|RELATED_TO|DEPENDS_ON|ALTERNATIVE_TO" in query:
-                return MockNeo4jResult(records=[
-                    {"id": "orphan1", "name": "Orphan", "type": "tech"}
-                ])
+                return MockNeo4jResult(
+                    records=[{"id": "orphan1", "name": "Orphan", "type": "tech"}]
+                )
             # Missing embedding counts
             if "count(e)" in query:
                 return MockNeo4jResult(single_value={"count": 0})
@@ -621,7 +652,11 @@ class TestValidatorSummary:
             if "r.confidence" in query:
                 return MockNeo4jResult(records=[])
             # Missing decision embeddings
-            if "DecisionTrace" in query and "embedding IS NULL" in query and "count(d)" in query:
+            if (
+                "DecisionTrace" in query
+                and "embedding IS NULL" in query
+                and "count(d)" in query
+            ):
                 return MockNeo4jResult(records=[])
             # Duplicate entity check
             if "MATCH (e:Entity)" in query and "RETURN e.id" in query:
@@ -649,6 +684,7 @@ class TestValidatorValidateAll:
     @pytest.mark.asyncio
     async def test_validate_all_runs_all_checks(self, validator, mock_session):
         """Should run all validation checks."""
+
         async def mock_run(query, **params):
             if "count(e)" in query:
                 return MockNeo4jResult(single_value={"count": 0})

@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 def strip_thinking_tags(text: str) -> str:
     """Remove <think>...</think> tags from model output."""
     # Remove thinking blocks
-    text = re.sub(r'<think>.*?</think>\s*', '', text, flags=re.DOTALL)
+    text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
     return text.strip()
 
 
@@ -42,7 +42,9 @@ ANONYMOUS_RATE_LIMIT_REQUESTS = 10  # Stricter limit for anonymous users
 class PromptTooLargeError(ValueError):
     """Raised when the prompt exceeds the maximum allowed token count."""
 
-    def __init__(self, estimated_tokens: int, max_tokens: int, message: str | None = None):
+    def __init__(
+        self, estimated_tokens: int, max_tokens: int, message: str | None = None
+    ):
         self.estimated_tokens = estimated_tokens
         self.max_tokens = max_tokens
         if message is None:
@@ -64,12 +66,15 @@ class RateLimitExceededError(Exception):
         )
 
 
-
-
 class PromptInjectionError(ValueError):
     """Raised when a prompt injection attempt is detected (ML-P1-1)."""
 
-    def __init__(self, risk_level: InjectionRiskLevel, patterns: list[str], message: str | None = None):
+    def __init__(
+        self,
+        risk_level: InjectionRiskLevel,
+        patterns: list[str],
+        message: str | None = None,
+    ):
         self.risk_level = risk_level
         self.patterns = patterns
         if message is None:
@@ -78,6 +83,7 @@ class PromptInjectionError(ValueError):
                 f"Detected patterns: {', '.join(patterns[:3])}"
             )
         super().__init__(message)
+
 
 class RateLimiter:
     """Token bucket rate limiter using Redis with per-user support (SEC-009).
@@ -335,7 +341,6 @@ class LLMClient:
 
         return estimated_tokens
 
-
     def _sanitize_user_prompt(
         self,
         prompt: str,
@@ -364,11 +369,14 @@ class LLMClient:
                     "confidence": result.confidence,
                     "pattern_count": len(result.detected_patterns),
                     "was_modified": result.was_modified,
-                }
+                },
             )
 
         # Reject high-risk prompts
-        if reject_high_risk and result.risk_level in (InjectionRiskLevel.HIGH, InjectionRiskLevel.CRITICAL):
+        if reject_high_risk and result.risk_level in (
+            InjectionRiskLevel.HIGH,
+            InjectionRiskLevel.CRITICAL,
+        ):
             raise PromptInjectionError(
                 result.risk_level,
                 result.detected_patterns,
@@ -387,7 +395,7 @@ class LLMClient:
         """
         # Exponential backoff: base * 2^attempt, capped at 8 seconds
         base_delay = self.settings.llm_retry_base_delay
-        exponential = min(base_delay * (2 ** attempt), 8.0)
+        exponential = min(base_delay * (2**attempt), 8.0)
         # Add jitter: 0-1 seconds to prevent thundering herd
         jitter = random.uniform(0, 1)
         return exponential + jitter
@@ -416,9 +424,10 @@ class LLMClient:
                 return True
             # Check error message for model-specific issues
             error_msg = str(error).lower()
-            if any(phrase in error_msg for phrase in [
-                "model", "overloaded", "capacity", "unavailable"
-            ]):
+            if any(
+                phrase in error_msg
+                for phrase in ["model", "overloaded", "capacity", "unavailable"]
+            ):
                 return True
 
         return False
@@ -433,7 +442,9 @@ class LLMClient:
             True if the error is transient and should be retried
         """
         # Connection and timeout errors are retryable
-        if isinstance(error, (TimeoutError, ConnectionError, APIConnectionError, APITimeoutError)):
+        if isinstance(
+            error, (TimeoutError, ConnectionError, APIConnectionError, APITimeoutError)
+        ):
             return True
 
         # API status errors with specific codes are retryable
@@ -457,9 +468,11 @@ class LLMClient:
             logger.debug("Token usage not available in response")
             return
 
-        prompt_tokens = getattr(usage, 'prompt_tokens', 0) or 0
-        completion_tokens = getattr(usage, 'completion_tokens', 0) or 0
-        total_tokens = getattr(usage, 'total_tokens', 0) or prompt_tokens + completion_tokens
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+        total_tokens = (
+            getattr(usage, "total_tokens", 0) or prompt_tokens + completion_tokens
+        )
 
         logger.info(
             "LLM token usage",
@@ -471,9 +484,8 @@ class LLMClient:
                     "total_tokens": total_tokens,
                     "streaming": streaming,
                 }
-            }
+            },
         )
-
 
     async def _generate_with_model(
         self,
@@ -523,7 +535,9 @@ class LLMClient:
 
                 # Don't retry non-retryable errors
                 if not self._is_retryable_error(e):
-                    logger.error(f"Non-retryable error on LLM call with {model}: {type(e).__name__}: {e}")
+                    logger.error(
+                        f"Non-retryable error on LLM call with {model}: {type(e).__name__}: {e}"
+                    )
                     raise
 
                 # Don't retry if we've exhausted attempts
@@ -619,7 +633,7 @@ class LLMClient:
                         "primary_model": self.model,
                         "fallback_model": self.fallback_model,
                         "primary_error": str(primary_error),
-                    }
+                    },
                 )
                 try:
                     return await self._generate_with_model(
@@ -637,7 +651,7 @@ class LLMClient:
                             "fallback_model": self.fallback_model,
                             "primary_error": str(primary_error),
                             "fallback_error": str(fallback_error),
-                        }
+                        },
                     )
                     # Re-raise the fallback error as it's more recent
                     raise fallback_error
@@ -713,7 +727,9 @@ class LLMClient:
                     frequency_penalty=0,
                     presence_penalty=0,
                     stream=True,
-                    stream_options={"include_usage": True},  # Request usage in stream (ML-QW-1)
+                    stream_options={
+                        "include_usage": True
+                    },  # Request usage in stream (ML-QW-1)
                 )
 
                 # Buffer for thinking tag stripping in streaming mode
@@ -723,7 +739,7 @@ class LLMClient:
 
                 async for chunk in stream:
                     # Capture usage from the final chunk (ML-QW-1)
-                    if hasattr(chunk, 'usage') and chunk.usage is not None:
+                    if hasattr(chunk, "usage") and chunk.usage is not None:
                         stream_usage = chunk.usage
                     if chunk.choices and chunk.choices[0].delta.content is not None:
                         content = chunk.choices[0].delta.content
@@ -738,13 +754,18 @@ class LLMClient:
                                     # Yield content before the tag
                                     if think_start > 0:
                                         yield buffer[:think_start]
-                                    buffer = buffer[think_start + 7:]  # Skip <think>
+                                    buffer = buffer[think_start + 7 :]  # Skip <think>
                                     in_thinking_block = True
                                 else:
                                     # Check if we might be at the start of a tag
-                                    if buffer.endswith("<") or buffer.endswith("<t") or \
-                                       buffer.endswith("<th") or buffer.endswith("<thi") or \
-                                       buffer.endswith("<thin") or buffer.endswith("<think"):
+                                    if (
+                                        buffer.endswith("<")
+                                        or buffer.endswith("<t")
+                                        or buffer.endswith("<th")
+                                        or buffer.endswith("<thi")
+                                        or buffer.endswith("<thin")
+                                        or buffer.endswith("<think")
+                                    ):
                                         # Keep partial tag in buffer
                                         break
                                     # Safe to yield everything
@@ -757,7 +778,7 @@ class LLMClient:
                                 think_end = buffer.find("</think>")
                                 if think_end != -1:
                                     # Discard thinking content
-                                    buffer = buffer[think_end + 8:]  # Skip </think>
+                                    buffer = buffer[think_end + 8 :]  # Skip </think>
                                     in_thinking_block = False
                                 else:
                                     # Still inside thinking block, keep buffering
@@ -777,7 +798,9 @@ class LLMClient:
 
                 # Don't retry non-retryable errors
                 if not self._is_retryable_error(e):
-                    logger.error(f"Non-retryable error on streaming LLM call: {type(e).__name__}: {e}")
+                    logger.error(
+                        f"Non-retryable error on streaming LLM call: {type(e).__name__}: {e}"
+                    )
                     raise
 
                 # Don't retry if we've exhausted attempts

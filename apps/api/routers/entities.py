@@ -142,11 +142,13 @@ async def suggest_entities(
     entities = []
     for e in raw_entities:
         if isinstance(e, dict):
-            entities.append(Entity(
-                id=e.get("id"),
-                name=e.get("name", ""),
-                type=e.get("type", "concept"),
-            ))
+            entities.append(
+                Entity(
+                    id=e.get("id"),
+                    name=e.get("name", ""),
+                    type=e.get("type", "concept"),
+                )
+            )
         else:
             entities.append(e)
 

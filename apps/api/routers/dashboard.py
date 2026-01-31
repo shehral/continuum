@@ -52,7 +52,7 @@ async def get_dashboard_stats(
     except SQLAlchemyError as e:
         logger.error(
             f"PostgreSQL error fetching session count: {type(e).__name__}: {e}",
-            exc_info=True
+            exc_info=True,
         )
         errors.append("postgres_sessions")
 
@@ -62,13 +62,15 @@ async def get_dashboard_stats(
         async with session:
             # Count decisions
             try:
-                result = await session.run("MATCH (d:DecisionTrace) RETURN count(d) as count")
+                result = await session.run(
+                    "MATCH (d:DecisionTrace) RETURN count(d) as count"
+                )
                 record = await result.single()
                 total_decisions = record["count"] if record else 0
             except Exception as e:
                 logger.error(
                     f"Neo4j error counting decisions: {type(e).__name__}: {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 errors.append("neo4j_decisions")
 
@@ -80,7 +82,7 @@ async def get_dashboard_stats(
             except Exception as e:
                 logger.error(
                     f"Neo4j error counting entities: {type(e).__name__}: {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 errors.append("neo4j_entities")
 
@@ -124,36 +126,27 @@ async def get_dashboard_stats(
             except Exception as e:
                 logger.error(
                     f"Neo4j error fetching recent decisions: {type(e).__name__}: {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 errors.append("neo4j_recent_decisions")
 
     except Neo4jServiceUnavailable as e:
         # Neo4j is not available - this is a critical infrastructure issue
-        logger.error(
-            f"Neo4j service unavailable: {e}",
-            exc_info=True
-        )
+        logger.error(f"Neo4j service unavailable: {e}", exc_info=True)
         raise HTTPException(
             status_code=503,
-            detail="Knowledge graph database is currently unavailable. Please try again later."
+            detail="Knowledge graph database is currently unavailable. Please try again later.",
         )
     except Neo4jAuthError as e:
         # Authentication failed - configuration issue
-        logger.error(
-            f"Neo4j authentication failed: {e}",
-            exc_info=True
-        )
+        logger.error(f"Neo4j authentication failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=503,
-            detail="Knowledge graph database authentication failed. Please contact support."
+            detail="Knowledge graph database authentication failed. Please contact support.",
         )
     except Exception as e:
         # Unexpected Neo4j error - log but don't crash
-        logger.error(
-            f"Unexpected Neo4j error: {type(e).__name__}: {e}",
-            exc_info=True
-        )
+        logger.error(f"Unexpected Neo4j error: {type(e).__name__}: {e}", exc_info=True)
         errors.append("neo4j_connection")
 
     # If all critical operations failed, return 503
@@ -161,7 +154,7 @@ async def get_dashboard_stats(
         logger.error(f"Dashboard stats failed with multiple errors: {errors}")
         raise HTTPException(
             status_code=503,
-            detail="Multiple database services are unavailable. Please try again later."
+            detail="Multiple database services are unavailable. Please try again later.",
         )
 
     # Log partial failures for monitoring

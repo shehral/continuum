@@ -114,7 +114,10 @@ CACHE_MISSES = Counter(
 ENTITY_RESOLUTION_TOTAL = Counter(
     "continuum_entity_resolution_total",
     "Total entity resolution attempts",
-    ["method", "result"],  # method: exact, canonical, alias, fuzzy, embedding; result: found, not_found
+    [
+        "method",
+        "result",
+    ],  # method: exact, canonical, alias, fuzzy, embedding; result: found, not_found
     registry=REGISTRY,
 )
 

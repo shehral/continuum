@@ -43,8 +43,9 @@ logger = get_logger(__name__)
 
 class CircuitState(Enum):
     """Circuit breaker states."""
-    CLOSED = "closed"      # Normal operation
-    OPEN = "open"          # Failing fast
+
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Failing fast
     HALF_OPEN = "half_open"  # Testing recovery
 
 
@@ -63,6 +64,7 @@ class CircuitBreakerOpen(Exception):
 @dataclass
 class CircuitBreakerStats:
     """Statistics for a circuit breaker."""
+
     name: str
     state: str
     failure_count: int
@@ -85,6 +87,7 @@ class CircuitBreaker:
         success_threshold: Successful calls needed in half-open state to close
         exceptions: Exception types that should trip the circuit (None = all)
     """
+
     name: str
     failure_threshold: int = 5
     recovery_timeout: float = 30.0

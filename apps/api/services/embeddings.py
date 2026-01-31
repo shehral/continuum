@@ -89,7 +89,7 @@ class EmbeddingService:
         Format: emb:{model_short}:{input_type}:{hash(text)}
         """
         # Use MD5 hash of text for cache key (fast, collision-resistant enough for caching)
-        text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
+        text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
         # Use short model name
         model_short = "nvembed"
         return f"emb:{model_short}:{input_type}:{text_hash}"
@@ -110,7 +110,9 @@ class EmbeddingService:
 
         return None
 
-    async def _set_cached_embedding(self, cache_key: str, embedding: List[float]) -> None:
+    async def _set_cached_embedding(
+        self, cache_key: str, embedding: List[float]
+    ) -> None:
         """Store an embedding in cache."""
         redis_client = await self._get_redis()
         if redis_client is None:
@@ -156,7 +158,7 @@ class EmbeddingService:
                 input=[text],
                 model=self.model,
                 encoding_format="float",
-                extra_body={"input_type": input_type, "truncate": "END"}
+                extra_body={"input_type": input_type, "truncate": "END"},
             )
             embedding = response.data[0].embedding
 
@@ -178,7 +180,7 @@ class EmbeddingService:
         self,
         texts: List[str],
         input_type: str = "passage",
-        batch_size: int | None = None
+        batch_size: int | None = None,
     ) -> List[List[float]]:
         """
         Generate embeddings for multiple texts with batch-aware caching and circuit breaker.
@@ -226,14 +228,14 @@ class EmbeddingService:
             try:
                 # Batch the API calls
                 for batch_start in range(0, len(texts_to_embed), batch_size):
-                    batch = texts_to_embed[batch_start:batch_start + batch_size]
+                    batch = texts_to_embed[batch_start : batch_start + batch_size]
                     batch_texts = [text for _, text in batch]
 
                     response = await self.client.embeddings.create(
                         input=batch_texts,
                         model=self.model,
                         encoding_format="float",
-                        extra_body={"input_type": input_type, "truncate": "END"}
+                        extra_body={"input_type": input_type, "truncate": "END"},
                     )
 
                     # Store results and cache them
@@ -283,10 +285,7 @@ class EmbeddingService:
         return await self.embed_text(text, input_type="passage")
 
     async def semantic_search(
-        self,
-        query: str,
-        candidates: List[dict],
-        top_k: int = 10
+        self, query: str, candidates: List[dict], top_k: int = 10
     ) -> List[dict]:
         """
         Perform semantic search over candidates.
@@ -304,15 +303,12 @@ class EmbeddingService:
         # Calculate cosine similarity
         scored = []
         for candidate in candidates:
-            if 'embedding' in candidate:
-                similarity = cosine_similarity(
-                    query_embedding,
-                    candidate['embedding']
-                )
-                scored.append({**candidate, 'similarity': similarity})
+            if "embedding" in candidate:
+                similarity = cosine_similarity(query_embedding, candidate["embedding"])
+                scored.append({**candidate, "similarity": similarity})
 
         # Sort by similarity descending
-        scored.sort(key=lambda x: x['similarity'], reverse=True)
+        scored.sort(key=lambda x: x["similarity"], reverse=True)
         return scored[:top_k]
 
     async def close(self):

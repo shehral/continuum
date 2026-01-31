@@ -167,7 +167,9 @@ class TestForbidden:
         """Should return 403 when deleting entity shared with other users."""
         # Mock entity exists and is accessible
         mock_entity_result = AsyncMock()
-        mock_entity_result.single = AsyncMock(return_value={"e": {"id": "shared-entity"}})
+        mock_entity_result.single = AsyncMock(
+            return_value={"e": {"id": "shared-entity"}}
+        )
 
         # Mock other users have access
         mock_other_users_result = AsyncMock()
@@ -356,9 +358,7 @@ class TestInternalServerError:
     @pytest.mark.asyncio
     async def test_database_query_error(self, mock_neo4j_session):
         """Should return 500 for database query errors."""
-        mock_neo4j_session.run = AsyncMock(
-            side_effect=DatabaseError("Query failed")
-        )
+        mock_neo4j_session.run = AsyncMock(side_effect=DatabaseError("Query failed"))
 
         with patch(
             "routers.decisions.get_neo4j_session",
@@ -452,7 +452,7 @@ class TestErrorResponseSchema:
     def test_http_exception_has_detail(self):
         """HTTPException should always have a detail field."""
         exc = HTTPException(status_code=404, detail="Not found")
-        assert hasattr(exc, 'detail')
+        assert hasattr(exc, "detail")
         assert exc.detail == "Not found"
 
     def test_http_exception_detail_is_string(self):
@@ -493,11 +493,11 @@ class TestRateLimitError:
     @pytest.mark.asyncio
     async def test_rate_limit_exceeded_raises_exception(self):
         """Should raise exception when rate limit exceeded."""
-        with patch('services.llm.AsyncOpenAI') as mock_client_class:
+        with patch("services.llm.AsyncOpenAI") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
 
-            with patch('services.llm.redis') as mock_redis_module:
+            with patch("services.llm.redis") as mock_redis_module:
                 mock_redis = AsyncMock()
                 mock_pipe = AsyncMock()
                 # Always at limit

@@ -58,9 +58,9 @@ async def get_current_user_id(
                 algorithms=[settings.algorithm],
                 options={
                     "require_sub": True,  # Require 'sub' claim
-                    "verify_exp": True,   # Verify expiration
-                    "verify_iat": True,   # Verify issued-at
-                }
+                    "verify_exp": True,  # Verify expiration
+                    "verify_iat": True,  # Verify issued-at
+                },
             )
         except JWTError:
             # SEC-007: Don't log the actual token or error details that might expose secrets

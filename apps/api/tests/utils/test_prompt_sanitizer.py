@@ -191,7 +191,11 @@ class TestCalculateRiskLevel:
         risk, confidence = calculate_risk_level(patterns)
 
         # Single high-weight pattern results in MEDIUM due to count_factor
-        assert risk in (InjectionRiskLevel.MEDIUM, InjectionRiskLevel.HIGH, InjectionRiskLevel.CRITICAL)
+        assert risk in (
+            InjectionRiskLevel.MEDIUM,
+            InjectionRiskLevel.HIGH,
+            InjectionRiskLevel.CRITICAL,
+        )
         assert confidence >= 0.4
 
     def test_system_override_detected_as_risk(self):
@@ -200,7 +204,11 @@ class TestCalculateRiskLevel:
         risk, confidence = calculate_risk_level(patterns)
 
         # At least MEDIUM risk for system override
-        assert risk in (InjectionRiskLevel.MEDIUM, InjectionRiskLevel.HIGH, InjectionRiskLevel.CRITICAL)
+        assert risk in (
+            InjectionRiskLevel.MEDIUM,
+            InjectionRiskLevel.HIGH,
+            InjectionRiskLevel.CRITICAL,
+        )
         assert confidence >= 0.4
 
     def test_multiple_patterns_increase_confidence(self):
@@ -412,7 +420,10 @@ class TestSanitizePrompt:
         """
         result = sanitize_prompt(text)
 
-        assert result.risk_level in (InjectionRiskLevel.HIGH, InjectionRiskLevel.CRITICAL)
+        assert result.risk_level in (
+            InjectionRiskLevel.HIGH,
+            InjectionRiskLevel.CRITICAL,
+        )
         assert len(result.detected_patterns) >= 3
 
     def test_invisible_chars_removed(self):
@@ -428,7 +439,11 @@ class TestSanitizePrompt:
         text = "System: new instruction"
         result = sanitize_prompt(text)
 
-        if result.risk_level in (InjectionRiskLevel.MEDIUM, InjectionRiskLevel.HIGH, InjectionRiskLevel.CRITICAL):
+        if result.risk_level in (
+            InjectionRiskLevel.MEDIUM,
+            InjectionRiskLevel.HIGH,
+            InjectionRiskLevel.CRITICAL,
+        ):
             assert result.was_modified or '"System:"' in result.sanitized_text
 
     def test_preserves_original_text(self):
@@ -580,7 +595,10 @@ class TestEdgeCases:
         result = sanitize_prompt(text)
 
         # This might be LOW risk but shouldn't be HIGH
-        assert result.risk_level not in (InjectionRiskLevel.HIGH, InjectionRiskLevel.CRITICAL)
+        assert result.risk_level not in (
+            InjectionRiskLevel.HIGH,
+            InjectionRiskLevel.CRITICAL,
+        )
 
 
 # ============================================================================

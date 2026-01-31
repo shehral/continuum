@@ -68,11 +68,9 @@ class TestSessionMessageQueue:
     @pytest.mark.asyncio
     async def test_add_message_returns_id(self, mock_db_session, mock_settings):
         """Should return a message ID when adding a message."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             queue = SessionMessageQueue(session_id="session-123")
-            message_id = await queue.add_message(
-                mock_db_session, "user", "Hello"
-            )
+            message_id = await queue.add_message(mock_db_session, "user", "Hello")
 
             assert message_id is not None
             assert len(message_id) > 0
@@ -80,7 +78,7 @@ class TestSessionMessageQueue:
     @pytest.mark.asyncio
     async def test_add_message_queues_message(self, mock_db_session, mock_settings):
         """Should queue message without immediate flush."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             queue = SessionMessageQueue(session_id="session-123")
             await queue.add_message(mock_db_session, "user", "Hello")
 
@@ -89,9 +87,11 @@ class TestSessionMessageQueue:
             mock_db_session.commit.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_add_message_flushes_at_batch_size(self, mock_db_session, mock_settings):
+    async def test_add_message_flushes_at_batch_size(
+        self, mock_db_session, mock_settings
+    ):
         """Should flush when batch size is reached."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             queue = SessionMessageQueue(session_id="session-123")
 
             # Add 3 messages (batch_size is 3)
@@ -107,7 +107,7 @@ class TestSessionMessageQueue:
     @pytest.mark.asyncio
     async def test_flush_all_forces_flush(self, mock_db_session, mock_settings):
         """Should flush all messages immediately."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             queue = SessionMessageQueue(session_id="session-123")
 
             await queue.add_message(mock_db_session, "user", "Message 1")
@@ -124,7 +124,7 @@ class TestSessionMessageQueue:
     @pytest.mark.asyncio
     async def test_flush_all_on_empty_queue(self, mock_db_session, mock_settings):
         """Should handle flush on empty queue gracefully."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             queue = SessionMessageQueue(session_id="session-123")
 
             await queue.flush_all(mock_db_session)
@@ -133,15 +133,15 @@ class TestSessionMessageQueue:
             mock_db_session.commit.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_flush_includes_extracted_entities(self, mock_db_session, mock_settings):
+    async def test_flush_includes_extracted_entities(
+        self, mock_db_session, mock_settings
+    ):
         """Should include extracted entities when flushing."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             queue = SessionMessageQueue(session_id="session-123")
 
             entities = [{"name": "PostgreSQL", "type": "technology"}]
-            await queue.add_message(
-                mock_db_session, "assistant", "Response", entities
-            )
+            await queue.add_message(mock_db_session, "assistant", "Response", entities)
 
             await queue.flush_all(mock_db_session)
 
@@ -174,7 +174,7 @@ class TestMessageQueueManager:
     @pytest.mark.asyncio
     async def test_get_queue_creates_new_queue(self, mock_settings):
         """Should create a new queue for a session."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             manager = MessageQueueManager()
             queue = await manager.get_queue("session-123")
 
@@ -184,7 +184,7 @@ class TestMessageQueueManager:
     @pytest.mark.asyncio
     async def test_get_queue_returns_same_queue(self, mock_settings):
         """Should return the same queue for the same session."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             manager = MessageQueueManager()
             queue1 = await manager.get_queue("session-123")
             queue2 = await manager.get_queue("session-123")
@@ -194,7 +194,7 @@ class TestMessageQueueManager:
     @pytest.mark.asyncio
     async def test_add_message(self, mock_db_session, mock_settings):
         """Should add message via queue manager."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             manager = MessageQueueManager()
             message_id = await manager.add_message(
                 mock_db_session, "session-123", "user", "Hello"
@@ -208,14 +208,10 @@ class TestMessageQueueManager:
     @pytest.mark.asyncio
     async def test_flush_session(self, mock_db_session, mock_settings):
         """Should flush a specific session's queue."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             manager = MessageQueueManager()
-            await manager.add_message(
-                mock_db_session, "session-123", "user", "Hello"
-            )
-            await manager.add_message(
-                mock_db_session, "session-456", "user", "World"
-            )
+            await manager.add_message(mock_db_session, "session-123", "user", "Hello")
+            await manager.add_message(mock_db_session, "session-456", "user", "World")
 
             await manager.flush_session(mock_db_session, "session-123")
 
@@ -226,11 +222,9 @@ class TestMessageQueueManager:
     @pytest.mark.asyncio
     async def test_remove_session(self, mock_db_session, mock_settings):
         """Should remove a session's queue after flushing."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             manager = MessageQueueManager()
-            await manager.add_message(
-                mock_db_session, "session-123", "user", "Hello"
-            )
+            await manager.add_message(mock_db_session, "session-123", "user", "Hello")
 
             await manager.remove_session(mock_db_session, "session-123")
 
@@ -241,14 +235,10 @@ class TestMessageQueueManager:
     @pytest.mark.asyncio
     async def test_flush_all(self, mock_db_session, mock_settings):
         """Should flush all sessions' queues."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             manager = MessageQueueManager()
-            await manager.add_message(
-                mock_db_session, "session-123", "user", "Hello"
-            )
-            await manager.add_message(
-                mock_db_session, "session-456", "user", "World"
-            )
+            await manager.add_message(mock_db_session, "session-123", "user", "Hello")
+            await manager.add_message(mock_db_session, "session-456", "user", "World")
 
             await manager.flush_all(mock_db_session)
 
@@ -257,7 +247,7 @@ class TestMessageQueueManager:
 
     def test_get_stats(self, mock_settings):
         """Should return correct statistics."""
-        with patch('services.message_queue.get_settings', return_value=mock_settings):
+        with patch("services.message_queue.get_settings", return_value=mock_settings):
             manager = MessageQueueManager()
             stats = manager.get_stats()
 

@@ -11,10 +11,10 @@ Usage:
     # Run from the api directory with virtual environment activated:
     cd apps/api
     .venv/bin/python tests/load/load_test.py
-    
+
     # With custom options:
     .venv/bin/python tests/load/load_test.py --rps 50 --duration 60 --base-url http://localhost:8000
-    
+
 Requirements:
     pip install aiohttp  # Should already be in requirements
 """
@@ -39,6 +39,7 @@ except ImportError:
 @dataclass
 class EndpointMetrics:
     """Metrics for a single endpoint."""
+
     name: str
     latencies: list[float] = field(default_factory=list)
     successes: int = 0
@@ -103,6 +104,7 @@ class EndpointMetrics:
 @dataclass
 class LoadTestResults:
     """Aggregated load test results."""
+
     start_time: datetime
     end_time: Optional[datetime] = None
     endpoints: dict[str, EndpointMetrics] = field(default_factory=dict)
@@ -152,8 +154,7 @@ class LoadTestResults:
     def passed(self) -> bool:
         """Check if the test passed the target thresholds."""
         return (
-            self.overall_p99 < self.target_p99_ms and
-            self.overall_success_rate > 99.0
+            self.overall_p99 < self.target_p99_ms and self.overall_success_rate > 99.0
         )
 
 
@@ -338,10 +339,10 @@ class LoadTester:
         """Worker that continuously makes requests."""
         # Weighted endpoint selection
         endpoints = [
-            (self.test_decisions, 0.30),       # 30%
-            (self.test_graph, 0.25),           # 25%
-            (self.test_hybrid_search, 0.20),   # 20%
-            (self.test_dashboard_stats, 0.25), # 25%
+            (self.test_decisions, 0.30),  # 30%
+            (self.test_graph, 0.25),  # 25%
+            (self.test_hybrid_search, 0.20),  # 20%
+            (self.test_dashboard_stats, 0.25),  # 25%
         ]
 
         while True:
@@ -439,7 +440,9 @@ class LoadTester:
         print("\n" + "-" * 60)
         print("LATENCY PERCENTILES (ms)")
         print("-" * 60)
-        print(f"{'Endpoint':<20} {'Min':>8} {'Avg':>8} {'P50':>8} {'P95':>8} {'P99':>8} {'Max':>8}")
+        print(
+            f"{'Endpoint':<20} {'Min':>8} {'Avg':>8} {'P50':>8} {'P95':>8} {'P99':>8} {'Max':>8}"
+        )
         print("-" * 60)
 
         for name, metrics in results.endpoints.items():
@@ -460,8 +463,8 @@ class LoadTester:
                 f"{'OVERALL':<20} "
                 f"{min(all_latencies):>8.1f} "
                 f"{statistics.mean(all_latencies):>8.1f} "
-                f"{sorted(all_latencies)[len(all_latencies)//2]:>8.1f} "
-                f"{sorted(all_latencies)[int(len(all_latencies)*0.95)]:>8.1f} "
+                f"{sorted(all_latencies)[len(all_latencies) // 2]:>8.1f} "
+                f"{sorted(all_latencies)[int(len(all_latencies) * 0.95)]:>8.1f} "
                 f"{results.overall_p99:>8.1f} "
                 f"{max(all_latencies):>8.1f}"
             )
@@ -469,7 +472,9 @@ class LoadTester:
         print("\n" + "-" * 60)
         print("ENDPOINT SUMMARY")
         print("-" * 60)
-        print(f"{'Endpoint':<20} {'Requests':>10} {'Success':>10} {'Failures':>10} {'Rate':>10}")
+        print(
+            f"{'Endpoint':<20} {'Requests':>10} {'Success':>10} {'Failures':>10} {'Rate':>10}"
+        )
         print("-" * 60)
 
         for name, metrics in results.endpoints.items():
@@ -490,9 +495,13 @@ class LoadTester:
         else:
             print("TEST RESULT: FAILED")
             if results.overall_p99 >= 500:
-                print(f"  FAIL: p99 latency ({results.overall_p99:.1f}ms) >= 500ms target")
+                print(
+                    f"  FAIL: p99 latency ({results.overall_p99:.1f}ms) >= 500ms target"
+                )
             if results.overall_success_rate <= 99.0:
-                print(f"  FAIL: Success rate ({results.overall_success_rate:.1f}%) <= 99%")
+                print(
+                    f"  FAIL: Success rate ({results.overall_success_rate:.1f}%) <= 99%"
+                )
         print("=" * 60)
 
     def save_results(self, filename: str = "load_test_results.json") -> None:

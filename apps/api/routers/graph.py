@@ -93,14 +93,24 @@ def _user_filter_clause(alias: str = "d") -> str:
 @router.get("", response_model=PaginatedGraphData)
 async def get_graph(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(100, ge=1, le=500, description="Number of decisions per page"),
+    page_size: int = Query(
+        100, ge=1, le=500, description="Number of decisions per page"
+    ),
     include_similarity: bool = Query(True, description="Include SIMILAR_TO edges"),
     include_temporal: bool = Query(True, description="Include INFLUENCED_BY edges"),
-    include_entity_relations: bool = Query(True, description="Include entity-to-entity edges"),
-    include_contradictions: bool = Query(False, description="Include CONTRADICTS edges"),
+    include_entity_relations: bool = Query(
+        True, description="Include entity-to-entity edges"
+    ),
+    include_contradictions: bool = Query(
+        False, description="Include CONTRADICTS edges"
+    ),
     include_supersessions: bool = Query(False, description="Include SUPERSEDES edges"),
-    source_filter: Optional[str] = Query(None, description="Filter by source: claude_logs, interview, manual, unknown"),
-    min_confidence: float = Query(0.0, ge=0.0, le=1.0, description="Minimum confidence for relationships"),
+    source_filter: Optional[str] = Query(
+        None, description="Filter by source: claude_logs, interview, manual, unknown"
+    ),
+    min_confidence: float = Query(
+        0.0, ge=0.0, le=1.0, description="Minimum confidence for relationships"
+    ),
     user_id: str = Depends(get_current_user_id),
 ):
     """Get the user's knowledge graph with pagination support (SD-003).
@@ -129,7 +139,9 @@ async def get_graph(
                     AND (d.source = $source OR (d.source IS NULL AND $source = 'unknown'))
                     RETURN count(d) as total
                 """
-                count_result = await session.run(count_query, source=source_filter, user_id=user_id)
+                count_result = await session.run(
+                    count_query, source=source_filter, user_id=user_id
+                )
             else:
                 count_result = await session.run(
                     """
@@ -142,7 +154,9 @@ async def get_graph(
 
             count_record = await count_result.single()
             total_count = count_record["total"] if count_record else 0
-            total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+            total_pages = (
+                (total_count + page_size - 1) // page_size if total_count > 0 else 0
+            )
             has_more = page < total_pages
 
             # Build decision query with user isolation, pagination, and optional source filter
@@ -240,7 +254,15 @@ async def get_graph(
                 if include_temporal:
                     rel_types.append("INFLUENCED_BY")
                 if include_entity_relations:
-                    rel_types.extend(["IS_A", "PART_OF", "RELATED_TO", "DEPENDS_ON", "ALTERNATIVE_TO"])
+                    rel_types.extend(
+                        [
+                            "IS_A",
+                            "PART_OF",
+                            "RELATED_TO",
+                            "DEPENDS_ON",
+                            "ALTERNATIVE_TO",
+                        ]
+                    )
                 if include_contradictions:
                     rel_types.append("CONTRADICTS")
                 if include_supersessions:
@@ -309,11 +331,19 @@ async def get_graph(
 async def get_full_graph(
     include_similarity: bool = Query(True, description="Include SIMILAR_TO edges"),
     include_temporal: bool = Query(True, description="Include INFLUENCED_BY edges"),
-    include_entity_relations: bool = Query(True, description="Include entity-to-entity edges"),
-    include_contradictions: bool = Query(False, description="Include CONTRADICTS edges"),
+    include_entity_relations: bool = Query(
+        True, description="Include entity-to-entity edges"
+    ),
+    include_contradictions: bool = Query(
+        False, description="Include CONTRADICTS edges"
+    ),
     include_supersessions: bool = Query(False, description="Include SUPERSEDES edges"),
-    source_filter: Optional[str] = Query(None, description="Filter by source: claude_logs, interview, manual, unknown"),
-    min_confidence: float = Query(0.0, ge=0.0, le=1.0, description="Minimum confidence for relationships"),
+    source_filter: Optional[str] = Query(
+        None, description="Filter by source: claude_logs, interview, manual, unknown"
+    ),
+    min_confidence: float = Query(
+        0.0, ge=0.0, le=1.0, description="Minimum confidence for relationships"
+    ),
     user_id: str = Depends(get_current_user_id),
 ):
     """Get the user's complete knowledge graph without pagination.
@@ -338,7 +368,9 @@ async def get_full_graph(
                     AND (d.source = $source OR (d.source IS NULL AND $source = 'unknown'))
                     RETURN d, d.embedding IS NOT NULL AS has_embedding
                 """
-                result = await session.run(decision_query, source=source_filter, user_id=user_id)
+                result = await session.run(
+                    decision_query, source=source_filter, user_id=user_id
+                )
             else:
                 result = await session.run(
                     """
@@ -409,7 +441,9 @@ async def get_full_graph(
             if include_temporal:
                 rel_types.append("INFLUENCED_BY")
             if include_entity_relations:
-                rel_types.extend(["IS_A", "PART_OF", "RELATED_TO", "DEPENDS_ON", "ALTERNATIVE_TO"])
+                rel_types.extend(
+                    ["IS_A", "PART_OF", "RELATED_TO", "DEPENDS_ON", "ALTERNATIVE_TO"]
+                )
             if include_contradictions:
                 rel_types.append("CONTRADICTS")
             if include_supersessions:
@@ -488,10 +522,12 @@ async def get_full_graph(
 @router.get("/nodes/{node_id}/neighbors", response_model=NeighborsResponse)
 async def get_node_neighbors(
     node_id: str,
-    limit: int = Query(50, ge=1, le=200, description="Maximum number of neighbors to return"),
+    limit: int = Query(
+        50, ge=1, le=200, description="Maximum number of neighbors to return"
+    ),
     relationship_types: Optional[str] = Query(
         None,
-        description="Comma-separated list of relationship types to include (e.g., 'INVOLVES,SIMILAR_TO')"
+        description="Comma-separated list of relationship types to include (e.g., 'INVOLVES,SIMILAR_TO')",
     ),
     user_id: str = Depends(get_current_user_id),
 ):
@@ -512,7 +548,9 @@ async def get_node_neighbors(
             rel_type_filter = ""
             rel_types_list = None
             if relationship_types:
-                rel_types_list = [rt.strip().upper() for rt in relationship_types.split(",")]
+                rel_types_list = [
+                    rt.strip().upper() for rt in relationship_types.split(",")
+                ]
                 rel_type_filter = "AND type(r) IN $rel_types"
 
             # Verify the node exists and belongs to user
@@ -752,7 +790,10 @@ async def validate_graph(
         )
 
 
-@router.get("/decisions/{decision_id}/contradictions", response_model=list[ContradictionResponse])
+@router.get(
+    "/decisions/{decision_id}/contradictions",
+    response_model=list[ContradictionResponse],
+)
 async def get_contradictions(
     decision_id: str,
     user_id: str = Depends(get_current_user_id),
@@ -817,8 +858,7 @@ async def get_entity_timeline(
 
         if not timeline:
             raise HTTPException(
-                status_code=404,
-                detail=f"No decisions found for entity: {entity_name}"
+                status_code=404, detail=f"No decisions found for entity: {entity_name}"
             )
 
         return [
@@ -900,8 +940,7 @@ async def get_decision_evolution(
 
         if not evolution:
             raise HTTPException(
-                status_code=404,
-                detail=f"Decision not found: {decision_id}"
+                status_code=404, detail=f"Decision not found: {decision_id}"
             )
 
         return evolution
@@ -1139,8 +1178,6 @@ async def get_similar_nodes(
         return similar
 
 
-
-
 @router.post("/search/hybrid", response_model=list[HybridSearchResult])
 async def hybrid_search(
     request: HybridSearchRequest,
@@ -1168,7 +1205,9 @@ async def hybrid_search(
             request.query, input_type="query"
         )
     except (TimeoutError, ConnectionError) as e:
-        logger.warning(f"Embedding service unavailable, falling back to lexical only: {e}")
+        logger.warning(
+            f"Embedding service unavailable, falling back to lexical only: {e}"
+        )
         query_embedding = None
 
     session = await get_neo4j_session()
@@ -1312,7 +1351,9 @@ async def hybrid_search(
                             }
                 except (ClientError, DatabaseError) as e:
                     # Fall back to manual calculation
-                    logger.debug(f"Vector index not available, falling back to manual: {e}")
+                    logger.debug(
+                        f"Vector index not available, falling back to manual: {e}"
+                    )
                     result = await session.run(
                         """
                         MATCH (d:DecisionTrace)
@@ -1419,8 +1460,7 @@ async def hybrid_search(
 
             # Hybrid score formula
             combined_score = (
-                request.alpha * lexical_score +
-                (1 - request.alpha) * semantic_score
+                request.alpha * lexical_score + (1 - request.alpha) * semantic_score
             )
 
             # Apply threshold
@@ -1440,7 +1480,7 @@ async def hybrid_search(
 
         # Sort by combined score and limit
         results.sort(key=lambda x: x.combined_score, reverse=True)
-        return results[:request.top_k]
+        return results[: request.top_k]
 
 
 @router.post("/search/semantic", response_model=list[SimilarDecision])
@@ -1629,7 +1669,7 @@ async def reset_graph(
     if not confirm:
         return {
             "status": "aborted",
-            "message": "Pass confirm=true to delete your graph data"
+            "message": "Pass confirm=true to delete your graph data",
         }
 
     session = await get_neo4j_session()
@@ -1656,10 +1696,7 @@ async def reset_graph(
     # SD-024: Invalidate user's caches after data deletion
     await invalidate_user_caches(user_id)
 
-    return {
-        "status": "completed",
-        "message": "Your graph data has been deleted"
-    }
+    return {"status": "completed", "message": "Your graph data has been deleted"}
 
 
 @router.get("/sources")
@@ -1773,7 +1810,9 @@ async def enhance_graph(
         )
 
         decisions_to_enhance = [r async for r in result]
-        logger.info(f"Found {len(decisions_to_enhance)} decisions without embeddings for user {user_id}")
+        logger.info(
+            f"Found {len(decisions_to_enhance)} decisions without embeddings for user {user_id}"
+        )
 
         for dec in decisions_to_enhance:
             try:
@@ -1813,7 +1852,9 @@ async def enhance_graph(
         )
 
         entities_to_enhance = [r async for r in result]
-        logger.info(f"Found {len(entities_to_enhance)} entities without embeddings for user {user_id}")
+        logger.info(
+            f"Found {len(entities_to_enhance)} entities without embeddings for user {user_id}"
+        )
 
         for ent in entities_to_enhance:
             try:
@@ -1846,11 +1887,13 @@ async def enhance_graph(
         )
 
         decisions_with_embeddings = [r async for r in result]
-        logger.info(f"Checking similarity between {len(decisions_with_embeddings)} decisions")
+        logger.info(
+            f"Checking similarity between {len(decisions_with_embeddings)} decisions"
+        )
 
         similarity_threshold = 0.75
         for i, d1 in enumerate(decisions_with_embeddings):
-            for d2 in decisions_with_embeddings[i + 1:]:
+            for d2 in decisions_with_embeddings[i + 1 :]:
                 similarity = cosine_similarity(d1["embedding"], d2["embedding"])
                 if similarity > similarity_threshold:
                     # Create bidirectional SIMILAR_TO edges
@@ -1885,14 +1928,13 @@ async def enhance_graph(
             from models.schemas import Entity
 
             entity_objects = [
-                Entity(id=e["id"], name=e["name"], type=e["type"])
-                for e in all_entities
+                Entity(id=e["id"], name=e["name"], type=e["type"]) for e in all_entities
             ]
 
             # Process in batches to avoid token limits
             batch_size = 15
             for i in range(0, len(entity_objects), batch_size):
-                batch = entity_objects[i:i + batch_size]
+                batch = entity_objects[i : i + batch_size]
                 if len(batch) < 2:
                     continue
 
@@ -1901,10 +1943,18 @@ async def enhance_graph(
                     logger.debug(f"Found {len(relationships)} relationships in batch")
 
                     for rel in relationships:
-                        rel_type = rel.get("type", rel.get("relationship", "RELATED_TO"))
+                        rel_type = rel.get(
+                            "type", rel.get("relationship", "RELATED_TO")
+                        )
                         confidence = rel.get("confidence", 0.8)
 
-                        valid_types = ["IS_A", "PART_OF", "RELATED_TO", "DEPENDS_ON", "ALTERNATIVE_TO"]
+                        valid_types = [
+                            "IS_A",
+                            "PART_OF",
+                            "RELATED_TO",
+                            "DEPENDS_ON",
+                            "ALTERNATIVE_TO",
+                        ]
                         if rel_type not in valid_types:
                             rel_type = "RELATED_TO"
 
@@ -1924,7 +1974,9 @@ async def enhance_graph(
                         )
                         results["entity_relationships_created"] += 1
                 except (TimeoutError, ConnectionError) as e:
-                    logger.error(f"LLM connection error extracting entity relationships: {e}")
+                    logger.error(
+                        f"LLM connection error extracting entity relationships: {e}"
+                    )
                 except (ClientError, DatabaseError) as e:
                     logger.error(f"Database error saving entity relationships: {e}")
 

@@ -23,13 +23,15 @@ logger = get_logger(__name__)
 
 class IssueSeverity(Enum):
     """Severity levels for validation issues."""
-    ERROR = "error"      # Must be fixed
+
+    ERROR = "error"  # Must be fixed
     WARNING = "warning"  # Should be investigated
-    INFO = "info"        # Informational
+    INFO = "info"  # Informational
 
 
 class IssueType(Enum):
     """Types of validation issues."""
+
     CIRCULAR_DEPENDENCY = "circular_dependency"
     ORPHAN_ENTITY = "orphan_entity"
     LOW_CONFIDENCE_RELATIONSHIP = "low_confidence_relationship"
@@ -42,6 +44,7 @@ class IssueType(Enum):
 @dataclass
 class CyclePath:
     """Represents a detected cycle in the graph (KG-P2-3)."""
+
     nodes: list[str]  # Node IDs in cycle order
     names: list[str]  # Node names in cycle order
     relationship_type: str  # The relationship type forming the cycle
@@ -62,6 +65,7 @@ class CyclePath:
 @dataclass
 class ValidationIssue:
     """A validation issue found in the graph."""
+
     type: IssueType
     severity: IssueSeverity
     message: str
@@ -223,20 +227,22 @@ class GraphValidator:
                 if rel_type in ["RELATED_TO"]:
                     severity = IssueSeverity.WARNING
 
-                issues.append(ValidationIssue(
-                    type=IssueType.CIRCULAR_DEPENDENCY,
-                    severity=severity,
-                    message=f"Circular {rel_type} dependency: {cycle_path.format_path()}",
-                    affected_nodes=cycle_ids,
-                    suggested_action=self._get_cycle_fix_suggestion(rel_type),
-                    details={
-                        "cycle_names": cycle_names,
-                        "relationship_type": rel_type,
-                        "path_length": path_length,
-                        "formatted_path": cycle_path.format_path(),
-                    },
-                    cycle_path=cycle_path,
-                ))
+                issues.append(
+                    ValidationIssue(
+                        type=IssueType.CIRCULAR_DEPENDENCY,
+                        severity=severity,
+                        message=f"Circular {rel_type} dependency: {cycle_path.format_path()}",
+                        affected_nodes=cycle_ids,
+                        suggested_action=self._get_cycle_fix_suggestion(rel_type),
+                        details={
+                            "cycle_names": cycle_names,
+                            "relationship_type": rel_type,
+                            "path_length": path_length,
+                            "formatted_path": cycle_path.format_path(),
+                        },
+                        cycle_path=cycle_path,
+                    )
+                )
 
         except Exception as e:
             logger.error(f"Error checking circular dependencies for {rel_type}: {e}")
@@ -268,8 +274,7 @@ class GraphValidator:
             ),
         }
         return suggestions.get(
-            rel_type,
-            f"Review the {rel_type} relationships and remove the cycle"
+            rel_type, f"Review the {rel_type} relationships and remove the cycle"
         )
 
     async def find_dependency_path(
@@ -342,14 +347,16 @@ class GraphValidator:
         )
 
         async for record in result:
-            issues.append(ValidationIssue(
-                type=IssueType.ORPHAN_ENTITY,
-                severity=IssueSeverity.WARNING,
-                message=f"Orphan entity found: {record['name']} ({record['type']})",
-                affected_nodes=[record["id"]],
-                suggested_action="Link to relevant decisions or delete if no longer needed",
-                details={"name": record["name"], "type": record["type"]},
-            ))
+            issues.append(
+                ValidationIssue(
+                    type=IssueType.ORPHAN_ENTITY,
+                    severity=IssueSeverity.WARNING,
+                    message=f"Orphan entity found: {record['name']} ({record['type']})",
+                    affected_nodes=[record["id"]],
+                    suggested_action="Link to relevant decisions or delete if no longer needed",
+                    details={"name": record["name"], "type": record["type"]},
+                )
+            )
 
         return issues
 
@@ -381,19 +388,21 @@ class GraphValidator:
         )
 
         async for record in result:
-            issues.append(ValidationIssue(
-                type=IssueType.LOW_CONFIDENCE_RELATIONSHIP,
-                severity=IssueSeverity.INFO,
-                message=f"Low confidence {record['rel_type']}: {record['source_name'][:30]} -> {record['target_name'][:30] if record['target_name'] else 'unknown'} ({record['confidence']:.2f})",
-                affected_nodes=[record["source_id"], record["target_id"]],
-                suggested_action="Review and verify this relationship or increase confidence",
-                details={
-                    "relationship": record["rel_type"],
-                    "confidence": record["confidence"],
-                    "source": record["source_name"],
-                    "target": record["target_name"],
-                },
-            ))
+            issues.append(
+                ValidationIssue(
+                    type=IssueType.LOW_CONFIDENCE_RELATIONSHIP,
+                    severity=IssueSeverity.INFO,
+                    message=f"Low confidence {record['rel_type']}: {record['source_name'][:30]} -> {record['target_name'][:30] if record['target_name'] else 'unknown'} ({record['confidence']:.2f})",
+                    affected_nodes=[record["source_id"], record["target_id"]],
+                    suggested_action="Review and verify this relationship or increase confidence",
+                    details={
+                        "relationship": record["rel_type"],
+                        "confidence": record["confidence"],
+                        "source": record["source_name"],
+                        "target": record["target_name"],
+                    },
+                )
+            )
 
         return issues
 
@@ -419,7 +428,7 @@ class GraphValidator:
         # Find potential duplicates
         processed_pairs = set()
         for i, e1 in enumerate(entities):
-            for e2 in entities[i + 1:]:
+            for e2 in entities[i + 1 :]:
                 pair_key = tuple(sorted([e1["id"], e2["id"]]))
                 if pair_key in processed_pairs:
                     continue
@@ -438,19 +447,23 @@ class GraphValidator:
                         or (e1_canonical and e1_canonical == e2_canonical)
                     )
 
-                    issues.append(ValidationIssue(
-                        type=IssueType.DUPLICATE_ENTITY,
-                        severity=IssueSeverity.WARNING if is_alias else IssueSeverity.INFO,
-                        message=f"Potential duplicate: '{e1['name']}' and '{e2['name']}' ({score}% similar)",
-                        affected_nodes=[e1["id"], e2["id"]],
-                        suggested_action="Merge these entities or add one as an alias",
-                        details={
-                            "entity1": e1["name"],
-                            "entity2": e2["name"],
-                            "similarity": score,
-                            "is_known_alias": is_alias,
-                        },
-                    ))
+                    issues.append(
+                        ValidationIssue(
+                            type=IssueType.DUPLICATE_ENTITY,
+                            severity=IssueSeverity.WARNING
+                            if is_alias
+                            else IssueSeverity.INFO,
+                            message=f"Potential duplicate: '{e1['name']}' and '{e2['name']}' ({score}% similar)",
+                            affected_nodes=[e1["id"], e2["id"]],
+                            suggested_action="Merge these entities or add one as an alias",
+                            details={
+                                "entity1": e1["name"],
+                                "entity2": e2["name"],
+                                "similarity": score,
+                                "is_known_alias": is_alias,
+                            },
+                        )
+                    )
 
         return issues
 
@@ -476,14 +489,16 @@ class GraphValidator:
         decision_count = record["count"] if record else 0
 
         if decision_count > 0:
-            issues.append(ValidationIssue(
-                type=IssueType.MISSING_EMBEDDING,
-                severity=IssueSeverity.WARNING,
-                message=f"{decision_count} decisions missing embeddings",
-                affected_nodes=[],
-                suggested_action="Run POST /api/graph/enhance to backfill embeddings",
-                details={"count": decision_count, "type": "decision"},
-            ))
+            issues.append(
+                ValidationIssue(
+                    type=IssueType.MISSING_EMBEDDING,
+                    severity=IssueSeverity.WARNING,
+                    message=f"{decision_count} decisions missing embeddings",
+                    affected_nodes=[],
+                    suggested_action="Run POST /api/graph/enhance to backfill embeddings",
+                    details={"count": decision_count, "type": "decision"},
+                )
+            )
 
         # Check entities connected to user's decisions without embeddings
         result = await self.session.run(
@@ -499,14 +514,16 @@ class GraphValidator:
         entity_count = record["count"] if record else 0
 
         if entity_count > 0:
-            issues.append(ValidationIssue(
-                type=IssueType.MISSING_EMBEDDING,
-                severity=IssueSeverity.INFO,
-                message=f"{entity_count} entities missing embeddings",
-                affected_nodes=[],
-                suggested_action="Run POST /api/graph/enhance to backfill embeddings",
-                details={"count": entity_count, "type": "entity"},
-            ))
+            issues.append(
+                ValidationIssue(
+                    type=IssueType.MISSING_EMBEDDING,
+                    severity=IssueSeverity.INFO,
+                    message=f"{entity_count} entities missing embeddings",
+                    affected_nodes=[],
+                    suggested_action="Run POST /api/graph/enhance to backfill embeddings",
+                    details={"count": entity_count, "type": "entity"},
+                )
+            )
 
         return issues
 
@@ -533,14 +550,16 @@ class GraphValidator:
         )
 
         async for record in result:
-            issues.append(ValidationIssue(
-                type=IssueType.INVALID_RELATIONSHIP,
-                severity=IssueSeverity.ERROR,
-                message=f"Self-referential relationship: {record['name'][:30] if record['name'] else 'Decision'} -{record['rel_type']}-> itself",
-                affected_nodes=[record["id"]],
-                suggested_action="Remove this self-referential relationship",
-                details={"relationship": record["rel_type"]},
-            ))
+            issues.append(
+                ValidationIssue(
+                    type=IssueType.INVALID_RELATIONSHIP,
+                    severity=IssueSeverity.ERROR,
+                    message=f"Self-referential relationship: {record['name'][:30] if record['name'] else 'Decision'} -{record['rel_type']}-> itself",
+                    affected_nodes=[record["id"]],
+                    suggested_action="Remove this self-referential relationship",
+                    details={"relationship": record["rel_type"]},
+                )
+            )
 
         # Check decision-to-decision with entity relationships
         # Include the new relationship types from KG-P2-1
@@ -557,14 +576,16 @@ class GraphValidator:
         )
 
         async for record in result:
-            issues.append(ValidationIssue(
-                type=IssueType.INVALID_RELATIONSHIP,
-                severity=IssueSeverity.ERROR,
-                message=f"Entity relationship between decisions: {(record['trigger1'] or 'Decision')[:30]} -{record['rel_type']}-> {(record['trigger2'] or 'Decision')[:30]}",
-                affected_nodes=[record["id1"], record["id2"]],
-                suggested_action="Change to a decision relationship (SIMILAR_TO, INFLUENCED_BY, etc.) or remove",
-                details={"relationship": record["rel_type"]},
-            ))
+            issues.append(
+                ValidationIssue(
+                    type=IssueType.INVALID_RELATIONSHIP,
+                    severity=IssueSeverity.ERROR,
+                    message=f"Entity relationship between decisions: {(record['trigger1'] or 'Decision')[:30]} -{record['rel_type']}-> {(record['trigger2'] or 'Decision')[:30]}",
+                    affected_nodes=[record["id1"], record["id2"]],
+                    suggested_action="Change to a decision relationship (SIMILAR_TO, INFLUENCED_BY, etc.) or remove",
+                    details={"relationship": record["rel_type"]},
+                )
+            )
 
         return issues
 

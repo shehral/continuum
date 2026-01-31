@@ -27,8 +27,7 @@ class Conversation:
     def get_full_text(self) -> str:
         """Get the full conversation as text."""
         return "\n\n".join(
-            f"{m.get('role', 'unknown')}: {m.get('content', '')}"
-            for m in self.messages
+            f"{m.get('role', 'unknown')}: {m.get('content', '')}" for m in self.messages
         )
 
     def get_preview(self, max_chars: int = 500) -> str:
@@ -254,12 +253,14 @@ class ClaudeLogParser:
                 if count >= max_conversations:
                     return previews
 
-                previews.append({
-                    "file": str(file_path),
-                    "project": conv.project_name,
-                    "messages": len(conv.messages),
-                    "preview": conv.get_preview(300),
-                })
+                previews.append(
+                    {
+                        "file": str(file_path),
+                        "project": conv.project_name,
+                        "messages": len(conv.messages),
+                        "preview": conv.get_preview(300),
+                    }
+                )
                 count += 1
 
         return previews

@@ -34,12 +34,12 @@ def create_test_jwt(
     algorithm: str = "HS256",
 ) -> str:
     """Helper to create test JWTs.
-    
+
     Args:
         payload: JWT claims to encode
         secret: Secret key for signing
         algorithm: Algorithm to use for signing
-        
+
     Returns:
         Encoded JWT token string
     """
@@ -126,7 +126,8 @@ class TestGetCurrentUserId:
         payload = {
             "sub": "user-expired",
             "iat": datetime.now(timezone.utc) - timedelta(hours=2),
-            "exp": datetime.now(timezone.utc) - timedelta(hours=1),  # Expired 1 hour ago
+            "exp": datetime.now(timezone.utc)
+            - timedelta(hours=1),  # Expired 1 hour ago
         }
         token = create_test_jwt(payload)
 
@@ -212,7 +213,7 @@ class TestGetCurrentUserId:
     @pytest.mark.asyncio
     async def test_numeric_sub_claim_rejected(self, mock_settings):
         """Should reject numeric 'sub' claim per JWT spec (must be string).
-        
+
         Per RFC 7519, the 'sub' claim should be a StringOrURI.
         python-jose enforces this when require_sub=True.
         """
@@ -372,12 +373,14 @@ class TestSecurityEdgeCases:
         import base64
         import json
 
-        header_b64 = base64.urlsafe_b64encode(
-            json.dumps(header).encode()
-        ).rstrip(b"=").decode()
-        payload_b64 = base64.urlsafe_b64encode(
-            json.dumps(payload, default=str).encode()
-        ).rstrip(b"=").decode()
+        header_b64 = (
+            base64.urlsafe_b64encode(json.dumps(header).encode()).rstrip(b"=").decode()
+        )
+        payload_b64 = (
+            base64.urlsafe_b64encode(json.dumps(payload, default=str).encode())
+            .rstrip(b"=")
+            .decode()
+        )
         fake_token = f"{header_b64}.{payload_b64}."
 
         with patch("routers.auth.get_settings", return_value=mock_settings):
@@ -447,7 +450,7 @@ class TestSecurityEdgeCases:
     @pytest.mark.asyncio
     async def test_whitespace_in_header_tolerant(self, mock_settings):
         """Implementation uses split() which handles multiple spaces.
-        
+
         Python's str.split() without arguments splits on any whitespace
         and collapses multiple spaces, so 'Bearer  token' is valid.
         """

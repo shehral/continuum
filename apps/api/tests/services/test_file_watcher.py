@@ -53,7 +53,7 @@ class TestClaudeLogHandler:
         event.is_directory = False
         event.src_path = "/path/to/file.jsonl"
 
-        with patch.object(handler, '_schedule_callback') as mock_schedule:
+        with patch.object(handler, "_schedule_callback") as mock_schedule:
             handler.on_created(event)
             mock_schedule.assert_called_once_with("/path/to/file.jsonl")
 
@@ -63,7 +63,7 @@ class TestClaudeLogHandler:
         event.is_directory = False
         event.src_path = "/path/to/file.jsonl"
 
-        with patch.object(handler, '_schedule_callback') as mock_schedule:
+        with patch.object(handler, "_schedule_callback") as mock_schedule:
             handler.on_modified(event)
             mock_schedule.assert_called_once_with("/path/to/file.jsonl")
 
@@ -73,7 +73,7 @@ class TestClaudeLogHandler:
         event.is_directory = False
         event.src_path = "/path/to/file.txt"
 
-        with patch.object(handler, '_schedule_callback') as mock_schedule:
+        with patch.object(handler, "_schedule_callback") as mock_schedule:
             handler.on_created(event)
             mock_schedule.assert_not_called()
 
@@ -83,7 +83,7 @@ class TestClaudeLogHandler:
         event.is_directory = False
         event.src_path = "/path/to/file.json"  # .json, not .jsonl
 
-        with patch.object(handler, '_schedule_callback') as mock_schedule:
+        with patch.object(handler, "_schedule_callback") as mock_schedule:
             handler.on_modified(event)
             mock_schedule.assert_not_called()
 
@@ -93,7 +93,7 @@ class TestClaudeLogHandler:
         event.is_directory = True
         event.src_path = "/path/to/dir"
 
-        with patch.object(handler, '_schedule_callback') as mock_schedule:
+        with patch.object(handler, "_schedule_callback") as mock_schedule:
             handler.on_created(event)
             mock_schedule.assert_not_called()
 
@@ -103,7 +103,7 @@ class TestClaudeLogHandler:
         event.is_directory = True
         event.src_path = "/path/to/dir"
 
-        with patch.object(handler, '_schedule_callback') as mock_schedule:
+        with patch.object(handler, "_schedule_callback") as mock_schedule:
             handler.on_modified(event)
             mock_schedule.assert_not_called()
 
@@ -122,7 +122,7 @@ class TestClaudeLogHandler:
             event.is_directory = False
             event.src_path = path
 
-            with patch.object(handler, '_schedule_callback') as mock_schedule:
+            with patch.object(handler, "_schedule_callback") as mock_schedule:
                 handler.on_modified(event)
                 if not path.endswith(".jsonl"):
                     mock_schedule.assert_not_called()
@@ -135,7 +135,7 @@ class TestClaudeLogHandler:
         mock_task = MagicMock()
         handler._debounce_tasks[file_path] = mock_task
 
-        with patch('asyncio.get_event_loop') as mock_get_loop:
+        with patch("asyncio.get_event_loop") as mock_get_loop:
             mock_loop = MagicMock()
             mock_new_task = MagicMock()
             mock_loop.create_task.return_value = mock_new_task
@@ -152,7 +152,7 @@ class TestClaudeLogHandler:
         """Should call callback directly when no event loop is running."""
         file_path = "/path/to/file.jsonl"
 
-        with patch('asyncio.get_event_loop', side_effect=RuntimeError("No event loop")):
+        with patch("asyncio.get_event_loop", side_effect=RuntimeError("No event loop")):
             handler._schedule_callback(file_path)
             mock_callback.assert_called_once_with(file_path)
 
@@ -217,7 +217,7 @@ class TestClaudeLogHandler:
         handler._debounce_tasks[file_path] = mock_task
 
         # Schedule another callback for same file
-        with patch.object(handler, '_schedule_callback') as patched:
+        with patch.object(handler, "_schedule_callback") as _patched:
             # Directly test that old task would be cancelled
             # by verifying it's replaced in the dict
             handler._debounce_tasks[file_path] = MagicMock()
@@ -269,9 +269,9 @@ class TestFileWatcherService:
         """Should start watching valid directory."""
         callback = MagicMock()
 
-        with patch('services.file_watcher.Observer') as MockObserver:
+        with patch("services.file_watcher.Observer") as mock_observer_cls:
             mock_observer = MagicMock()
-            MockObserver.return_value = mock_observer
+            mock_observer_cls.return_value = mock_observer
 
             result = service.start(temp_dir, callback)
 
@@ -293,9 +293,9 @@ class TestFileWatcherService:
         """Should expand ~ in paths."""
         callback = MagicMock()
 
-        with patch('services.file_watcher.Observer') as MockObserver:
+        with patch("services.file_watcher.Observer") as mock_observer_cls:
             mock_observer = MagicMock()
-            MockObserver.return_value = mock_observer
+            mock_observer_cls.return_value = mock_observer
 
             # Use a path that exists after expansion
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -351,16 +351,17 @@ class TestFileWatcherService:
         """Should watch directories recursively."""
         callback = MagicMock()
 
-        with patch('services.file_watcher.Observer') as MockObserver:
+        with patch("services.file_watcher.Observer") as mock_observer_cls:
             mock_observer = MagicMock()
-            MockObserver.return_value = mock_observer
+            mock_observer_cls.return_value = mock_observer
 
             service.start(temp_dir, callback)
 
             # Verify recursive=True is passed
             call_args = mock_observer.schedule.call_args
-            assert call_args.kwargs.get('recursive', False) is True or \
-                   (len(call_args.args) >= 3 and call_args.args[2] is True)
+            assert call_args.kwargs.get("recursive", False) is True or (
+                len(call_args.args) >= 3 and call_args.args[2] is True
+            )
 
 
 # ============================================================================
@@ -375,6 +376,7 @@ class TestGetFileWatcher:
         """Should return the same instance on multiple calls."""
         # Reset the singleton for testing
         import services.file_watcher as fw
+
         fw._watcher_service = None
 
         watcher1 = get_file_watcher()
@@ -385,6 +387,7 @@ class TestGetFileWatcher:
     def test_creates_instance_if_none(self):
         """Should create new instance if none exists."""
         import services.file_watcher as fw
+
         fw._watcher_service = None
 
         watcher = get_file_watcher()
@@ -422,6 +425,7 @@ class TestFileWatcherIntegration:
 
             # Wait for event to be processed
             import time
+
             time.sleep(0.5)
 
             # Note: Due to debouncing, callback may not be called immediately

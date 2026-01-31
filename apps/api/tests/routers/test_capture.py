@@ -147,7 +147,9 @@ class TestSendCaptureMessage:
         mock_session_obj.status = SessionStatus.ACTIVE
 
         mock_session_result = MagicMock()
-        mock_session_result.scalar_one_or_none = MagicMock(return_value=mock_session_obj)
+        mock_session_result.scalar_one_or_none = MagicMock(
+            return_value=mock_session_obj
+        )
 
         mock_messages_result = MagicMock()
         mock_messages_result.scalars = MagicMock(
@@ -188,8 +190,9 @@ class TestSendCaptureMessage:
             return_value=("AI response", [])
         )
 
-        with patch("routers.capture.get_db", return_value=mock_db_session), patch(
-            "routers.capture.InterviewAgent", return_value=mock_interview_agent
+        with (
+            patch("routers.capture.get_db", return_value=mock_db_session),
+            patch("routers.capture.InterviewAgent", return_value=mock_interview_agent),
         ):
             from routers.capture import send_capture_message
 
@@ -252,7 +255,9 @@ class TestCompleteCaptureSession:
         mock_session_obj.updated_at = datetime.now(UTC)
 
         mock_session_result = MagicMock()
-        mock_session_result.scalar_one_or_none = MagicMock(return_value=mock_session_obj)
+        mock_session_result.scalar_one_or_none = MagicMock(
+            return_value=mock_session_obj
+        )
 
         # Mock messages
         mock_message = MagicMock()
@@ -293,9 +298,11 @@ class TestCompleteCaptureSession:
         mock_extractor = MagicMock()
         mock_extractor.save_decision = AsyncMock(return_value="decision-id")
 
-        with patch("routers.capture.get_db", return_value=mock_db_session), patch(
-            "routers.capture.InterviewAgent", return_value=mock_interview_agent
-        ), patch("services.extractor.DecisionExtractor", return_value=mock_extractor):
+        with (
+            patch("routers.capture.get_db", return_value=mock_db_session),
+            patch("routers.capture.InterviewAgent", return_value=mock_interview_agent),
+            patch("services.extractor.DecisionExtractor", return_value=mock_extractor),
+        ):
             from routers.capture import complete_capture_session
 
             result = await complete_capture_session(session_id, db=mock_db_session)

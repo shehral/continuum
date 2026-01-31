@@ -42,12 +42,14 @@ class MockLLMClient:
         max_tokens: int = 2048,
     ) -> str:
         """Generate a mock response."""
-        self._call_history.append({
-            "prompt": prompt,
-            "system_prompt": system_prompt,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        })
+        self._call_history.append(
+            {
+                "prompt": prompt,
+                "system_prompt": system_prompt,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+        )
 
         # Find matching response
         prompt_lower = prompt.lower()
@@ -100,11 +102,13 @@ class MockEmbeddingService:
         input_type: str = "passage",
     ) -> list[float]:
         """Generate embedding for text."""
-        self._call_history.append({
-            "method": "embed_text",
-            "text": text,
-            "input_type": input_type,
-        })
+        self._call_history.append(
+            {
+                "method": "embed_text",
+                "text": text,
+                "input_type": input_type,
+            }
+        )
 
         # Return preset embedding if available
         if text.lower() in self._text_embeddings:
@@ -119,16 +123,17 @@ class MockEmbeddingService:
         batch_size: int | None = None,  # SD-QW-002: Default is 32 via settings
     ) -> list[list[float]]:
         """Generate embeddings for multiple texts."""
-        self._call_history.append({
-            "method": "embed_texts",
-            "texts": texts,
-            "input_type": input_type,
-        })
+        self._call_history.append(
+            {
+                "method": "embed_texts",
+                "texts": texts,
+                "input_type": input_type,
+            }
+        )
 
         return [
             self._text_embeddings.get(
-                t.lower(),
-                self._generate_deterministic_embedding(t)
+                t.lower(), self._generate_deterministic_embedding(t)
             )
             for t in texts
         ]
@@ -174,7 +179,9 @@ class MockEmbeddingService:
         self._call_history.clear()
 
 
-def create_similar_embeddings(base_text: str, similar_texts: list[str]) -> dict[str, list[float]]:
+def create_similar_embeddings(
+    base_text: str, similar_texts: list[str]
+) -> dict[str, list[float]]:
     """Create embeddings where similar_texts have high similarity to base_text.
 
     Returns a dict mapping text to embedding vectors.

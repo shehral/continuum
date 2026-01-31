@@ -67,8 +67,12 @@ async def list_available_projects():
 
 @router.get("/preview", response_model=PreviewResponse)
 async def preview_ingestion(
-    project: Optional[str] = Query(None, description="Only include this project (partial match)"),
-    exclude: Optional[str] = Query(None, description="Comma-separated list of projects to exclude"),
+    project: Optional[str] = Query(
+        None, description="Only include this project (partial match)"
+    ),
+    exclude: Optional[str] = Query(
+        None, description="Comma-separated list of projects to exclude"
+    ),
     limit: int = Query(10, ge=1, le=50, description="Max conversations to preview"),
 ):
     """Preview what would be imported without actually importing.
@@ -106,8 +110,12 @@ async def get_ingestion_status():
 
 @router.post("/trigger", response_model=IngestionResult)
 async def trigger_ingestion(
-    project: Optional[str] = Query(None, description="Only include this project (partial match)"),
-    exclude: Optional[str] = Query(None, description="Comma-separated list of projects to exclude"),
+    project: Optional[str] = Query(
+        None, description="Only include this project (partial match)"
+    ),
+    exclude: Optional[str] = Query(
+        None, description="Comma-separated list of projects to exclude"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger ingestion of Claude Code logs with optional filtering.
@@ -144,18 +152,20 @@ async def trigger_ingestion(
                         # Save decisions to Neo4j with source tag
                         for decision in decisions:
                             try:
-                                await extractor.save_decision(decision, source="claude_logs")
+                                await extractor.save_decision(
+                                    decision, source="claude_logs"
+                                )
                             except Exception as save_error:
                                 logger.error(
                                     f"Failed to save decision: {type(save_error).__name__}: {save_error}",
-                                    exc_info=True
+                                    exc_info=True,
                                 )
                                 errors.append(f"save_decision:{file_path}")
                     except Exception as extract_error:
                         logger.error(
                             f"Failed to extract decisions from {file_path}: "
                             f"{type(extract_error).__name__}: {extract_error}",
-                            exc_info=True
+                            exc_info=True,
                         )
                         errors.append(f"extract:{file_path}")
 
@@ -163,7 +173,7 @@ async def trigger_ingestion(
             except Exception as file_error:
                 logger.error(
                     f"Error processing file {file_path}: {type(file_error).__name__}: {file_error}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 errors.append(f"file:{file_path}")
 
@@ -190,18 +200,16 @@ async def trigger_ingestion(
         logger.error(f"Ingestion path not found: {e}")
         raise HTTPException(
             status_code=404,
-            detail=f"Claude logs path not found: {settings.claude_logs_path}"
+            detail=f"Claude logs path not found: {settings.claude_logs_path}",
         )
     except PermissionError as e:
         logger.error(f"Permission denied accessing logs: {e}")
         raise HTTPException(
-            status_code=403,
-            detail="Permission denied accessing Claude logs directory"
+            status_code=403, detail="Permission denied accessing Claude logs directory"
         )
     except Exception as e:
         logger.error(
-            f"Unexpected error during ingestion: {type(e).__name__}: {e}",
-            exc_info=True
+            f"Unexpected error during ingestion: {type(e).__name__}: {e}", exc_info=True
         )
         return IngestionResult(
             status=f"error: {type(e).__name__}",
@@ -238,13 +246,13 @@ async def process_changed_file(file_path: str) -> None:
                         logger.error(
                             f"Failed to save decision from {file_path}: "
                             f"{type(save_error).__name__}: {save_error}",
-                            exc_info=True
+                            exc_info=True,
                         )
             except Exception as extract_error:
                 logger.error(
                     f"Failed to extract decisions from {file_path}: "
                     f"{type(extract_error).__name__}: {extract_error}",
-                    exc_info=True
+                    exc_info=True,
                 )
 
         ingestion_state["files_processed"] += 1
@@ -257,8 +265,7 @@ async def process_changed_file(file_path: str) -> None:
         logger.error(f"Permission denied reading file {file_path}: {e}")
     except Exception as e:
         logger.error(
-            f"Error processing file {file_path}: {type(e).__name__}: {e}",
-            exc_info=True
+            f"Error processing file {file_path}: {type(e).__name__}: {e}", exc_info=True
         )
 
 

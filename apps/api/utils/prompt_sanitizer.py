@@ -25,6 +25,7 @@ logger = get_logger(__name__)
 
 class InjectionRiskLevel(str, Enum):
     """Risk levels for detected prompt injection attempts."""
+
     NONE = "none"
     LOW = "low"
     MEDIUM = "medium"
@@ -35,6 +36,7 @@ class InjectionRiskLevel(str, Enum):
 @dataclass
 class SanitizationResult:
     """Result of prompt sanitization analysis."""
+
     original_text: str
     sanitized_text: str
     risk_level: InjectionRiskLevel
@@ -50,65 +52,80 @@ class SanitizationResult:
 # System prompt override attempts
 SYSTEM_PROMPT_PATTERNS = [
     # Direct override attempts
-    (r'\b(?:ignore|disregard|forget|override|bypass)\s+(?:all\s+)?(?:previous|prior|above|system)\s+(?:instructions?|prompts?|rules?|guidelines?)', 'system_override'),
-    (r'\b(?:new|actual|real)\s+(?:system\s+)?(?:instructions?|prompt)\s*[:\-]', 'system_override'),
-    (r'\byou\s+are\s+(?:now|actually)\s+(?:a|an)\b', 'role_hijack'),
-    (r'\bact\s+as\s+(?:if\s+)?(?:you\s+(?:are|were)\s+)?(?:a|an|the)\b', 'role_hijack'),
-    (r'\bpretend\s+(?:you\s+are|to\s+be)\b', 'role_hijack'),
-    (r'\bfrom\s+now\s+on\b.*\byou\s+(?:will|must|should)\b', 'behavior_override'),
-
+    (
+        r"\b(?:ignore|disregard|forget|override|bypass)\s+(?:all\s+)?(?:previous|prior|above|system)\s+(?:instructions?|prompts?|rules?|guidelines?)",
+        "system_override",
+    ),
+    (
+        r"\b(?:new|actual|real)\s+(?:system\s+)?(?:instructions?|prompt)\s*[:\-]",
+        "system_override",
+    ),
+    (r"\byou\s+are\s+(?:now|actually)\s+(?:a|an)\b", "role_hijack"),
+    (r"\bact\s+as\s+(?:if\s+)?(?:you\s+(?:are|were)\s+)?(?:a|an|the)\b", "role_hijack"),
+    (r"\bpretend\s+(?:you\s+are|to\s+be)\b", "role_hijack"),
+    (r"\bfrom\s+now\s+on\b.*\byou\s+(?:will|must|should)\b", "behavior_override"),
     # Instruction boundary attacks
-    (r'###\s*(?:system|instruction|prompt)', 'boundary_attack'),
-    (r'\[(?:SYSTEM|INST|INSTRUCTION)\]', 'boundary_attack'),
-    (r'<(?:system|instruction|prompt)>', 'boundary_attack'),
-    (r'(?:^|\n)(?:System|Assistant|Human):', 'role_injection'),
-
+    (r"###\s*(?:system|instruction|prompt)", "boundary_attack"),
+    (r"\[(?:SYSTEM|INST|INSTRUCTION)\]", "boundary_attack"),
+    (r"<(?:system|instruction|prompt)>", "boundary_attack"),
+    (r"(?:^|\n)(?:System|Assistant|Human):", "role_injection"),
     # Jailbreak techniques
-    (r'\bDAN\s*(?:mode|prompt)?\b', 'jailbreak'),
-    (r'\bdev(?:eloper)?\s+mode\b', 'jailbreak'),
-    (r'\bunrestricted\s+mode\b', 'jailbreak'),
-    (r'\bno\s+(?:restrictions?|limits?|filters?)\b', 'jailbreak'),
+    (r"\bDAN\s*(?:mode|prompt)?\b", "jailbreak"),
+    (r"\bdev(?:eloper)?\s+mode\b", "jailbreak"),
+    (r"\bunrestricted\s+mode\b", "jailbreak"),
+    (r"\bno\s+(?:restrictions?|limits?|filters?)\b", "jailbreak"),
 ]
 
 # Context manipulation patterns
 CONTEXT_MANIPULATION_PATTERNS = [
     # Hidden instructions
-    (r'\[hidden\].*?\[/hidden\]', 'hidden_instruction'),
-    (r'<!--.*?-->', 'html_comment_injection'),
-    (r'/\*.*?\*/', 'code_comment_injection'),
-
+    (r"\[hidden\].*?\[/hidden\]", "hidden_instruction"),
+    (r"<!--.*?-->", "html_comment_injection"),
+    (r"/\*.*?\*/", "code_comment_injection"),
     # Unicode/encoding tricks
-    (r'[\u200b-\u200f\u2028-\u202f\ufeff]', 'invisible_chars'),  # Zero-width chars
-    (r'[\u0000-\u001f]', 'control_chars'),  # Control characters (except common ones)
-
+    (r"[\u200b-\u200f\u2028-\u202f\ufeff]", "invisible_chars"),  # Zero-width chars
+    (r"[\u0000-\u001f]", "control_chars"),  # Control characters (except common ones)
     # Base64 encoded instructions (common evasion technique)
-    (r'(?:execute|run|decode|eval)\s*(?:base64|b64)', 'encoded_instruction'),
+    (r"(?:execute|run|decode|eval)\s*(?:base64|b64)", "encoded_instruction"),
 ]
 
 # Output manipulation patterns
 OUTPUT_MANIPULATION_PATTERNS = [
     # Data exfiltration attempts
-    (r'\b(?:output|print|return|show|display|reveal)\s+(?:your|the|all)\s+(?:system\s+)?(?:prompt|instructions?|rules?|context)', 'data_exfil'),
-    (r'\b(?:what|show|tell)\s+(?:are|me)\s+(?:your|the)\s+(?:system\s+)?(?:instructions?|prompt|rules?)', 'data_exfil'),
-
+    (
+        r"\b(?:output|print|return|show|display|reveal)\s+(?:your|the|all)\s+(?:system\s+)?(?:prompt|instructions?|rules?|context)",
+        "data_exfil",
+    ),
+    (
+        r"\b(?:what|show|tell)\s+(?:are|me)\s+(?:your|the)\s+(?:system\s+)?(?:instructions?|prompt|rules?)",
+        "data_exfil",
+    ),
     # Format manipulation
-    (r'respond\s+only\s+(?:with|in)\s+(?:json|xml|code)', 'format_override'),
-    (r'(?:never|don\'?t|do\s+not)\s+(?:mention|say|include|add)\b', 'output_restriction'),
+    (r"respond\s+only\s+(?:with|in)\s+(?:json|xml|code)", "format_override"),
+    (
+        r"(?:never|don\'?t|do\s+not)\s+(?:mention|say|include|add)\b",
+        "output_restriction",
+    ),
 ]
 
 # Compile all patterns for efficiency
 COMPILED_PATTERNS: List[Tuple[re.Pattern, str, str]] = []
 for pattern, category in SYSTEM_PROMPT_PATTERNS:
-    COMPILED_PATTERNS.append((re.compile(pattern, re.IGNORECASE | re.MULTILINE), category, 'system'))
+    COMPILED_PATTERNS.append(
+        (re.compile(pattern, re.IGNORECASE | re.MULTILINE), category, "system")
+    )
 for pattern, category in CONTEXT_MANIPULATION_PATTERNS:
-    COMPILED_PATTERNS.append((re.compile(pattern, re.IGNORECASE | re.DOTALL), category, 'context'))
+    COMPILED_PATTERNS.append(
+        (re.compile(pattern, re.IGNORECASE | re.DOTALL), category, "context")
+    )
 for pattern, category in OUTPUT_MANIPULATION_PATTERNS:
-    COMPILED_PATTERNS.append((re.compile(pattern, re.IGNORECASE), category, 'output'))
+    COMPILED_PATTERNS.append((re.compile(pattern, re.IGNORECASE), category, "output"))
 
 
 # =============================================================================
 # Detection Functions
 # =============================================================================
+
 
 def detect_injection_patterns(text: str) -> List[Tuple[str, str, str]]:
     """Detect known prompt injection patterns in text.
@@ -132,7 +149,9 @@ def detect_injection_patterns(text: str) -> List[Tuple[str, str, str]]:
     return matches
 
 
-def calculate_risk_level(detected_patterns: List[Tuple[str, str, str]]) -> Tuple[InjectionRiskLevel, float]:
+def calculate_risk_level(
+    detected_patterns: List[Tuple[str, str, str]],
+) -> Tuple[InjectionRiskLevel, float]:
     """Calculate overall risk level from detected patterns.
 
     Args:
@@ -146,21 +165,21 @@ def calculate_risk_level(detected_patterns: List[Tuple[str, str, str]]) -> Tuple
 
     # Weight different pattern types
     weights = {
-        'system_override': 0.9,
-        'role_hijack': 0.8,
-        'behavior_override': 0.7,
-        'boundary_attack': 0.85,
-        'role_injection': 0.75,
-        'jailbreak': 0.95,
-        'hidden_instruction': 0.6,
-        'html_comment_injection': 0.4,
-        'code_comment_injection': 0.3,
-        'invisible_chars': 0.5,
-        'control_chars': 0.4,
-        'encoded_instruction': 0.7,
-        'data_exfil': 0.6,
-        'format_override': 0.3,
-        'output_restriction': 0.4,
+        "system_override": 0.9,
+        "role_hijack": 0.8,
+        "behavior_override": 0.7,
+        "boundary_attack": 0.85,
+        "role_injection": 0.75,
+        "jailbreak": 0.95,
+        "hidden_instruction": 0.6,
+        "html_comment_injection": 0.4,
+        "code_comment_injection": 0.3,
+        "invisible_chars": 0.5,
+        "control_chars": 0.4,
+        "encoded_instruction": 0.7,
+        "data_exfil": 0.6,
+        "format_override": 0.3,
+        "output_restriction": 0.4,
     }
 
     # Calculate max weight from detected patterns
@@ -200,24 +219,34 @@ def analyze_structure(text: str) -> List[str]:
     concerns = []
 
     # Check for unusual line patterns suggesting role injection
-    lines = text.split('\n')
+    lines = text.split("\n")
     for i, line in enumerate(lines):
         stripped = line.strip()
         # Multiple colons at line start (role-like format)
-        if re.match(r'^[A-Z][a-z]+:\s*', stripped):
+        if re.match(r"^[A-Z][a-z]+:\s*", stripped):
             concerns.append(f"role_like_format_line_{i}")
 
     # Check for markdown-style headers that might delimit fake sections
-    if re.search(r'^#{1,6}\s+(?:system|instruction|prompt|context)', text, re.IGNORECASE | re.MULTILINE):
+    if re.search(
+        r"^#{1,6}\s+(?:system|instruction|prompt|context)",
+        text,
+        re.IGNORECASE | re.MULTILINE,
+    ):
         concerns.append("suspicious_markdown_headers")
 
     # Check for excessive special characters (potential encoding bypass)
-    special_char_ratio = sum(1 for c in text if not c.isalnum() and not c.isspace()) / max(len(text), 1)
+    special_char_ratio = sum(
+        1 for c in text if not c.isalnum() and not c.isspace()
+    ) / max(len(text), 1)
     if special_char_ratio > 0.3:
         concerns.append("high_special_char_ratio")
 
     # Check for repeated prompt-like structures
-    prompt_markers = len(re.findall(r'(?:prompt|instruction|system|context)\s*[:\-]', text, re.IGNORECASE))
+    prompt_markers = len(
+        re.findall(
+            r"(?:prompt|instruction|system|context)\s*[:\-]", text, re.IGNORECASE
+        )
+    )
     if prompt_markers > 2:
         concerns.append("multiple_prompt_markers")
 
@@ -227,6 +256,7 @@ def analyze_structure(text: str) -> List[str]:
 # =============================================================================
 # Sanitization Functions
 # =============================================================================
+
 
 def remove_invisible_characters(text: str) -> str:
     """Remove invisible/zero-width characters that could hide instructions.
@@ -238,8 +268,8 @@ def remove_invisible_characters(text: str) -> str:
         Text with invisible characters removed
     """
     # Zero-width characters
-    invisible_chars = r'[\u200b-\u200f\u2028-\u202f\ufeff\u00ad]'
-    return re.sub(invisible_chars, '', text)
+    invisible_chars = r"[\u200b-\u200f\u2028-\u202f\ufeff\u00ad]"
+    return re.sub(invisible_chars, "", text)
 
 
 def escape_role_markers(text: str) -> str:
@@ -252,7 +282,7 @@ def escape_role_markers(text: str) -> str:
         Text with role markers escaped
     """
     # Add quotes around role-like patterns to make them clearly user content
-    text = re.sub(r'(^|\n)(System|Assistant|Human|User):', r'\1"\2:"', text)
+    text = re.sub(r"(^|\n)(System|Assistant|Human|User):", r'\1"\2:"', text)
     return text
 
 
@@ -266,14 +296,34 @@ def neutralize_boundary_attacks(text: str) -> str:
         Text with boundary attacks neutralized
     """
     # Escape triple hash boundaries
-    text = re.sub(r'###\s*(system|instruction|prompt)', r'[user mentioned: \1]', text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"###\s*(system|instruction|prompt)",
+        r"[user mentioned: \1]",
+        text,
+        flags=re.IGNORECASE,
+    )
 
     # Escape bracket-style markers
-    text = re.sub(r'\[(SYSTEM|INST|INSTRUCTION)\]', r'[user mentioned: \1]', text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\[(SYSTEM|INST|INSTRUCTION)\]",
+        r"[user mentioned: \1]",
+        text,
+        flags=re.IGNORECASE,
+    )
 
     # Escape XML-style markers
-    text = re.sub(r'<(system|instruction|prompt)>', r'[user mentioned: \1]', text, flags=re.IGNORECASE)
-    text = re.sub(r'</(system|instruction|prompt)>', r'[user mentioned: end \1]', text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"<(system|instruction|prompt)>",
+        r"[user mentioned: \1]",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"</(system|instruction|prompt)>",
+        r"[user mentioned: end \1]",
+        text,
+        flags=re.IGNORECASE,
+    )
 
     return text
 
@@ -354,7 +404,11 @@ def sanitize_prompt(
         was_modified = True
 
     # For medium+ risk, apply additional sanitization
-    if risk_level in (InjectionRiskLevel.MEDIUM, InjectionRiskLevel.HIGH, InjectionRiskLevel.CRITICAL):
+    if risk_level in (
+        InjectionRiskLevel.MEDIUM,
+        InjectionRiskLevel.HIGH,
+        InjectionRiskLevel.CRITICAL,
+    ):
         before = sanitized
         sanitized = escape_role_markers(sanitized)
         sanitized = neutralize_boundary_attacks(sanitized)
@@ -370,7 +424,7 @@ def sanitize_prompt(
                 "confidence": confidence,
                 "patterns": pattern_names[:10],  # Limit logged patterns
                 "was_modified": was_modified,
-            }
+            },
         )
 
     return SanitizationResult(
@@ -383,7 +437,9 @@ def sanitize_prompt(
     )
 
 
-def is_safe_for_llm(text: str, max_risk: InjectionRiskLevel = InjectionRiskLevel.MEDIUM) -> bool:
+def is_safe_for_llm(
+    text: str, max_risk: InjectionRiskLevel = InjectionRiskLevel.MEDIUM
+) -> bool:
     """Quick check if text is safe to send to LLM.
 
     Args:

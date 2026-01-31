@@ -30,6 +30,7 @@ logger = get_logger(__name__)
 @dataclass
 class QueuedMessage:
     """A message waiting to be persisted."""
+
     id: str
     session_id: str
     role: str
@@ -45,6 +46,7 @@ class SessionMessageQueue:
     Queues messages for a single capture session and flushes them
     in batches to reduce database round trips.
     """
+
     session_id: str
     messages: list[QueuedMessage] = field(default_factory=list)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -161,9 +163,7 @@ class SessionMessageQueue:
             )
 
         except Exception as e:
-            logger.error(
-                f"Session {self.session_id}: Failed to flush messages: {e}"
-            )
+            logger.error(f"Session {self.session_id}: Failed to flush messages: {e}")
             # Re-queue the messages on failure
             self.messages = messages_to_flush + self.messages
             raise
@@ -266,9 +266,7 @@ class MessageQueueManager:
         return {
             "active_sessions": len(self._queues),
             "total_pending_messages": total_pending,
-            "sessions": {
-                sid: q.pending_count for sid, q in self._queues.items()
-            }
+            "sessions": {sid: q.pending_count for sid, q in self._queues.items()},
         }
 
 

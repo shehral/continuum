@@ -19,9 +19,10 @@ class TestListProjects:
         mock_parser = MagicMock()
         mock_parser.get_available_projects = MagicMock(return_value=mock_projects)
 
-        with patch("routers.ingest.ClaudeLogParser", return_value=mock_parser), patch(
-            "routers.ingest.get_settings"
-        ) as mock_settings:
+        with (
+            patch("routers.ingest.ClaudeLogParser", return_value=mock_parser),
+            patch("routers.ingest.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.claude_logs_path = "/logs"
 
             from routers.ingest import list_available_projects
@@ -37,9 +38,10 @@ class TestListProjects:
         mock_parser = MagicMock()
         mock_parser.get_available_projects = MagicMock(return_value=[])
 
-        with patch("routers.ingest.ClaudeLogParser", return_value=mock_parser), patch(
-            "routers.ingest.get_settings"
-        ) as mock_settings:
+        with (
+            patch("routers.ingest.ClaudeLogParser", return_value=mock_parser),
+            patch("routers.ingest.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.claude_logs_path = "/logs"
 
             from routers.ingest import list_available_projects
@@ -67,9 +69,10 @@ class TestPreviewIngestion:
         mock_parser = MagicMock()
         mock_parser.preview_logs = AsyncMock(return_value=mock_previews)
 
-        with patch("routers.ingest.ClaudeLogParser", return_value=mock_parser), patch(
-            "routers.ingest.get_settings"
-        ) as mock_settings:
+        with (
+            patch("routers.ingest.ClaudeLogParser", return_value=mock_parser),
+            patch("routers.ingest.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.claude_logs_path = "/logs"
 
             from routers.ingest import preview_ingestion
@@ -85,9 +88,10 @@ class TestPreviewIngestion:
         mock_parser = MagicMock()
         mock_parser.preview_logs = AsyncMock(return_value=[])
 
-        with patch("routers.ingest.ClaudeLogParser", return_value=mock_parser), patch(
-            "routers.ingest.get_settings"
-        ) as mock_settings:
+        with (
+            patch("routers.ingest.ClaudeLogParser", return_value=mock_parser),
+            patch("routers.ingest.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.claude_logs_path = "/logs"
 
             from routers.ingest import preview_ingestion
@@ -104,9 +108,10 @@ class TestPreviewIngestion:
         mock_parser = MagicMock()
         mock_parser.preview_logs = AsyncMock(return_value=[])
 
-        with patch("routers.ingest.ClaudeLogParser", return_value=mock_parser), patch(
-            "routers.ingest.get_settings"
-        ) as mock_settings:
+        with (
+            patch("routers.ingest.ClaudeLogParser", return_value=mock_parser),
+            patch("routers.ingest.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.claude_logs_path = "/logs"
 
             from routers.ingest import preview_ingestion
@@ -128,9 +133,7 @@ class TestTriggerIngestion:
     @pytest.mark.asyncio
     async def test_trigger_ingestion_success(self, mock_db_session):
         """Should process files and extract decisions."""
-        mock_conversations = [
-            MagicMock(messages=[{"role": "user", "content": "test"}])
-        ]
+        mock_conversations = [MagicMock(messages=[{"role": "user", "content": "test"}])]
 
         async def mock_parse_all(*args, **kwargs):
             yield "/path/file.jsonl", mock_conversations
@@ -142,9 +145,11 @@ class TestTriggerIngestion:
         mock_extractor.extract_decisions = AsyncMock(return_value=[{"id": "1"}])
         mock_extractor.save_decision = AsyncMock(return_value="decision-id")
 
-        with patch("routers.ingest.ClaudeLogParser", return_value=mock_parser), patch(
-            "routers.ingest.DecisionExtractor", return_value=mock_extractor
-        ), patch("routers.ingest.get_settings") as mock_settings:
+        with (
+            patch("routers.ingest.ClaudeLogParser", return_value=mock_parser),
+            patch("routers.ingest.DecisionExtractor", return_value=mock_extractor),
+            patch("routers.ingest.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.claude_logs_path = "/logs"
 
             from routers.ingest import trigger_ingestion
@@ -167,9 +172,11 @@ class TestTriggerIngestion:
         mock_parser = MagicMock()
         mock_parser.parse_all_logs = mock_parse_all
 
-        with patch("routers.ingest.ClaudeLogParser", return_value=mock_parser), patch(
-            "routers.ingest.DecisionExtractor"
-        ), patch("routers.ingest.get_settings") as mock_settings:
+        with (
+            patch("routers.ingest.ClaudeLogParser", return_value=mock_parser),
+            patch("routers.ingest.DecisionExtractor"),
+            patch("routers.ingest.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.claude_logs_path = "/logs"
 
             from routers.ingest import trigger_ingestion
@@ -205,9 +212,10 @@ class TestWatchEndpoints:
         mock_watcher.is_running = False
         mock_watcher.start = MagicMock(return_value=True)
 
-        with patch(
-            "routers.ingest.get_file_watcher", return_value=mock_watcher
-        ), patch("routers.ingest.get_settings") as mock_settings:
+        with (
+            patch("routers.ingest.get_file_watcher", return_value=mock_watcher),
+            patch("routers.ingest.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.claude_logs_path = "/logs"
 
             from fastapi import BackgroundTasks
@@ -225,9 +233,10 @@ class TestWatchEndpoints:
         mock_watcher = MagicMock()
         mock_watcher.is_running = True
 
-        with patch(
-            "routers.ingest.get_file_watcher", return_value=mock_watcher
-        ), patch("routers.ingest.get_settings") as mock_settings:
+        with (
+            patch("routers.ingest.get_file_watcher", return_value=mock_watcher),
+            patch("routers.ingest.get_settings") as mock_settings,
+        ):
             mock_settings.return_value.claude_logs_path = "/logs"
 
             from fastapi import BackgroundTasks

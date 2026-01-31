@@ -147,7 +147,7 @@ class GraphStatsSchema(BaseModel):
     """Expected schema for GET /api/graph/stats response."""
 
     decisions: dict[str, int]  # {total, with_embeddings}
-    entities: dict[str, int]   # {total, with_embeddings}
+    entities: dict[str, int]  # {total, with_embeddings}
     relationships: int
 
 

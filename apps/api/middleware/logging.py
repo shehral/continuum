@@ -50,7 +50,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         method = request.method
         # SEC-015: Mask client IP for privacy
         raw_client_ip = request.client.host if request.client else "unknown"
-        masked_client_ip = mask_ip(raw_client_ip) if raw_client_ip != "unknown" else "unknown"
+        masked_client_ip = (
+            mask_ip(raw_client_ip) if raw_client_ip != "unknown" else "unknown"
+        )
 
         # Log incoming request
         logger.info(
@@ -62,7 +64,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 "client_ip": masked_client_ip,  # SEC-015: Masked IP
                 # SEC-015: Don't log full user-agent (can contain PII)
                 "user_agent_length": len(request.headers.get("user-agent", "")),
-            }
+            },
         )
 
         start_time = time.perf_counter()
@@ -81,7 +83,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                     "path": path,
                     "status_code": response.status_code,
                     "duration_seconds": duration,
-                }
+                },
             )
 
             return response
@@ -100,6 +102,6 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                     "error_type": type(e).__name__,
                     # SEC-015: Log exception class only, not message (may contain PII)
                 },
-                exc_info=True  # Full traceback will be in error logs, not JSON
+                exc_info=True,  # Full traceback will be in error logs, not JSON
             )
             raise

@@ -207,7 +207,11 @@ class TestDeleteEntity:
         async def mock_run(query, **params):
             call_count[0] += 1
             result = AsyncMock()
-            if "d:DecisionTrace" in query and "INVOLVES" in query and call_count[0] <= 2:
+            if (
+                "d:DecisionTrace" in query
+                and "INVOLVES" in query
+                and call_count[0] <= 2
+            ):
                 if "d.user_id IS NOT NULL AND d.user_id <>" in query:
                     # Check for other users - none
                     result.single = AsyncMock(return_value={"other_user_count": 0})
@@ -526,14 +530,18 @@ class TestSuggestEntities:
         mock_extractor = AsyncMock()
 
         # Mock extracted entities
-        mock_extractor.extract_entities = AsyncMock(return_value=[
-            {"name": "PostgreSQL", "type": "technology"},
-            {"name": "Redis", "type": "technology"},
-        ])
+        mock_extractor.extract_entities = AsyncMock(
+            return_value=[
+                {"name": "PostgreSQL", "type": "technology"},
+                {"name": "Redis", "type": "technology"},
+            ]
+        )
 
         # Mock database lookup returns some existing matches
         async def mock_result_iter():
-            yield {"e": {"id": str(uuid4()), "name": "PostgreSQL", "type": "technology"}}
+            yield {
+                "e": {"id": str(uuid4()), "name": "PostgreSQL", "type": "technology"}
+            }
 
         mock_result = MagicMock()
         mock_result.__aiter__ = lambda self: mock_result_iter()
@@ -551,7 +559,9 @@ class TestSuggestEntities:
                 from models.schemas import SuggestEntitiesRequest
                 from routers.entities import suggest_entities
 
-                request = SuggestEntitiesRequest(text="Using PostgreSQL and Redis for data storage")
+                request = SuggestEntitiesRequest(
+                    text="Using PostgreSQL and Redis for data storage"
+                )
                 results = await suggest_entities(request, user_id="test-user")
 
                 # Should have both existing and new suggestions

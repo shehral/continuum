@@ -197,18 +197,22 @@ def _format_stage_guidance(state: InterviewState) -> str:
     for focus in stage_info["focus"]:
         guidance_parts.append(f"  - {focus}")
 
-    guidance_parts.extend([
-        "",
-        "EXAMPLE QUESTIONS (pick ONE that fits the context):",
-    ])
+    guidance_parts.extend(
+        [
+            "",
+            "EXAMPLE QUESTIONS (pick ONE that fits the context):",
+        ]
+    )
 
     for question in stage_info["questions"][:3]:  # Limit to avoid prompt bloat
         guidance_parts.append(f'  - "{question}"')
 
-    guidance_parts.extend([
-        "",
-        "AVOID:",
-    ])
+    guidance_parts.extend(
+        [
+            "",
+            "AVOID:",
+        ]
+    )
 
     for avoid in stage_info["avoid"]:
         guidance_parts.append(f"  - {avoid}")
@@ -290,8 +294,7 @@ You will receive stage-specific guidance for what to focus on."""
         """
         # Count substantial user responses (>20 chars indicates real content)
         user_responses = [
-            m for m in history
-            if m["role"] == "user" and len(m["content"]) > 20
+            m for m in history if m["role"] == "user" and len(m["content"]) > 20
         ]
 
         response_count = len(user_responses)
@@ -330,47 +333,115 @@ You will receive stage-specific guidance for what to focus on."""
 
         # TRIGGER indicators - problem, need, event that started the decision
         trigger_patterns = [
-            "problem", "issue", "need", "require", "had to", "wanted to",
-            "because", "since", "when", "started", "began", "noticed",
-            "realized", "discovered", "faced", "encountered", "challenge"
+            "problem",
+            "issue",
+            "need",
+            "require",
+            "had to",
+            "wanted to",
+            "because",
+            "since",
+            "when",
+            "started",
+            "began",
+            "noticed",
+            "realized",
+            "discovered",
+            "faced",
+            "encountered",
+            "challenge",
         ]
         trigger_score = sum(1 for p in trigger_patterns if p in user_text)
         coverage["trigger"] = min(1.0, trigger_score / 5)
 
         # CONTEXT indicators - background, constraints, environment
         context_patterns = [
-            "already", "existing", "current", "before", "had",
-            "constraint", "limit", "budget", "deadline", "team",
-            "experience", "skill", "environment", "stack", "using",
-            "requirement", "needed to", "had to support"
+            "already",
+            "existing",
+            "current",
+            "before",
+            "had",
+            "constraint",
+            "limit",
+            "budget",
+            "deadline",
+            "team",
+            "experience",
+            "skill",
+            "environment",
+            "stack",
+            "using",
+            "requirement",
+            "needed to",
+            "had to support",
         ]
         context_score = sum(1 for p in context_patterns if p in user_text)
         coverage["context"] = min(1.0, context_score / 5)
 
         # OPTIONS indicators - alternatives considered
         options_patterns = [
-            "option", "alternative", "considered", "looked at", "evaluated",
-            "compared", "versus", "vs", "or", "could have", "might have",
-            "other", "different", "instead", "also thought", "ruled out"
+            "option",
+            "alternative",
+            "considered",
+            "looked at",
+            "evaluated",
+            "compared",
+            "versus",
+            "vs",
+            "or",
+            "could have",
+            "might have",
+            "other",
+            "different",
+            "instead",
+            "also thought",
+            "ruled out",
         ]
         options_score = sum(1 for p in options_patterns if p in user_text)
         coverage["options"] = min(1.0, options_score / 4)
 
         # DECISION indicators - what was chosen
         decision_patterns = [
-            "decided", "chose", "went with", "picked", "selected",
-            "ended up", "final", "ultimately", "concluded", "settled on",
-            "we use", "we're using", "implemented", "adopted"
+            "decided",
+            "chose",
+            "went with",
+            "picked",
+            "selected",
+            "ended up",
+            "final",
+            "ultimately",
+            "concluded",
+            "settled on",
+            "we use",
+            "we're using",
+            "implemented",
+            "adopted",
         ]
         decision_score = sum(1 for p in decision_patterns if p in user_text)
         coverage["decision"] = min(1.0, decision_score / 3)
 
         # RATIONALE indicators - why the choice was made
         rationale_patterns = [
-            "because", "since", "reason", "why", "benefit", "advantage",
-            "better", "easier", "faster", "cheaper", "simpler", "more",
-            "trade-off", "tradeoff", "downside", "risk", "concern",
-            "weighed", "balanced", "considered"
+            "because",
+            "since",
+            "reason",
+            "why",
+            "benefit",
+            "advantage",
+            "better",
+            "easier",
+            "faster",
+            "cheaper",
+            "simpler",
+            "more",
+            "trade-off",
+            "tradeoff",
+            "downside",
+            "risk",
+            "concern",
+            "weighed",
+            "balanced",
+            "considered",
         ]
         rationale_score = sum(1 for p in rationale_patterns if p in user_text)
         coverage["rationale"] = min(1.0, rationale_score / 4)
@@ -395,7 +466,9 @@ You will receive stage-specific guidance for what to focus on."""
             The appropriate next state
         """
         # For very short conversations, use simple heuristic
-        user_responses = [m for m in history if m["role"] == "user" and len(m["content"]) > 20]
+        user_responses = [
+            m for m in history if m["role"] == "user" and len(m["content"]) > 20
+        ]
         if len(user_responses) <= 1:
             return self._determine_next_state_heuristic(history)
 
@@ -761,12 +834,12 @@ Return ONLY valid JSON."""
             Default decision trace dict
         """
         # Extract user messages as raw content
-        user_messages = [
-            m["content"] for m in history if m["role"] == "user"
-        ]
+        user_messages = [m["content"] for m in history if m["role"] == "user"]
 
         return {
-            "trigger": user_messages[0] if len(user_messages) > 0 else "Unknown trigger",
+            "trigger": user_messages[0]
+            if len(user_messages) > 0
+            else "Unknown trigger",
             "context": user_messages[1] if len(user_messages) > 1 else "",
             "options": [],
             "decision": user_messages[3] if len(user_messages) > 3 else "",

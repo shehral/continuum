@@ -43,7 +43,10 @@ def mock_embedding_service():
 @pytest.fixture
 def resolver_with_mocks(mock_session, mock_embedding_service):
     """Create EntityResolver with mocked dependencies."""
-    with patch('services.entity_resolver.get_embedding_service', return_value=mock_embedding_service):
+    with patch(
+        "services.entity_resolver.get_embedding_service",
+        return_value=mock_embedding_service,
+    ):
         resolver = EntityResolver(mock_session)
         resolver.embedding_service = mock_embedding_service
         return resolver
@@ -116,7 +119,9 @@ class TestEntityResolverExactMatch:
         assert result.match_method == "exact"
 
     @pytest.mark.asyncio
-    async def test_exact_match_returns_entity_id(self, resolver_with_mocks, mock_session):
+    async def test_exact_match_returns_entity_id(
+        self, resolver_with_mocks, mock_session
+    ):
         """Should return the correct entity ID on exact match."""
         entity_id = str(uuid4())
         entity = EntityFactory.create(
@@ -143,7 +148,9 @@ class TestEntityResolverCanonicalLookup:
     """Test Stage 2: Canonical name lookup from CANONICAL_NAMES mapping."""
 
     @pytest.mark.asyncio
-    async def test_canonical_lookup_postgres(self, mock_session, mock_embedding_service):
+    async def test_canonical_lookup_postgres(
+        self, mock_session, mock_embedding_service
+    ):
         """Should resolve 'postgres' to 'PostgreSQL'."""
         entity = EntityFactory.create(name="PostgreSQL", entity_type="technology")
         entity_record = Neo4jRecordFactory.create_entity_record(entity)
@@ -163,7 +170,10 @@ class TestEntityResolverCanonicalLookup:
 
         mock_session.run = mock_run
 
-        with patch('services.entity_resolver.get_embedding_service', return_value=mock_embedding_service):
+        with patch(
+            "services.entity_resolver.get_embedding_service",
+            return_value=mock_embedding_service,
+        ):
             resolver = EntityResolver(mock_session)
             resolver.embedding_service = mock_embedding_service
             result = await resolver.resolve("postgres", "technology")
@@ -191,7 +201,10 @@ class TestEntityResolverCanonicalLookup:
 
         mock_session.run = mock_run
 
-        with patch('services.entity_resolver.get_embedding_service', return_value=mock_embedding_service):
+        with patch(
+            "services.entity_resolver.get_embedding_service",
+            return_value=mock_embedding_service,
+        ):
             resolver = EntityResolver(mock_session)
             resolver.embedding_service = mock_embedding_service
             result = await resolver.resolve("k8s", "technology")
@@ -217,7 +230,10 @@ class TestEntityResolverCanonicalLookup:
 
         mock_session.run = mock_run
 
-        with patch('services.entity_resolver.get_embedding_service', return_value=mock_embedding_service):
+        with patch(
+            "services.entity_resolver.get_embedding_service",
+            return_value=mock_embedding_service,
+        ):
             resolver = EntityResolver(mock_session)
             resolver.embedding_service = mock_embedding_service
             result = await resolver.resolve("js", "technology")
@@ -243,7 +259,10 @@ class TestEntityResolverCanonicalLookup:
 
         mock_session.run = mock_run
 
-        with patch('services.entity_resolver.get_embedding_service', return_value=mock_embedding_service):
+        with patch(
+            "services.entity_resolver.get_embedding_service",
+            return_value=mock_embedding_service,
+        ):
             resolver = EntityResolver(mock_session)
             resolver.embedding_service = mock_embedding_service
             result = await resolver.resolve("next", "technology")
@@ -296,7 +315,9 @@ class TestEntityResolverAliasSearch:
         assert result.confidence == 0.92
 
     @pytest.mark.asyncio
-    async def test_alias_match_case_insensitive(self, resolver_with_mocks, mock_session):
+    async def test_alias_match_case_insensitive(
+        self, resolver_with_mocks, mock_session
+    ):
         """Should match alias case-insensitively."""
         entity = EntityFactory.create(
             name="MongoDB",
@@ -385,7 +406,9 @@ class TestEntityResolverFuzzyMatch:
         self, resolver_with_mocks, mock_session, mock_embedding_service
     ):
         """Should skip fuzzy match if below 85% threshold."""
-        entity = EntityFactory.create(name="Completely Different Name", entity_type="technology")
+        entity = EntityFactory.create(
+            name="Completely Different Name", entity_type="technology"
+        )
 
         mock_session.set_default_response(single_value=None)
         mock_session.set_response(
@@ -399,9 +422,14 @@ class TestEntityResolverFuzzyMatch:
         assert result.match_method != "fuzzy" or result.confidence < 0.85
 
     @pytest.mark.asyncio
-    async def test_fuzzy_threshold_configurable(self, mock_session, mock_embedding_service):
+    async def test_fuzzy_threshold_configurable(
+        self, mock_session, mock_embedding_service
+    ):
         """Should respect custom fuzzy threshold."""
-        with patch('services.entity_resolver.get_embedding_service', return_value=mock_embedding_service):
+        with patch(
+            "services.entity_resolver.get_embedding_service",
+            return_value=mock_embedding_service,
+        ):
             resolver = EntityResolver(mock_session)
             resolver.fuzzy_threshold = 70  # Lower threshold
 
@@ -417,7 +445,9 @@ class TestEntityResolverEmbeddingSimilarity:
     """Test Stage 5: Embedding similarity with cosine > 0.9."""
 
     @pytest.mark.asyncio
-    async def test_embedding_similarity_match(self, mock_session, mock_embedding_service):
+    async def test_embedding_similarity_match(
+        self, mock_session, mock_embedding_service
+    ):
         """Should match via embedding similarity above 0.9."""
         entity = EntityFactory.create(name="Machine Learning", entity_type="concept")
         entity_record = {
@@ -436,7 +466,10 @@ class TestEntityResolverEmbeddingSimilarity:
                 return MockNeo4jResult(single_value=None)
             if "ANY(alias IN" in query:
                 return MockNeo4jResult(single_value=None)
-            if "RETURN e.id AS id, e.name AS name, e.type AS type" in query and "embedding" not in query.lower():
+            if (
+                "RETURN e.id AS id, e.name AS name, e.type AS type" in query
+                and "embedding" not in query.lower()
+            ):
                 return MockNeo4jResult(records=[])  # No entities for fuzzy
             # Stage 5: Embedding similarity match
             if "gds.similarity.cosine" in query:
@@ -445,7 +478,10 @@ class TestEntityResolverEmbeddingSimilarity:
 
         mock_session.run = mock_run
 
-        with patch('services.entity_resolver.get_embedding_service', return_value=mock_embedding_service):
+        with patch(
+            "services.entity_resolver.get_embedding_service",
+            return_value=mock_embedding_service,
+        ):
             resolver = EntityResolver(mock_session)
             resolver.embedding_service = mock_embedding_service
             result = await resolver.resolve("ML", "concept")
@@ -473,12 +509,14 @@ class TestEntityResolverEmbeddingSimilarity:
         # Manual fallback returns entity with embedding
         mock_session.set_response(
             "e.embedding IS NOT NULL",
-            records=[{
-                "id": entity["id"],
-                "name": entity["name"],
-                "type": entity["type"],
-                "embedding": base_embedding,
-            }],
+            records=[
+                {
+                    "id": entity["id"],
+                    "name": entity["name"],
+                    "type": entity["type"],
+                    "embedding": base_embedding,
+                }
+            ],
         )
 
         result = await resolver_with_mocks.resolve("DL", "concept")
@@ -502,9 +540,14 @@ class TestEntityResolverEmbeddingSimilarity:
         assert result.match_method == "new"
 
     @pytest.mark.asyncio
-    async def test_embedding_threshold_configurable(self, mock_session, mock_embedding_service):
+    async def test_embedding_threshold_configurable(
+        self, mock_session, mock_embedding_service
+    ):
         """Should respect custom embedding threshold."""
-        with patch('services.entity_resolver.get_embedding_service', return_value=mock_embedding_service):
+        with patch(
+            "services.entity_resolver.get_embedding_service",
+            return_value=mock_embedding_service,
+        ):
             resolver = EntityResolver(mock_session)
             resolver.embedding_threshold = 0.8  # Lower threshold
 
@@ -535,7 +578,9 @@ class TestEntityResolverCreateNew:
         assert result.id is not None
 
     @pytest.mark.asyncio
-    async def test_create_new_uses_canonical_name(self, resolver_with_mocks, mock_session):
+    async def test_create_new_uses_canonical_name(
+        self, resolver_with_mocks, mock_session
+    ):
         """Should use canonical name for new entity when available."""
         mock_session.set_default_response(single_value=None)
         mock_session.set_response("MATCH (e:Entity)", records=[])
@@ -583,9 +628,9 @@ class TestEntityResolverBatch:
             single_value=Neo4jRecordFactory.create_entity_record(entity),
         )
 
-        result = await resolver_with_mocks.resolve_batch([
-            {"name": "Redis", "type": "technology"}
-        ])
+        result = await resolver_with_mocks.resolve_batch(
+            [{"name": "Redis", "type": "technology"}]
+        )
 
         assert len(result) == 1
         assert result[0].name == "Redis"
@@ -599,18 +644,22 @@ class TestEntityResolverBatch:
             single_value=Neo4jRecordFactory.create_entity_record(entity),
         )
 
-        result = await resolver_with_mocks.resolve_batch([
-            {"name": "Docker", "type": "technology"},
-            {"name": "docker", "type": "technology"},
-            {"name": "DOCKER", "type": "technology"},
-        ])
+        result = await resolver_with_mocks.resolve_batch(
+            [
+                {"name": "Docker", "type": "technology"},
+                {"name": "docker", "type": "technology"},
+                {"name": "DOCKER", "type": "technology"},
+            ]
+        )
 
         assert len(result) == 3
         # All should be the same entity
         assert all(r.id == result[0].id for r in result)
 
     @pytest.mark.asyncio
-    async def test_resolve_batch_canonical_dedup(self, resolver_with_mocks, mock_session):
+    async def test_resolve_batch_canonical_dedup(
+        self, resolver_with_mocks, mock_session
+    ):
         """Should deduplicate by canonical name within batch."""
         entity = EntityFactory.create(name="PostgreSQL", entity_type="technology")
         mock_session.set_response(
@@ -618,11 +667,13 @@ class TestEntityResolverBatch:
             single_value=Neo4jRecordFactory.create_entity_record(entity),
         )
 
-        result = await resolver_with_mocks.resolve_batch([
-            {"name": "PostgreSQL", "type": "technology"},
-            {"name": "postgres", "type": "technology"},
-            {"name": "pg", "type": "technology"},
-        ])
+        result = await resolver_with_mocks.resolve_batch(
+            [
+                {"name": "PostgreSQL", "type": "technology"},
+                {"name": "postgres", "type": "technology"},
+                {"name": "pg", "type": "technology"},
+            ]
+        )
 
         assert len(result) == 3
         # All should resolve to same entity
@@ -657,7 +708,9 @@ class TestEntityResolverMerge:
         assert "entities_merged" in result
 
     @pytest.mark.asyncio
-    async def test_merge_prefers_canonical_entity(self, resolver_with_mocks, mock_session):
+    async def test_merge_prefers_canonical_entity(
+        self, resolver_with_mocks, mock_session
+    ):
         """Should keep entity with canonical name when merging."""
         # Entity with canonical name should be preserved
         entities = [
@@ -732,7 +785,7 @@ class TestGetEntityResolver:
 
     def test_get_entity_resolver_creates_instance(self, mock_session):
         """Should create EntityResolver with session."""
-        with patch('services.entity_resolver.get_embedding_service'):
+        with patch("services.entity_resolver.get_embedding_service"):
             resolver = get_entity_resolver(mock_session)
             assert isinstance(resolver, EntityResolver)
             assert resolver.session == mock_session

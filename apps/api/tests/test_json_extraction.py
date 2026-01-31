@@ -23,29 +23,27 @@ class TestExtractJsonFromResponse:
 
     def test_json_code_block(self):
         """Should extract JSON from ```json code block."""
-        response = '''Here is the data:
+        response = """Here is the data:
 ```json
 {"entities": [{"name": "PostgreSQL", "type": "technology"}]}
 ```
-That's the result.'''
+That's the result."""
         result = extract_json_from_response(response)
         assert result["entities"][0]["name"] == "PostgreSQL"
 
     def test_untyped_code_block(self):
         """Should extract JSON from untyped ``` code block."""
-        response = '''The output:
+        response = """The output:
 ```
 {"decision": "Use React", "confidence": 0.9}
-```'''
+```"""
         result = extract_json_from_response(response)
         assert result["decision"] == "Use React"
         assert result["confidence"] == 0.9
 
     def test_json_with_whitespace(self):
         """Should handle JSON with leading/trailing whitespace."""
-        response = '''   
-        {"key": "value"}   
-        '''
+        response = '   \n        {"key": "value"}   \n        '
         result = extract_json_from_response(response)
         assert result == {"key": "value"}
 
@@ -91,7 +89,7 @@ That's the result.'''
 
     def test_nested_json(self):
         """Should handle nested JSON structures."""
-        response = '''```json
+        response = """```json
 {
   "entities": [
     {"name": "React", "type": "technology", "confidence": 0.95},
@@ -99,7 +97,7 @@ That's the result.'''
   ],
   "reasoning": "React is a framework"
 }
-```'''
+```"""
         result = extract_json_from_response(response)
         assert len(result["entities"]) == 2
         assert result["reasoning"] == "React is a framework"

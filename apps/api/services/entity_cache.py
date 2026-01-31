@@ -129,9 +129,7 @@ class EntityCache:
 
         return None
 
-    async def set_by_alias(
-        self, user_id: str, alias: str, entity: dict | None
-    ) -> None:
+    async def set_by_alias(self, user_id: str, alias: str, entity: dict | None) -> None:
         """Cache entity lookup by alias."""
         redis_client = await self._get_redis()
         if redis_client is None:
@@ -222,9 +220,7 @@ class EntityCache:
             # Invalidate by aliases if provided
             if aliases:
                 for alias in aliases:
-                    keys_to_delete.append(
-                        self._get_cache_key(user_id, "alias", alias)
-                    )
+                    keys_to_delete.append(self._get_cache_key(user_id, "alias", alias))
 
             if keys_to_delete:
                 deleted = await redis_client.delete(*keys_to_delete)
