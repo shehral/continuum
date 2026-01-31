@@ -30,7 +30,7 @@ import {
   X, Sparkles, GitBranch, Bot, User, FileText, Trash2, Loader2, Link2, Network,
   FolderOpen, Plus, Layout, ChevronDown, Target, Columns, Lightbulb, Settings,
   Wrench, Code, ArrowUpRight, Box, RefreshCw, Zap, Clock, CircleDot, BarChart3,
-  Atom, Brain, Server, Cpu
+  Atom, Brain, Server, Cpu, Layers
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -197,11 +197,12 @@ const ENTITY_TYPE_CONFIG: Record<string, {
 // Custom node component for decisions - memoized (P1-1)
 const DecisionNode = React.memo(
   function DecisionNode({ data, selected }: NodeProps) {
-    const nodeData = data as { label: string; decision?: Decision & { source?: string }; hasEmbedding?: boolean; isFocused?: boolean }
+    const nodeData = data as { label: string; decision?: Decision & { source?: string }; hasEmbedding?: boolean; isFocused?: boolean; isDimmed?: boolean }
     const source = nodeData.decision?.source || "unknown"
     const sourceStyle = SOURCE_STYLES[source] || SOURCE_STYLES.unknown
     const badgeStyle = SOURCE_BADGE_STYLES[source as keyof typeof SOURCE_BADGE_STYLES] || SOURCE_BADGE_STYLES.unknown
     const isFocused = nodeData.isFocused
+    const isDimmed = nodeData.isDimmed
 
     return (
       <div
@@ -218,6 +219,7 @@ const DecisionNode = React.memo(
             ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-slate-900 animate-pulse"
             : ""
           }
+          ${isDimmed ? "opacity-25 scale-95" : "opacity-100"}
         `}
         role="button"
         aria-label={`Decision node: ${nodeData.label}`}
@@ -276,22 +278,24 @@ const DecisionNode = React.memo(
   },
   // Custom comparison function for memoization (P1-1)
   (prev, next) => {
-    const prevData = prev.data as { decision?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean }
-    const nextData = next.data as { decision?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean }
-    return prev.selected === next.selected && 
+    const prevData = prev.data as { decision?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean; isDimmed?: boolean }
+    const nextData = next.data as { decision?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean; isDimmed?: boolean }
+    return prev.selected === next.selected &&
       prevData?.decision?.id === nextData?.decision?.id &&
       prevData?.hasEmbedding === nextData?.hasEmbedding &&
-      prevData?.isFocused === nextData?.isFocused
+      prevData?.isFocused === nextData?.isFocused &&
+      prevData?.isDimmed === nextData?.isDimmed
   }
 )
 
 // Custom node component for entities - memoized (P1-1)
 const EntityNode = React.memo(
   function EntityNode({ data, selected }: NodeProps) {
-    const nodeData = data as { label: string; entity?: Entity; hasEmbedding?: boolean; isFocused?: boolean }
+    const nodeData = data as { label: string; entity?: Entity; hasEmbedding?: boolean; isFocused?: boolean; isDimmed?: boolean }
     const entityType = nodeData.entity?.type || "concept"
     const config = ENTITY_TYPE_CONFIG[entityType] || ENTITY_TYPE_CONFIG.concept
     const isFocused = nodeData.isFocused
+    const isDimmed = nodeData.isDimmed
     const selectedClass = selected
       ? `shadow-[0_0_30px_rgba(59,130,246,0.5)] scale-110 border-white`
       : "hover:scale-105 hover:shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
@@ -309,6 +313,7 @@ const EntityNode = React.memo(
             ? "ring-2 ring-cyan-400 ring-offset-2 ring-offset-slate-900 animate-pulse"
             : ""
           }
+          ${isDimmed ? "opacity-25 scale-90" : "opacity-100"}
         `}
         role="button"
         aria-label={`Entity node: ${nodeData.label}, type: ${entityType}`}
@@ -342,12 +347,13 @@ const EntityNode = React.memo(
   },
   // Custom comparison function for memoization (P1-1)
   (prev, next) => {
-    const prevData = prev.data as { entity?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean }
-    const nextData = next.data as { entity?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean }
-    return prev.selected === next.selected && 
+    const prevData = prev.data as { entity?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean; isDimmed?: boolean }
+    const nextData = next.data as { entity?: { id: string }; hasEmbedding?: boolean; isFocused?: boolean; isDimmed?: boolean }
+    return prev.selected === next.selected &&
       prevData?.entity?.id === nextData?.entity?.id &&
       prevData?.hasEmbedding === nextData?.hasEmbedding &&
-      prevData?.isFocused === nextData?.isFocused
+      prevData?.isFocused === nextData?.isFocused &&
+      prevData?.isDimmed === nextData?.isDimmed
   }
 )
 
@@ -439,33 +445,57 @@ function KnowledgeGraphInner({
 }: KnowledgeGraphProps) {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [showRelationshipLegend, setShowRelationshipLegend] = useState(true)
   const [showSourceLegend, setShowSourceLegend] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
-  const [layoutType, setLayoutType] = useState<LayoutType>("force")
+  const [layoutType, setLayoutType] = useState<LayoutType>("clustered") // Default to clustered for better UX
   // P1-3: Related decisions state
   const [relatedDecisions, setRelatedDecisions] = useState<SimilarDecision[]>([])
   const [relatedLoading, setRelatedLoading] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const { setCenter, getZoom } = useReactFlow()
 
+  // Build adjacency map for hover highlighting
+  const adjacencyMap = useMemo(() => {
+    if (!data?.edges) return new Map<string, Set<string>>()
+    const map = new Map<string, Set<string>>()
+    data.edges.forEach(edge => {
+      if (!map.has(edge.source)) map.set(edge.source, new Set())
+      if (!map.has(edge.target)) map.set(edge.target, new Set())
+      map.get(edge.source)!.add(edge.target)
+      map.get(edge.target)!.add(edge.source)
+    })
+    return map
+  }, [data?.edges])
+
   // Convert graph data to React Flow format with layout
   const initialNodes: Node[] = useMemo(() => {
     if (!data?.nodes) return []
 
     // First, create nodes with placeholder positions
-    const rawNodes: Node[] = data.nodes.map((node) => ({
-      id: node.id,
-      type: node.type,
-      position: { x: 0, y: 0 }, // Will be set by layout
-      data: {
-        label: node.label,
-        decision: node.type === "decision" ? node.data : undefined,
-        entity: node.type === "entity" ? node.data : undefined,
-        hasEmbedding: node.has_embedding,
-        isFocused: false,
-      },
-    }))
+    const rawNodes: Node[] = data.nodes.map((node) => {
+      // Determine if node should be highlighted (connected to hovered node)
+      const isHighlighted = hoveredNodeId
+        ? (node.id === hoveredNodeId || adjacencyMap.get(hoveredNodeId)?.has(node.id))
+        : true // No hover = all visible
+      const isDimmed = hoveredNodeId && !isHighlighted
+
+      return {
+        id: node.id,
+        type: node.type,
+        position: { x: 0, y: 0 }, // Will be set by layout
+        data: {
+          label: node.label,
+          decision: node.type === "decision" ? node.data : undefined,
+          entity: node.type === "entity" ? node.data : undefined,
+          hasEmbedding: node.has_embedding,
+          isFocused: false,
+          isHighlighted,
+          isDimmed,
+        },
+      }
+    })
 
     // Create edges for layout algorithm
     const rawEdges: Edge[] = data.edges?.map((edge) => ({
@@ -476,7 +506,7 @@ function KnowledgeGraphInner({
 
     // Apply the selected layout algorithm
     return applyLayout(rawNodes, rawEdges, layoutType, { type: layoutType })
-  }, [data, layoutType])
+  }, [data, layoutType, hoveredNodeId, adjacencyMap])
 
   const initialEdges: Edge[] = useMemo(() => {
     if (!data?.edges) return []
@@ -782,6 +812,15 @@ function KnowledgeGraphInner({
     onSourceFilterChange?.(source)
   }, [onSourceFilterChange])
 
+  // Handle node hover for highlighting connected nodes
+  const handleNodeMouseEnter = useCallback((_: React.MouseEvent, node: Node) => {
+    setHoveredNodeId(node.id)
+  }, [])
+
+  const handleNodeMouseLeave = useCallback(() => {
+    setHoveredNodeId(null)
+  }, [])
+
   // Handle focus on container click
   const handleContainerFocus = useCallback(() => {
     if (!focusedNodeId && nodes.length > 0) {
@@ -818,12 +857,14 @@ function KnowledgeGraphInner({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeMouseEnter={handleNodeMouseEnter}
+        onNodeMouseLeave={handleNodeMouseLeave}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.3, maxZoom: 1.5 }}
-        minZoom={0.1}
-        maxZoom={2}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.5 }}
+        fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
+        minZoom={0.05}
+        maxZoom={2.5}
+        defaultViewport={{ x: 0, y: 0, zoom: 0.4 }}
         className="!bg-transparent"
         proOptions={{ hideAttribution: true }}
       >
@@ -1071,10 +1112,20 @@ function KnowledgeGraphInner({
                 onClick={() => setLayoutType("force")}
                 className={`cursor-pointer ${layoutType === "force" ? "bg-cyan-500/20 text-cyan-300" : "text-slate-300 hover:text-slate-100"}`}
               >
-                <Columns className="h-4 w-4 mr-2" />
+                <Network className="h-4 w-4 mr-2" />
                 <div className="flex flex-col">
                   <span>Force-Directed</span>
-                  <span className="text-xs text-slate-500">Natural clustering</span>
+                  <span className="text-xs text-slate-500">Physics-based clustering</span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setLayoutType("clustered")}
+                className={`cursor-pointer ${layoutType === "clustered" ? "bg-cyan-500/20 text-cyan-300" : "text-slate-300 hover:text-slate-100"}`}
+              >
+                <Layers className="h-4 w-4 mr-2" />
+                <div className="flex flex-col">
+                  <span>Clustered</span>
+                  <span className="text-xs text-slate-500">Group by decision</span>
                 </div>
               </DropdownMenuItem>
               <DropdownMenuItem
