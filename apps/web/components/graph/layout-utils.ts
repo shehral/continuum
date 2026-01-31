@@ -27,33 +27,34 @@ export function applyForceLayout(
   edges: Edge[],
   options: { spacing?: number } = {}
 ): Node[] {
-  const spacing = options.spacing ?? 400
+  const spacing = options.spacing ?? 500 // Increased from 400
   const decisionNodes = nodes.filter((n) => n.type === "decision")
   const entityNodes = nodes.filter((n) => n.type === "entity")
 
   const result: Node[] = []
 
-  // Layout decisions in a row at the top
+  // Layout decisions in a row at the top with more spacing
   decisionNodes.forEach((node, index) => {
     result.push({
       ...node,
       position: {
-        x: index * spacing + 100,
-        y: 50,
+        x: index * spacing + 150,
+        y: 80,
       },
     })
   })
 
-  // Layout entities in a grid below
-  const cols = Math.max(3, Math.ceil(Math.sqrt(entityNodes.length)))
+  // Layout entities in a grid below with much more spacing
+  // Use fewer columns for more horizontal spread
+  const cols = Math.max(2, Math.ceil(Math.sqrt(entityNodes.length * 0.6)))
   entityNodes.forEach((node, index) => {
     const row = Math.floor(index / cols)
     const col = index % cols
     result.push({
       ...node,
       position: {
-        x: col * 200 + 150,
-        y: row * 120 + 300,
+        x: col * 350 + 200, // Increased from 200 to 350
+        y: row * 200 + 400, // Increased from 120 to 200, start lower
       },
     })
   })
@@ -71,8 +72,8 @@ export function applyHierarchicalLayout(
   options: { direction?: "TB" | "LR" | "BT" | "RL"; nodeSpacing?: number; rankSpacing?: number } = {}
 ): Node[] {
   const direction = options.direction ?? "TB"
-  const nodeSpacing = options.nodeSpacing ?? 100
-  const rankSpacing = options.rankSpacing ?? 150
+  const nodeSpacing = options.nodeSpacing ?? 180 // Increased from 100
+  const rankSpacing = options.rankSpacing ?? 250 // Increased from 150
 
   const g = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
 
@@ -80,8 +81,8 @@ export function applyHierarchicalLayout(
     rankdir: direction,
     nodesep: nodeSpacing,
     ranksep: rankSpacing,
-    marginx: 50,
-    marginy: 50,
+    marginx: 80,
+    marginy: 80,
   })
 
   // Add nodes to the graph
@@ -124,14 +125,16 @@ export function applyRadialLayout(
   edges: Edge[],
   options: { centerRadius?: number; ringSpacing?: number } = {}
 ): Node[] {
-  const centerRadius = options.centerRadius ?? 200
-  const ringSpacing = options.ringSpacing ?? 150
-
   const decisionNodes = nodes.filter((n) => n.type === "decision")
   const entityNodes = nodes.filter((n) => n.type === "entity")
 
-  const centerX = 500
-  const centerY = 400
+  // Dynamic radius based on number of nodes for better spacing
+  const baseRadius = Math.max(300, decisionNodes.length * 80) // Increased from 200
+  const centerRadius = options.centerRadius ?? baseRadius
+  const ringSpacing = options.ringSpacing ?? 280 // Increased from 150
+
+  const centerX = 600
+  const centerY = 500
 
   const result: Node[] = []
 
@@ -143,7 +146,7 @@ export function applyRadialLayout(
       position: { x: centerX - DEFAULT_NODE_WIDTH / 2, y: centerY - DEFAULT_NODE_HEIGHT / 2 },
     })
   } else {
-    // Multiple decisions in inner circle
+    // Multiple decisions in inner circle with adequate spacing
     const decisionAngleStep = (2 * Math.PI) / decisionNodes.length
     decisionNodes.forEach((node, index) => {
       const angle = index * decisionAngleStep - Math.PI / 2 // Start from top
@@ -170,11 +173,19 @@ export function applyRadialLayout(
     }
   })
 
-  // Place entities in outer ring(s)
-  const outerRadius = centerRadius + ringSpacing
-  const entityAngleStep = (2 * Math.PI) / Math.max(entityNodes.length, 1)
+  // Place entities in outer ring(s) with dynamic ring count based on entity count
+  const maxEntitiesPerRing = Math.max(8, Math.ceil(entityNodes.length / 2))
+  const numRings = Math.ceil(entityNodes.length / maxEntitiesPerRing)
+
   entityNodes.forEach((node, index) => {
-    const angle = index * entityAngleStep - Math.PI / 2
+    const ringIndex = Math.floor(index / maxEntitiesPerRing)
+    const indexInRing = index % maxEntitiesPerRing
+    const entitiesInThisRing = Math.min(maxEntitiesPerRing, entityNodes.length - ringIndex * maxEntitiesPerRing)
+
+    const outerRadius = centerRadius + ringSpacing * (ringIndex + 1)
+    const angleStep = (2 * Math.PI) / entitiesInThisRing
+    const angle = indexInRing * angleStep - Math.PI / 2
+
     result.push({
       ...node,
       position: {
@@ -200,8 +211,8 @@ export function applyLayout(
     case "hierarchical":
       return applyHierarchicalLayout(nodes, edges, {
         direction: options.direction ?? "TB",
-        nodeSpacing: options.nodeSpacing ?? 100,
-        rankSpacing: options.rankSpacing ?? 150,
+        nodeSpacing: options.nodeSpacing ?? 180, // Increased from 100
+        rankSpacing: options.rankSpacing ?? 250, // Increased from 150
       })
     case "radial":
       return applyRadialLayout(nodes, edges)
