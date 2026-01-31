@@ -274,11 +274,13 @@ You will receive stage-specific guidance for what to focus on."""
         """
         return _format_stage_guidance(state)
 
-    def _determine_next_state(self, history: list[dict]) -> InterviewState:
-        """Determine the next state based on conversation history.
+    def _determine_next_state_heuristic(self, history: list[dict]) -> InterviewState:
+        """Determine the next state using simple response count heuristic.
 
-        Uses response count heuristic for state progression.
-        Future improvement (ML-P2-2): Add data quality checks per stage.
+        This is a fast, deterministic fallback used when:
+        - fast_mode is enabled
+        - LLM-based detection fails
+        - Conversation is very short
 
         Args:
             history: List of conversation messages
@@ -292,8 +294,6 @@ You will receive stage-specific guidance for what to focus on."""
             if m["role"] == "user" and len(m["content"]) > 20
         ]
 
-        # State progression based on response count
-        # This is a simple heuristic; ML-P2-2 will add quality-based progression
         response_count = len(user_responses)
 
         if response_count == 0:
@@ -308,6 +308,203 @@ You will receive stage-specific guidance for what to focus on."""
             return InterviewState.RATIONALE
         else:
             return InterviewState.SUMMARIZING
+
+    def _analyze_content_coverage(self, history: list[dict]) -> dict[str, float]:
+        """Analyze what decision components are covered in the conversation.
+
+        Uses keyword and pattern matching to estimate coverage of each stage.
+        ML-P2-2: This provides fast, local analysis without LLM calls.
+
+        Args:
+            history: List of conversation messages
+
+        Returns:
+            Dict mapping stage names to coverage scores (0.0 to 1.0)
+        """
+        # Combine all user messages for analysis
+        user_text = " ".join(
+            m["content"].lower() for m in history if m["role"] == "user"
+        )
+
+        coverage = {}
+
+        # TRIGGER indicators - problem, need, event that started the decision
+        trigger_patterns = [
+            "problem", "issue", "need", "require", "had to", "wanted to",
+            "because", "since", "when", "started", "began", "noticed",
+            "realized", "discovered", "faced", "encountered", "challenge"
+        ]
+        trigger_score = sum(1 for p in trigger_patterns if p in user_text)
+        coverage["trigger"] = min(1.0, trigger_score / 5)
+
+        # CONTEXT indicators - background, constraints, environment
+        context_patterns = [
+            "already", "existing", "current", "before", "had",
+            "constraint", "limit", "budget", "deadline", "team",
+            "experience", "skill", "environment", "stack", "using",
+            "requirement", "needed to", "had to support"
+        ]
+        context_score = sum(1 for p in context_patterns if p in user_text)
+        coverage["context"] = min(1.0, context_score / 5)
+
+        # OPTIONS indicators - alternatives considered
+        options_patterns = [
+            "option", "alternative", "considered", "looked at", "evaluated",
+            "compared", "versus", "vs", "or", "could have", "might have",
+            "other", "different", "instead", "also thought", "ruled out"
+        ]
+        options_score = sum(1 for p in options_patterns if p in user_text)
+        coverage["options"] = min(1.0, options_score / 4)
+
+        # DECISION indicators - what was chosen
+        decision_patterns = [
+            "decided", "chose", "went with", "picked", "selected",
+            "ended up", "final", "ultimately", "concluded", "settled on",
+            "we use", "we're using", "implemented", "adopted"
+        ]
+        decision_score = sum(1 for p in decision_patterns if p in user_text)
+        coverage["decision"] = min(1.0, decision_score / 3)
+
+        # RATIONALE indicators - why the choice was made
+        rationale_patterns = [
+            "because", "since", "reason", "why", "benefit", "advantage",
+            "better", "easier", "faster", "cheaper", "simpler", "more",
+            "trade-off", "tradeoff", "downside", "risk", "concern",
+            "weighed", "balanced", "considered"
+        ]
+        rationale_score = sum(1 for p in rationale_patterns if p in user_text)
+        coverage["rationale"] = min(1.0, rationale_score / 4)
+
+        return coverage
+
+    def _determine_next_state(self, history: list[dict]) -> InterviewState:
+        """Determine the next state based on conversation analysis (ML-P2-2).
+
+        Enhanced state determination using content analysis:
+        1. Analyze what decision components have been covered
+        2. Identify gaps in the decision trace
+        3. Determine the most appropriate next stage
+
+        Falls back to count-based heuristic for very short conversations
+        or when fast_mode is enabled.
+
+        Args:
+            history: List of conversation messages
+
+        Returns:
+            The appropriate next state
+        """
+        # For very short conversations, use simple heuristic
+        user_responses = [m for m in history if m["role"] == "user" and len(m["content"]) > 20]
+        if len(user_responses) <= 1:
+            return self._determine_next_state_heuristic(history)
+
+        # Analyze content coverage
+        coverage = self._analyze_content_coverage(history)
+
+        # Determine which stage needs the most attention
+        # Threshold for considering a stage "covered enough"
+        coverage_threshold = 0.4
+
+        # Check stages in order - find the first one that's not well covered
+        stage_order = [
+            ("trigger", InterviewState.TRIGGER),
+            ("context", InterviewState.CONTEXT),
+            ("options", InterviewState.OPTIONS),
+            ("decision", InterviewState.DECISION),
+            ("rationale", InterviewState.RATIONALE),
+        ]
+
+        for stage_name, stage_enum in stage_order:
+            if coverage.get(stage_name, 0) < coverage_threshold:
+                logger.debug(
+                    f"Stage {stage_name} coverage: {coverage.get(stage_name, 0):.2f} < {coverage_threshold}, "
+                    f"focusing on this stage"
+                )
+                return stage_enum
+
+        # All stages have reasonable coverage - time to summarize
+        total_coverage = sum(coverage.values()) / len(coverage)
+        if total_coverage >= 0.5:
+            return InterviewState.SUMMARIZING
+
+        # Fallback to heuristic if analysis is inconclusive
+        return self._determine_next_state_heuristic(history)
+
+    async def _determine_state_with_llm(self, history: list[dict]) -> InterviewState:
+        """Use LLM to determine the most appropriate next stage (ML-P2-2).
+
+        This method uses the LLM to analyze the conversation and determine
+        which decision component needs the most attention.
+
+        Note: This is more expensive than heuristic methods. Use only when
+        content analysis is ambiguous.
+
+        Args:
+            history: List of conversation messages
+
+        Returns:
+            The appropriate next state
+        """
+        if not history:
+            return InterviewState.TRIGGER
+
+        # Format conversation for LLM
+        conversation_text = "\n".join(
+            f"{m['role'].title()}: {m['content']}" for m in history[-8:]
+        )
+
+        prompt = f"""Analyze this interview conversation and determine what information is still needed
+to complete a decision trace.
+
+A complete decision trace needs:
+1. TRIGGER - What problem or need prompted the decision
+2. CONTEXT - Background, constraints, environment
+3. OPTIONS - Alternatives that were considered
+4. DECISION - What was ultimately chosen
+5. RATIONALE - Why this choice was made
+
+Conversation:
+{conversation_text}
+
+Based on what's been discussed, which component needs the most attention next?
+Respond with ONLY one of: TRIGGER, CONTEXT, OPTIONS, DECISION, RATIONALE, or COMPLETE
+
+If all components are well-covered, respond with COMPLETE."""
+
+        try:
+            response = await self.llm.generate(
+                prompt,
+                temperature=0.1,  # Low temperature for deterministic output
+                max_tokens=20,
+                user_id=self.user_id,
+                sanitize_input=False,  # Internal prompt, no need to sanitize
+            )
+
+            # Parse response
+            response_upper = response.strip().upper()
+
+            state_mapping = {
+                "TRIGGER": InterviewState.TRIGGER,
+                "CONTEXT": InterviewState.CONTEXT,
+                "OPTIONS": InterviewState.OPTIONS,
+                "DECISION": InterviewState.DECISION,
+                "RATIONALE": InterviewState.RATIONALE,
+                "COMPLETE": InterviewState.SUMMARIZING,
+            }
+
+            for key, state in state_mapping.items():
+                if key in response_upper:
+                    logger.debug(f"LLM determined stage: {state.value}")
+                    return state
+
+            # Couldn't parse response, fall back to content analysis
+            logger.warning(f"Could not parse LLM stage response: {response}")
+            return self._determine_next_state(history)
+
+        except Exception as e:
+            logger.warning(f"LLM state determination failed: {e}, using heuristic")
+            return self._determine_next_state_heuristic(history)
 
     async def process_message(
         self,

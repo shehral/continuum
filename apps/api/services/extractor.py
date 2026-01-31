@@ -23,6 +23,11 @@ from models.ontology import (
     get_canonical_name,
     validate_entity_relationship,
 )
+from models.provenance import (
+    Provenance,
+    SourceType,
+    create_llm_provenance,
+)
 from models.schemas import DecisionCreate, Entity
 from services.embeddings import get_embedding_service
 from services.entity_resolver import EntityResolver
@@ -1014,16 +1019,23 @@ class DecisionExtractor:
         decision: DecisionCreate,
         source: str = "unknown",
         user_id: str = "anonymous",
+        provenance: Optional[Provenance] = None,
+        source_path: Optional[str] = None,
+        message_index: Optional[int] = None,
     ) -> str:
-        """Save a decision to Neo4j with embeddings and rich relationships.
+        """Save a decision to Neo4j with embeddings, rich relationships, and provenance (KG-P2-4).
 
         Uses entity resolution to prevent duplicates and canonicalize names.
         Includes user_id for multi-tenant data isolation.
+        Tracks provenance information for data lineage.
 
         Args:
             decision: The decision to save
             source: Where this decision came from ('claude_logs', 'interview', 'manual')
             user_id: The user ID for multi-tenant isolation (default: "anonymous")
+            provenance: Optional provenance information for data lineage (KG-P2-4)
+            source_path: Optional path to source file for provenance tracking
+            message_index: Optional index of message in conversation
 
         Returns:
             The ID of the created decision
@@ -1032,6 +1044,27 @@ class DecisionExtractor:
         created_at = datetime.now(UTC).isoformat()
         # Use source from decision if provided, otherwise use parameter
         decision_source = getattr(decision, 'source', None) or source
+
+        # KG-P2-4: Build provenance if not provided
+        if provenance is None:
+            source_type_map = {
+                "claude_logs": SourceType.CLAUDE_LOG,
+                "interview": SourceType.INTERVIEW,
+                "manual": SourceType.MANUAL,
+                "unknown": SourceType.MANUAL,
+            }
+            provenance = create_llm_provenance(
+                source_type=source_type_map.get(decision_source, SourceType.MANUAL),
+                source_path=source_path,
+                model_name=self.llm.model if hasattr(self.llm, 'model') else None,
+                prompt_version=get_settings().llm_extraction_prompt_version,
+                confidence=decision.confidence,
+                created_by=user_id,
+                message_index=message_index,
+            )
+
+        # Serialize provenance for storage
+        provenance_json = json.dumps(provenance.to_dict()) if provenance else None
 
         # Generate embedding for the decision
         decision_dict = {
@@ -1054,7 +1087,7 @@ class DecisionExtractor:
 
         session = await get_neo4j_session()
         async with session:
-            # Create decision node with embedding and user_id
+            # Create decision node with embedding, user_id, and provenance (KG-P2-4)
             if embedding:
                 await session.run(
                     """
@@ -1069,7 +1102,10 @@ class DecisionExtractor:
                         created_at: $created_at,
                         source: $source,
                         user_id: $user_id,
-                        embedding: $embedding
+                        embedding: $embedding,
+                        provenance: $provenance,
+                        extraction_method: $extraction_method,
+                        created_by: $created_by
                     })
                     """,
                     id=decision_id,
@@ -1083,6 +1119,9 @@ class DecisionExtractor:
                     source=decision_source,
                     user_id=user_id,
                     embedding=embedding,
+                    provenance=provenance_json,
+                    extraction_method=provenance.extraction.method.value if provenance else "unknown",
+                    created_by=provenance.created_by if provenance else user_id,
                 )
             else:
                 await session.run(
@@ -1097,7 +1136,10 @@ class DecisionExtractor:
                         confidence: $confidence,
                         created_at: $created_at,
                         source: $source,
-                        user_id: $user_id
+                        user_id: $user_id,
+                        provenance: $provenance,
+                        extraction_method: $extraction_method,
+                        created_by: $created_by
                     })
                     """,
                     id=decision_id,
@@ -1110,6 +1152,9 @@ class DecisionExtractor:
                     created_at=created_at,
                     source=decision_source,
                     user_id=user_id,
+                    provenance=provenance_json,
+                    extraction_method=provenance.extraction.method.value if provenance else "unknown",
+                    created_by=provenance.created_by if provenance else user_id,
                 )
 
             logger.info(f"Created decision {decision_id} for user {user_id}")
@@ -1283,7 +1328,9 @@ class DecisionExtractor:
                     to_name = rel.get("to")
 
                     # Validate relationship type (already done in extract_entity_relationships)
-                    valid_types = ["IS_A", "PART_OF", "RELATED_TO", "DEPENDS_ON", "ALTERNATIVE_TO"]
+                    # KG-P2-1: Include extended relationship types
+                    valid_types = ["IS_A", "PART_OF", "RELATED_TO", "DEPENDS_ON", "ALTERNATIVE_TO",
+                                   "ENABLES", "PREVENTS", "REQUIRES", "REFINES"]
                     if rel_type not in valid_types:
                         rel_type = "RELATED_TO"
 

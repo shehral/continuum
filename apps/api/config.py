@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     llm_fallback_model: str = "nvidia/llama-3.1-nemotron-70b-instruct"  # Fallback model
     llm_fallback_enabled: bool = True  # Enable/disable fallback behavior
 
+    # Entity cache settings (SD-011)
+    entity_cache_ttl: int = 300  # 5 minutes in seconds
+    entity_cache_enabled: bool = True
+
+    # Message batch settings (SD-010)
+    message_batch_size: int = 10  # Flush after N messages
+    message_batch_timeout: float = 2.0  # Flush after N seconds
 
     # Similarity thresholds (KG-P2-2: Configurable thresholds)
     # Decision similarity (ML-P1-4)

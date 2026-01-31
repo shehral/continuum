@@ -28,7 +28,7 @@ from models.schemas import (
 )
 from routers.auth import get_current_user_id
 from services.embeddings import get_embedding_service
-from utils.cache import get_cached, set_cached, invalidate_user_caches
+from utils.cache import get_cached, invalidate_user_caches, set_cached
 from utils.logging import get_logger
 from utils.vectors import cosine_similarity
 

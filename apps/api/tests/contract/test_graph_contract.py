@@ -7,16 +7,16 @@ import pytest
 from pydantic import ValidationError
 
 from tests.contract.schemas import (
-    GraphNodeSchema,
-    GraphEdgeSchema,
     GraphDataSchema,
+    GraphEdgeSchema,
+    GraphNodeSchema,
+    GraphStatsSchema,
+    HybridSearchResultSchema,
     PaginatedGraphDataSchema,
     PaginationMetaSchema,
-    GraphStatsSchema,
-    ValidationSummarySchema,
-    ValidationIssueSchema,
-    HybridSearchResultSchema,
     SimilarDecisionSchema,
+    ValidationIssueSchema,
+    ValidationSummarySchema,
 )
 
 
@@ -41,7 +41,7 @@ class TestGraphContract:
                 "source": "manual",
             },
         }
-        
+
         schema = GraphNodeSchema(**valid_node)
         assert schema.id == "decision-123"
         assert schema.type == "decision"
@@ -60,7 +60,7 @@ class TestGraphContract:
                 "aliases": ["postgres", "pg"],
             },
         }
-        
+
         schema = GraphNodeSchema(**valid_node)
         assert schema.id == "entity-456"
         assert schema.type == "entity"
@@ -75,7 +75,7 @@ class TestGraphContract:
             "relationship": "INVOLVES",
             "weight": 0.95,
         }
-        
+
         schema = GraphEdgeSchema(**valid_edge)
         assert schema.id == "edge-1"
         assert schema.relationship == "INVOLVES"
@@ -89,7 +89,7 @@ class TestGraphContract:
             "target": "node-2",
             "relationship": "RELATED_TO",
         }
-        
+
         schema = GraphEdgeSchema(**edge_without_weight)
         assert schema.weight is None
 
@@ -102,7 +102,7 @@ class TestGraphContract:
             "relationship": "SIMILAR_TO",
             "weight": 1.5,  # Invalid
         }
-        
+
         with pytest.raises(ValidationError):
             GraphEdgeSchema(**invalid_edge)
 
@@ -115,7 +115,7 @@ class TestGraphContract:
             "total_pages": 3,
             "has_more": True,
         }
-        
+
         schema = PaginationMetaSchema(**valid_pagination)
         assert schema.page == 1
         assert schema.total_pages == 3
@@ -130,7 +130,7 @@ class TestGraphContract:
             "total_pages": 1,
             "has_more": False,
         }
-        
+
         with pytest.raises(ValidationError):
             PaginationMetaSchema(**invalid_pagination)
 
@@ -143,7 +143,7 @@ class TestGraphContract:
             "total_pages": 1,
             "has_more": False,
         }
-        
+
         with pytest.raises(ValidationError):
             PaginationMetaSchema(**invalid_pagination)
 
@@ -176,7 +176,7 @@ class TestGraphContract:
                 "has_more": False,
             },
         }
-        
+
         schema = PaginatedGraphDataSchema(**valid_response)
         assert len(schema.nodes) == 1
         assert len(schema.edges) == 1
@@ -203,7 +203,7 @@ class TestGraphContract:
             ],
             "edges": [],
         }
-        
+
         schema = GraphDataSchema(**valid_response)
         assert len(schema.nodes) == 2
         assert len(schema.edges) == 0
@@ -221,7 +221,7 @@ class TestGraphContract:
             },
             "relationships": 500,
         }
-        
+
         schema = GraphStatsSchema(**valid_stats)
         assert schema.decisions["total"] == 100
         assert schema.entities["with_embeddings"] == 200
@@ -257,7 +257,7 @@ class TestGraphContract:
                 },
             ],
         }
-        
+
         schema = ValidationSummarySchema(**valid_summary)
         assert schema.total_issues == 3
         assert len(schema.issues) == 2
@@ -271,7 +271,7 @@ class TestGraphContract:
             "message": "Node has no embedding",
             "affected_nodes": ["node-1"],
         }
-        
+
         schema = ValidationIssueSchema(**minimal_issue)
         assert schema.suggested_action is None
         assert schema.details is None
@@ -291,7 +291,7 @@ class TestGraphContract:
             },
             "matched_fields": ["trigger", "decision"],
         }
-        
+
         schema = HybridSearchResultSchema(**valid_result)
         assert schema.combined_score == 0.87
         assert len(schema.matched_fields) == 2
@@ -307,7 +307,7 @@ class TestGraphContract:
             "combined_score": 0.7,
             "data": {},
         }
-        
+
         with pytest.raises(ValidationError):
             HybridSearchResultSchema(**invalid_result)
 
@@ -320,7 +320,7 @@ class TestGraphContract:
             "similarity": 0.85,
             "shared_entities": ["Redis", "Cache"],
         }
-        
+
         schema = SimilarDecisionSchema(**valid_result)
         assert schema.similarity == 0.85
         assert len(schema.shared_entities) == 2
@@ -333,7 +333,7 @@ class TestGraphContract:
             "decision": "Something else",
             "similarity": 0.5,
         }
-        
+
         schema = SimilarDecisionSchema(**valid_result)
         assert schema.shared_entities == []
 
@@ -345,7 +345,7 @@ class TestGraphContract:
             "has_embedding": True,
             "data": {},
         }
-        
+
         with pytest.raises(ValidationError):
             GraphNodeSchema(**missing_id)
 
@@ -356,7 +356,7 @@ class TestGraphContract:
             "source": "node-1",
             "target": "node-2",
         }
-        
+
         with pytest.raises(ValidationError):
             GraphEdgeSchema(**missing_relationship)
 
@@ -374,13 +374,13 @@ class TestGraphContract:
             "DEPENDS_ON",
             "ALTERNATIVE_TO",
         ]
-        
+
         base_edge = {
             "id": "edge-1",
             "source": "node-1",
             "target": "node-2",
         }
-        
+
         for rel_type in valid_relationships:
             edge = {**base_edge, "relationship": rel_type}
             schema = GraphEdgeSchema(**edge)

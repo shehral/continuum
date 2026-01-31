@@ -1,4 +1,4 @@
-"""Entity resolution service with multi-stage matching pipeline.
+"""Entity resolution service with multi-stage matching pipeline and caching (SD-011).
 
 Entity resolution is user-scoped - it only considers entities
 connected to the user's decisions when finding duplicates and matches.
@@ -15,6 +15,11 @@ Thresholds are now configurable via environment variables:
 
 Higher thresholds = more false negatives (duplicates created)
 Lower thresholds = more false positives (incorrect merges)
+
+SD-011: Entity lookup caching
+- Redis caching with 5-minute TTL for entity lookups
+- Cache invalidation on entity create/update/delete
+- User-scoped caching for multi-tenant support
 """
 
 from typing import Optional
@@ -31,6 +36,7 @@ from models.ontology import (
     normalize_entity_name,
 )
 from services.embeddings import get_embedding_service
+from services.entity_cache import get_entity_cache
 from utils.logging import get_logger
 from utils.vectors import cosine_similarity
 
@@ -42,22 +48,24 @@ FUZZY_MATCH_BATCH_SIZE = 100  # Batch size for paginated loading
 
 
 class EntityResolver:
-    """Multi-stage entity resolution pipeline.
+    """Multi-stage entity resolution pipeline with caching (SD-011).
 
     Resolution is user-scoped - only matches against entities
     connected to the user's decisions.
 
     Resolution stages (in order):
-    1. Exact match - Case-insensitive lookup in Neo4j
-    2. Canonical lookup - Map aliases to canonical names
-    3. Alias search - Check entity aliases field
-    4. Fulltext prefix search - Neo4j fulltext index for fuzzy candidates
-    5. Fuzzy match - rapidfuzz with configurable threshold (default 85%)
-    6. Embedding similarity - Cosine similarity with configurable threshold (default 0.9)
-    7. Create new - If no match found
+    1. Cache lookup - Check Redis cache first (SD-011)
+    2. Exact match - Case-insensitive lookup in Neo4j
+    3. Canonical lookup - Map aliases to canonical names
+    4. Alias search - Check entity aliases field
+    5. Fulltext prefix search - Neo4j fulltext index for fuzzy candidates
+    6. Fuzzy match - rapidfuzz with configurable threshold (default 85%)
+    7. Embedding similarity - Cosine similarity with configurable threshold (default 0.9)
+    8. Create new - If no match found
 
     Performance Considerations:
-    - Stages 1-4 use Neo4j indexes and are O(log n) or O(1)
+    - Stage 1 (cache) is O(1) with Redis
+    - Stages 2-4 use Neo4j indexes and are O(log n) or O(1)
     - Stage 5 (fuzzy) loads candidates in batches with LIMIT to prevent OOM
     - Stage 6 (embedding) uses vector index when available
 
@@ -71,6 +79,7 @@ class EntityResolver:
         self.session = neo4j_session
         self.user_id = user_id
         self.embedding_service = get_embedding_service()
+        self.cache = get_entity_cache()  # SD-011: Entity cache
 
         # Load configurable thresholds from settings (KG-P2-2)
         settings = get_settings()
@@ -87,6 +96,7 @@ class EntityResolver:
         """Resolve an entity name to an existing entity or create a new one.
 
         Resolution is scoped to user's entities first, then global entities.
+        Uses Redis cache to speed up repeated lookups (SD-011).
 
         Args:
             name: The entity name to resolve
@@ -97,9 +107,27 @@ class EntityResolver:
         """
         normalized_name = normalize_entity_name(name)
 
-        # Stage 1: Exact match (case-insensitive) - user's entities first
+        # Stage 1: Check cache first (SD-011)
+        cached = await self.cache.get_by_exact_name(self.user_id, normalized_name)
+        if cached is not None:
+            # Cache hit - could be an entity or None (negative cache)
+            if cached:
+                return ResolvedEntity(
+                    id=cached["id"],
+                    name=cached["name"],
+                    type=cached["type"],
+                    is_new=False,
+                    match_method="cached",
+                    confidence=1.0,
+                )
+            # Negative cache hit - no entity with this name exists
+            # Continue to check other resolution methods
+
+        # Stage 2: Exact match (case-insensitive) - user's entities first
         existing = await self._find_by_exact_match(normalized_name)
         if existing:
+            # Cache the result (SD-011)
+            await self.cache.set_by_exact_name(self.user_id, normalized_name, existing)
             return ResolvedEntity(
                 id=existing["id"],
                 name=existing["name"],
@@ -109,11 +137,18 @@ class EntityResolver:
                 confidence=1.0,
             )
 
-        # Stage 2: Canonical lookup
+        # Stage 3: Canonical lookup
         canonical = get_canonical_name(name)
         if canonical.lower() != normalized_name:
             existing = await self._find_by_exact_match(canonical.lower())
             if existing:
+                # Cache both the canonical and original name (SD-011)
+                await self.cache.set_by_exact_name(
+                    self.user_id, normalized_name, existing
+                )
+                await self.cache.set_by_exact_name(
+                    self.user_id, canonical.lower(), existing
+                )
                 return ResolvedEntity(
                     id=existing["id"],
                     name=existing["name"],
@@ -124,9 +159,11 @@ class EntityResolver:
                     canonical_name=canonical,
                 )
 
-        # Stage 3: Alias search
+        # Stage 4: Alias search
         existing = await self._find_by_alias(normalized_name)
         if existing:
+            # Cache the alias lookup (SD-011)
+            await self.cache.set_by_alias(self.user_id, normalized_name, existing)
             return ResolvedEntity(
                 id=existing["id"],
                 name=existing["name"],
@@ -136,10 +173,14 @@ class EntityResolver:
                 confidence=0.92,
             )
 
-        # Stage 4: Fulltext prefix search + Fuzzy match
+        # Stage 5: Fulltext prefix search + Fuzzy match
         # Use Neo4j fulltext index to get candidates, then apply fuzzy matching
         fuzzy_result = await self._find_by_fuzzy_with_fulltext(normalized_name)
         if fuzzy_result:
+            # Cache the fuzzy match result (SD-011)
+            await self.cache.set_by_exact_name(
+                self.user_id, normalized_name, fuzzy_result
+            )
             return ResolvedEntity(
                 id=fuzzy_result["id"],
                 name=fuzzy_result["name"],
@@ -149,7 +190,7 @@ class EntityResolver:
                 confidence=fuzzy_result["score"] / 100.0,
             )
 
-        # Stage 5: Embedding similarity
+        # Stage 6: Embedding similarity
         try:
             embedding = await self.embedding_service.embed_text(
                 f"{entity_type}: {name}", input_type="passage"
@@ -158,6 +199,10 @@ class EntityResolver:
                 embedding, threshold=self.embedding_threshold
             )
             if similar:
+                # Cache the embedding match result (SD-011)
+                await self.cache.set_by_exact_name(
+                    self.user_id, normalized_name, similar
+                )
                 return ResolvedEntity(
                     id=similar["id"],
                     name=similar["name"],
@@ -171,7 +216,10 @@ class EntityResolver:
         except (ClientError, DatabaseError) as e:
             logger.warning(f"Database error during embedding similarity: {e}")
 
-        # Stage 6: Create new entity
+        # Stage 7: Create new entity
+        # Cache negative result to prevent repeated lookups (SD-011)
+        await self.cache.set_by_exact_name(self.user_id, normalized_name, None)
+
         final_name = canonical if canonical.lower() != normalized_name else name
         return ResolvedEntity(
             id=str(uuid4()),
@@ -605,6 +653,15 @@ class EntityResolver:
                 await self._merge_entities(primary["id"], other["id"])
                 merged_count += 1
 
+                # Invalidate cache for merged entity (SD-011)
+                await self.cache.invalidate_entity(
+                    self.user_id, other["id"], other.get("name")
+                )
+
+        # Invalidate cache for all affected entities (SD-011)
+        if merge_groups:
+            await self.cache.invalidate_user_cache(self.user_id)
+
         return {
             "groups_found": len(merge_groups),
             "entities_merged": merged_count,
@@ -682,6 +739,8 @@ class EntityResolver:
             id=entity_id,
             alias=alias,
         )
+        # Invalidate cache for this entity (SD-011)
+        await self.cache.invalidate_entity(self.user_id, entity_id)
 
 
 # Factory function
