@@ -33,8 +33,7 @@ from typing import Optional
 try:
     import aiohttp
 except ImportError:
-    print("Error: aiohttp is required. Install with: pip install aiohttp")
-    sys.exit(1)
+    aiohttp = None  # Will be checked at runtime
 
 
 @dataclass
@@ -534,6 +533,9 @@ class LoadTester:
 
 
 def main():
+    if aiohttp is None:
+        print("Error: aiohttp is required. Install with: pip install aiohttp")
+        sys.exit(1)
     parser = argparse.ArgumentParser(description="Continuum API Load Test")
     parser.add_argument(
         "--base-url",

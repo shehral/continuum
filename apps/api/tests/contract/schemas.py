@@ -7,7 +7,7 @@ These schemas define the contract that clients depend on.
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel
 
 
 # Dashboard Stats Schema
@@ -45,10 +45,10 @@ class DecisionSchema(BaseModel):
     source: str = "unknown"
 
 
-class DecisionListSchema(BaseModel):
+class DecisionListSchema(RootModel[list[DecisionSchema]]):
     """Expected schema for GET /api/decisions response."""
 
-    __root__: list[DecisionSchema]
+    pass
 
 
 # Graph Schemas
