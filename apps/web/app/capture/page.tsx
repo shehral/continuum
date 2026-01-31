@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, History, X } from "lucide-react"
+import { Plus, History, X, MessageSquare, Lightbulb, ArrowRight } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { ChatInterface } from "@/components/capture/chat-interface"
@@ -210,26 +210,47 @@ export default function CapturePage() {
               onLinkEntity={handleLinkEntity}
             />
           ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <Card className="max-w-md text-center p-8">
-                <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Plus className="h-6 w-6 text-primary" />
+            <div className="flex-1 flex items-center justify-center bg-slate-900/50">
+              <div className="text-center max-w-lg mx-auto p-8 animate-in fade-in zoom-in-95 duration-500">
+                {/* Decorative illustration */}
+                <div className="relative mx-auto mb-6 w-32 h-32">
+                  {/* Outer glow */}
+                  <div className="absolute inset-0 rounded-full bg-cyan-500/10 animate-pulse" />
+                  {/* Main circle */}
+                  <div className="absolute inset-2 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-cyan-500/20 flex items-center justify-center">
+                    <MessageSquare className="h-12 w-12 text-cyan-400/70" aria-hidden="true" />
+                  </div>
+                  {/* Decorative elements */}
+                  <div className="absolute -top-1 right-2 w-8 h-8 rounded-full bg-purple-500/20 border border-purple-400/30 flex items-center justify-center animate-bounce" style={{ animationDelay: '0.1s' }}>
+                    <Lightbulb className="h-4 w-4 text-purple-400/70" />
+                  </div>
+                  <div className="absolute bottom-0 -left-1 w-6 h-6 rounded-full bg-green-500/20 border border-green-400/30 animate-bounce" style={{ animationDelay: '0.3s' }} />
                 </div>
-                <h3 className="text-lg font-medium mb-2">
-                  Start a Capture Session
+
+                <h3 className="text-xl font-semibold text-slate-100 mb-2">
+                  AI-Guided Decision Capture
                 </h3>
-                <p className="text-muted-foreground mb-4">
-                  I&apos;ll guide you through documenting a decision with its
-                  context, options, and rationale.
+                <p className="text-slate-400 mb-6 leading-relaxed">
+                  I&apos;ll walk you through documenting a decision step by step,
+                  helping you capture the trigger, context, options considered, and rationale.
                 </p>
-                <Button
-                  onClick={() => startSessionMutation.mutate()}
-                  disabled={startSessionMutation.isPending}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Session
-                </Button>
-              </Card>
+
+                <div className="flex flex-col gap-3 items-center">
+                  <Button
+                    onClick={() => startSessionMutation.mutate()}
+                    disabled={startSessionMutation.isPending}
+                    className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)] hover:scale-105 transition-all"
+                  >
+                    <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
+                    Start Interview Session
+                    <ArrowRight className="h-4 w-4 ml-2" aria-hidden="true" />
+                  </Button>
+                </div>
+
+                <p className="text-xs text-slate-500 mt-6">
+                  Tip: Each session guides you through all stages of a decision trace
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -244,9 +265,15 @@ export default function CapturePage() {
           </div>
           <ScrollArea className="h-[calc(100%-57px)]">
             <div className="p-4 space-y-2">
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No recent sessions
-              </p>
+              <div className="text-center py-8">
+                <History className="h-8 w-8 text-slate-600 mx-auto mb-2" aria-hidden="true" />
+                <p className="text-sm text-slate-500">
+                  No recent sessions
+                </p>
+                <p className="text-xs text-slate-600 mt-1">
+                  Your session history will appear here
+                </p>
+              </div>
             </div>
           </ScrollArea>
         </div>
