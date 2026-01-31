@@ -9,7 +9,6 @@ dist/
 build/
 *.egg-info/
 *.tsbuildinfo
-=3.0.0
 
 # Python
 __pycache__/
@@ -58,14 +57,16 @@ tmp/
 # Playwright MCP
 .playwright-mcp/
 
+# Obsidian
+.obsidian/
+
 # Personal/local files
 progress.txt
 prd.json
 CLAUDE.md
 
-# Internal docs (planning, deployment guides, etc.)
+# Internal docs (kept private - planning, reviews, security audits)
 docs/
 
 # Lock files (optional - uncomment if you want to track these)
 # pnpm-lock.yaml
-CLAUDE.md
