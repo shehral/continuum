@@ -5,7 +5,7 @@
 If you discover a security vulnerability in this project, please report it responsibly:
 
 1. **Do NOT** create a public GitHub issue
-2. Contact the project maintainers directly through institutional channels
+2. Email Ali Shehral directly at shehral.m@northeastern.edu
 3. Provide a detailed description of the vulnerability
 4. Allow reasonable time for the issue to be addressed before disclosure
 

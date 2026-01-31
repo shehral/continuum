@@ -15,7 +15,8 @@ Continuum automatically extracts decision traces from AI-assisted coding convers
 
 This project explores human-AI collaboration patterns in software engineering—specifically how decisions are made, communicated, and can be preserved during AI-assisted development.
 
-**Affiliation**: HCAI Lab
+**Project Lead**: Ali Shehral (shehral.m@northeastern.edu)
+**Affiliation**: HCAI Lab, Northeastern University
 **Status**: Active Development
 
 ---
@@ -88,4 +89,4 @@ Built as part of ongoing research in human-AI collaboration for software enginee
 
 ---
 
-*For collaboration inquiries, please contact the project maintainers through institutional channels.*
+*For collaboration inquiries, please contact Ali Shehral at shehral.m@northeastern.edu*

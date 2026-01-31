@@ -25,8 +25,11 @@ We anticipate opening this project for broader collaboration after:
 
 ## Questions?
 
-For questions about the project or potential research collaboration, please contact
-the project maintainers through your institutional channels.
+For questions about the project or potential research collaboration, please contact:
+
+**Ali Shehral**
+Email: shehral.m@northeastern.edu
+HCAI Lab, Northeastern University
 
 ---
 
