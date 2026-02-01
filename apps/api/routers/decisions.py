@@ -8,6 +8,7 @@ SD-024: Cache invalidation added when decisions are created/deleted.
 """
 
 from datetime import UTC, datetime
+from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query

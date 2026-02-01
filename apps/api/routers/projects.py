@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from db.neo4j import get_neo4j_driver
+from db.neo4j import get_neo4j_session
 from utils.cache import invalidate_user_caches
 from utils.logging import get_logger
 
@@ -43,9 +43,9 @@ async def list_projects():
     Returns a list of all projects sorted by decision count (descending).
     Use this to display a project overview table.
     """
-    driver = get_neo4j_driver()
+    session = await get_neo4j_session()
 
-    async with driver.session() as session:
+    async with session:
         result = await session.run(
             """
             MATCH (d:DecisionTrace)
@@ -78,9 +78,9 @@ async def get_project_stats(name: str):
     Returns comprehensive stats including decision count, entity count,
     creation date, last update, and breakdown by source (claude_logs, interview, manual).
     """
-    driver = get_neo4j_driver()
+    session = await get_neo4j_session()
 
-    async with driver.session() as session:
+    async with session:
         # Get decision count and dates
         result = await session.run(
             """
@@ -153,9 +153,9 @@ async def delete_project(
             detail="Deletion requires confirmation. Add ?confirm=true to proceed.",
         )
 
-    driver = get_neo4j_driver()
+    session = await get_neo4j_session()
 
-    async with driver.session() as session:
+    async with session:
         # First, check if project exists
         check_result = await session.run(
             """

@@ -11,7 +11,7 @@ SD-010: Batch message storage for improved performance.
 
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
