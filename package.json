@@ -18,10 +18,10 @@
     "setup:api": "cd apps/api && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
   },
   "devDependencies": {
-    "typescript": "^5.3.3"
+    "typescript": "^5.7.2"
   },
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=8.0.0"
+    "node": ">=24.0.0",
+    "pnpm": ">=9.0.0"
   }
 }
