@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
@@ -573,7 +573,7 @@ function VirtualDecisionList({
   )
 }
 
-export default function DecisionsPage() {
+function DecisionsPageContent() {
   const queryClient = useQueryClient()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -999,5 +999,19 @@ export default function DecisionsPage() {
         />
       </div>
     </AppShell>
+  )
+}
+
+export default function DecisionsPage() {
+  return (
+    <Suspense fallback={
+      <AppShell>
+        <div className="flex items-center justify-center h-full">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </AppShell>
+    }>
+      <DecisionsPageContent />
+    </Suspense>
   )
 }

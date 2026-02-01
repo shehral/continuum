@@ -454,6 +454,7 @@ function KnowledgeGraphInner({
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [showRelationshipLegend, setShowRelationshipLegend] = useState(true)
   const [showSourceLegend, setShowSourceLegend] = useState(true)
+  const [showProjectFilter, setShowProjectFilter] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [layoutType, setLayoutType] = useState<LayoutType>("clustered") // Default to clustered for better UX
   // P1-3: Related decisions state
@@ -512,7 +513,7 @@ function KnowledgeGraphInner({
 
     // Apply the selected layout algorithm
     return applyLayout(rawNodes, rawEdges, layoutType, { type: layoutType })
-  }, [data, layoutType, hoveredNodeId, adjacencyMap])
+  }, [data, layoutType]) // Removed hoveredNodeId and adjacencyMap to prevent flickering on hover
 
   const initialEdges: Edge[] = useMemo(() => {
     if (!data?.edges) return []
@@ -871,7 +872,8 @@ function KnowledgeGraphInner({
         onNodeMouseEnter={handleNodeMouseEnter}
         onNodeMouseLeave={handleNodeMouseLeave}
         nodeTypes={nodeTypes}
-        fitView
+        nodesDraggable={true}
+        nodesConnectable={false}
         fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
         minZoom={0.05}
         maxZoom={2.5}
@@ -901,7 +903,7 @@ function KnowledgeGraphInner({
         {/* Source Filter Panel */}
         {showSourceLegend && (
           <Panel position="top-left" className="m-4">
-            <Card className="w-56 bg-slate-800/90 backdrop-blur-xl border-white/10">
+            <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10">
               <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
                   <Bot className="h-4 w-4" aria-hidden="true" /> Decision Sources
@@ -988,13 +990,29 @@ function KnowledgeGraphInner({
         )}
 
         {/* Project Filter Panel - positioned below Source Filter */}
-        {showSourceLegend && (
-          <Panel position="top-left" className="m-4 mt-[280px]">
-            <Card className="w-56 bg-slate-800/90 backdrop-blur-xl border-white/10">
-              <CardHeader className="py-3 px-4">
+        {showProjectFilter && (
+          <Panel position="top-left" className="m-4" style={{ marginTop: showSourceLegend ? '292px' : '16px' }}>
+            <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10">
+              <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
                   <FolderOpen className="h-4 w-4" aria-hidden="true" /> Projects
                 </CardTitle>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowProjectFilter(false)}
+                        className="h-6 w-6 text-slate-400 hover:text-slate-200"
+                        aria-label="Close project filter"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Close panel</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </CardHeader>
               <CardContent className="py-2 px-4 space-y-2">
                 {/* All Projects button */}
@@ -1058,7 +1076,16 @@ function KnowledgeGraphInner({
         )}
 
         {/* Node Type Legend - positioned below Source Filter and Project Filter when visible */}
-        <Panel position="top-left" className={`m-4 ${showSourceLegend ? "mt-[560px]" : ""}`}>
+        <Panel
+          position="top-left"
+          className="m-4"
+          style={{
+            marginTop: showSourceLegend && showProjectFilter ? '572px' :
+                      showSourceLegend ? '292px' :
+                      showProjectFilter ? '292px' :
+                      '16px'
+          }}
+        >
           <Card className="w-52 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Entity types legend">
             <CardHeader className="py-3 px-4">
               <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
@@ -1107,7 +1134,7 @@ function KnowledgeGraphInner({
         {/* Relationship Legend */}
         {showRelationshipLegend && (
           <Panel position="top-right" className="m-4">
-            <Card className="w-56 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Relationship types legend">
+            <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Relationship types legend">
               <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
                   <GitBranch className="h-4 w-4" aria-hidden="true" /> Relationships
@@ -1355,9 +1382,9 @@ function KnowledgeGraphInner({
                                   className="bg-blue-500/20 text-blue-400 border-blue-500/30 flex items-center gap-1.5"
                                   role="listitem"
                                 >
-                                  {React.cloneElement(entityConfig.icon as React.ReactElement, {
-                                    className: "h-3 w-3",
-                                  })}
+                                  <span className="h-3 w-3 flex items-center justify-center [&>svg]:h-3 [&>svg]:w-3">
+                                    {entityConfig.icon}
+                                  </span>
                                   {entity.name}
                                 </Badge>
                               )
