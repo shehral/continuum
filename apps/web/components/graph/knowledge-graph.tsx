@@ -558,6 +558,11 @@ function KnowledgeGraphInner({
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, , onEdgesChange] = useEdgesState(initialEdges)
 
+  // Update nodes when layout changes or initialNodes recalculates
+  useEffect(() => {
+    setNodes(initialNodes)
+  }, [initialNodes, setNodes])
+
   // Update nodes when focusedNodeId changes to add focus indicator (P0-3)
   useEffect(() => {
     setNodes((prevNodes) =>
