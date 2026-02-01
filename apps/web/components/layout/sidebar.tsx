@@ -198,7 +198,7 @@ export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: S
                 size="sm"
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                 className="flex-1 text-muted-foreground hover:text-foreground hover:bg-muted group"
-                aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                aria-label={mounted ? (theme === "dark" ? "Switch to light mode" : "Switch to dark mode") : "Toggle theme"}
               >
                 {mounted ? (
                   theme === "dark" ? (
@@ -255,7 +255,7 @@ export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: S
                     size="sm"
                     onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                     className="w-full text-muted-foreground hover:text-foreground hover:bg-muted"
-                    aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                    aria-label={mounted ? (theme === "dark" ? "Switch to light mode" : "Switch to dark mode") : "Toggle theme"}
                   >
                     {mounted ? (
                       theme === "dark" ? (
