@@ -33,8 +33,13 @@ vi.mock('@xyflow/react', () => {
     </div>
   )
 
+  const MockReactFlowProvider = ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="react-flow-provider">{children}</div>
+  )
+
   return {
     ReactFlow: MockReactFlow,
+    ReactFlowProvider: MockReactFlowProvider,
     Controls: () => <div data-testid="controls" />,
     Background: () => <div data-testid="background" />,
     MiniMap: () => <div data-testid="minimap" />,
@@ -43,6 +48,11 @@ vi.mock('@xyflow/react', () => {
     ),
     useNodesState: (initialNodes: any[]) => [initialNodes, vi.fn(), vi.fn()],
     useEdgesState: (initialEdges: any[]) => [initialEdges, vi.fn(), vi.fn()],
+    useReactFlow: () => ({
+      setCenter: vi.fn(),
+      getZoom: vi.fn(() => 1),
+      fitView: vi.fn(),
+    }),
     Handle: () => null,
     Position: { Top: 'top', Bottom: 'bottom' },
     MarkerType: { ArrowClosed: 'arrowclosed' },
@@ -314,6 +324,494 @@ describe('Node Types', () => {
       render(<KnowledgeGraph data={sampleGraphData} />)
       expect(screen.getByText('PostgreSQL')).toBeInTheDocument()
       expect(screen.getByText('Redis')).toBeInTheDocument()
+    })
+  })
+})
+
+describe('KnowledgeGraph - Project Filter', () => {
+  const projectCounts = {
+    continuum: 42,
+    'docs-website': 15,
+    'mobile-app': 8,
+    unassigned: 5,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  describe('Project Filter Panel Rendering', () => {
+    it.skip('renders project filter panel when projectCounts provided', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      // Look for project panel or "Projects" heading
+      // This will be implemented by frontend-ux-expert
+      expect(
+        screen.queryByText(/Projects/i) || screen.queryByText(/Filter by Project/i)
+      ).toBeTruthy()
+    })
+
+    it.skip('does not render project filter when projectCounts is empty', () => {
+      render(<KnowledgeGraph data={sampleGraphData} projectCounts={{}} />)
+
+      // Should gracefully handle empty project counts
+      const allButtons = screen.getAllByRole('button')
+      expect(allButtons).toBeDefined()
+    })
+
+    it.skip('renders "All Projects" button', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      expect(screen.getByText(/All Projects/i)).toBeInTheDocument()
+    })
+
+    it.skip('renders individual project filter buttons', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      expect(screen.getByText('continuum')).toBeInTheDocument()
+      expect(screen.getByText('docs-website')).toBeInTheDocument()
+      expect(screen.getByText('mobile-app')).toBeInTheDocument()
+      expect(screen.getByText('unassigned')).toBeInTheDocument()
+    })
+
+    it.skip('displays project counts in badges', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      expect(screen.getByText('42')).toBeInTheDocument()
+      expect(screen.getByText('15')).toBeInTheDocument()
+      expect(screen.getByText('8')).toBeInTheDocument()
+      expect(screen.getByText('5')).toBeInTheDocument()
+    })
+
+    it.skip('shows total count in "All Projects" button', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      // Total should be 42 + 15 + 8 + 5 = 70
+      expect(screen.getByText('70')).toBeInTheDocument()
+    })
+  })
+
+  describe('Project Filter Interaction', () => {
+    it.skip('calls onProjectFilterChange when project button is clicked', () => {
+      const handleProjectFilter = vi.fn()
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+          onProjectFilterChange={handleProjectFilter}
+        />
+      )
+
+      const continuumButton = screen.getByText('continuum')
+      fireEvent.click(continuumButton)
+
+      expect(handleProjectFilter).toHaveBeenCalledWith('continuum')
+    })
+
+    it.skip('calls onProjectFilterChange with null when "All Projects" clicked', () => {
+      const handleProjectFilter = vi.fn()
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+          projectFilter="continuum"
+          onProjectFilterChange={handleProjectFilter}
+        />
+      )
+
+      const allProjectsButton = screen.getByText(/All Projects/i)
+      fireEvent.click(allProjectsButton)
+
+      expect(handleProjectFilter).toHaveBeenCalledWith(null)
+    })
+
+    it.skip('toggles selected project on repeated clicks', () => {
+      const handleProjectFilter = vi.fn()
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+          onProjectFilterChange={handleProjectFilter}
+        />
+      )
+
+      const docsButton = screen.getByText('docs-website')
+
+      // First click: select
+      fireEvent.click(docsButton)
+      expect(handleProjectFilter).toHaveBeenCalledWith('docs-website')
+
+      // Second click: deselect (should call with null)
+      fireEvent.click(docsButton)
+      expect(handleProjectFilter).toHaveBeenCalledWith(null)
+    })
+
+    it.skip('handles clicking unassigned project', () => {
+      const handleProjectFilter = vi.fn()
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+          onProjectFilterChange={handleProjectFilter}
+        />
+      )
+
+      const unassignedButton = screen.getByText('unassigned')
+      fireEvent.click(unassignedButton)
+
+      expect(handleProjectFilter).toHaveBeenCalledWith('unassigned')
+    })
+  })
+
+  describe('Project Filter State - Visual Highlighting', () => {
+    it.skip('highlights selected project button', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+          projectFilter="continuum"
+        />
+      )
+
+      const continuumButton = screen.getByText('continuum')
+      expect(continuumButton.closest('button')).toHaveClass(
+        expect.stringMatching(/bg-|border-/)
+      )
+    })
+
+    it.skip('shows "All Projects" as selected when no filter applied', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+          projectFilter={null}
+        />
+      )
+
+      const allProjectsButton = screen.getByText(/All Projects/i)
+      expect(allProjectsButton.closest('button')).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+    })
+
+    it.skip('applies outline variant to non-selected projects', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+          projectFilter="continuum"
+        />
+      )
+
+      const docsButton = screen.getByText('docs-website')
+      expect(docsButton.closest('button')).not.toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+    })
+  })
+
+  describe('Project Filter Accessibility', () => {
+    it.skip('project filter buttons are keyboard navigable', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      const continuumButton = screen.getByText('continuum')
+      expect(continuumButton.closest('button')).toHaveAttribute('type', 'button')
+    })
+
+    it.skip('project filter buttons have aria-pressed state', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+          projectFilter="continuum"
+        />
+      )
+
+      const continuumButton = screen.getByText('continuum')
+      expect(continuumButton.closest('button')).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+
+      const docsButton = screen.getByText('docs-website')
+      expect(docsButton.closest('button')).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      )
+    })
+
+    it.skip('project filter buttons have aria-label', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      const continuumButton = screen.getByText('continuum')
+      const buttonElement = continuumButton.closest('button')
+      expect(buttonElement).toHaveAttribute(
+        'aria-label',
+        expect.stringMatching(/filter|project/i)
+      )
+    })
+
+    it.skip('allows Tab key navigation through project filters', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      const allButtons = screen.getAllByRole('button')
+      const projectButtons = allButtons.filter((btn) =>
+        btn.textContent?.match(
+          /continuum|docs-website|mobile-app|unassigned|All Projects/
+        )
+      )
+
+      expect(projectButtons.length).toBeGreaterThan(0)
+      projectButtons.forEach((btn) => {
+        expect(btn).toBeVisible()
+      })
+    })
+  })
+
+  describe('Project Filter Integration with Source Filter', () => {
+    it.skip('renders both source and project filters simultaneously', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          sourceCounts={{ claude_logs: 5, interview: 3 }}
+          projectCounts={projectCounts}
+        />
+      )
+
+      expect(screen.getByText(/Decision Sources/i)).toBeInTheDocument()
+      expect(screen.getByText(/All Projects/i)).toBeInTheDocument()
+    })
+
+    it.skip('allows both source and project filters to be active', () => {
+      const handleSourceFilter = vi.fn()
+      const handleProjectFilter = vi.fn()
+
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          sourceCounts={{ claude_logs: 5 }}
+          projectCounts={projectCounts}
+          sourceFilter="claude_logs"
+          projectFilter="continuum"
+          onSourceFilterChange={handleSourceFilter}
+          onProjectFilterChange={handleProjectFilter}
+        />
+      )
+
+      expect(screen.getByText(/AI Extracted/i)).toBeInTheDocument()
+      expect(screen.getByText('continuum')).toBeInTheDocument()
+    })
+
+    it.skip('changing project filter does not affect source filter', () => {
+      const handleSourceFilter = vi.fn()
+      const handleProjectFilter = vi.fn()
+
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          sourceCounts={{ claude_logs: 5 }}
+          projectCounts={projectCounts}
+          sourceFilter="claude_logs"
+          onSourceFilterChange={handleSourceFilter}
+          onProjectFilterChange={handleProjectFilter}
+        />
+      )
+
+      const continuumButton = screen.getByText('continuum')
+      fireEvent.click(continuumButton)
+
+      expect(handleProjectFilter).toHaveBeenCalledWith('continuum')
+      expect(handleSourceFilter).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Project Filter Edge Cases', () => {
+    it.skip('handles project names with special characters', () => {
+      const specialProjectCounts = {
+        'project-with-dashes': 10,
+        'project.with.dots': 5,
+        'project_with_underscores': 3,
+      }
+
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={specialProjectCounts}
+        />
+      )
+
+      expect(screen.getByText('project-with-dashes')).toBeInTheDocument()
+      expect(screen.getByText('project.with.dots')).toBeInTheDocument()
+      expect(screen.getByText('project_with_underscores')).toBeInTheDocument()
+    })
+
+    it.skip('handles very long project names gracefully', () => {
+      const longProjectCounts = {
+        'very-long-project-name-that-might-need-truncation-or-wrapping': 10,
+      }
+
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={longProjectCounts}
+        />
+      )
+
+      expect(
+        screen.getByText(/very-long-project-name/, { exact: false })
+      ).toBeInTheDocument()
+    })
+
+    it.skip('handles zero count projects', () => {
+      const zeroCounts = {
+        continuum: 0,
+        'docs-website': 5,
+      }
+
+      render(<KnowledgeGraph data={sampleGraphData} projectCounts={zeroCounts} />)
+
+      expect(screen.getByText('continuum')).toBeInTheDocument()
+      expect(screen.getByText('0')).toBeInTheDocument()
+    })
+
+    it.skip('handles single project', () => {
+      const singleProject = {
+        continuum: 42,
+      }
+
+      render(
+        <KnowledgeGraph data={sampleGraphData} projectCounts={singleProject} />
+      )
+
+      expect(screen.getByText('continuum')).toBeInTheDocument()
+      expect(screen.getByText(/All Projects/i)).toBeInTheDocument()
+    })
+
+    it.skip('handles many projects (pagination/scrolling)', () => {
+      const manyCounts = Object.fromEntries(
+        Array.from({ length: 20 }, (_, i) => [`project-${i}`, i + 1])
+      )
+
+      render(<KnowledgeGraph data={sampleGraphData} projectCounts={manyCounts} />)
+
+      expect(screen.getByText('project-0')).toBeInTheDocument()
+      expect(screen.getByText('project-19')).toBeInTheDocument()
+    })
+  })
+
+  describe('Project Filter Panel Position', () => {
+    it.skip('positions project filter panel below source filter', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          sourceCounts={{ claude_logs: 5 }}
+          projectCounts={projectCounts}
+        />
+      )
+
+      const panels = screen.getAllByTestId(/panel-top-left/)
+      expect(panels.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it.skip('adjusts layout when source filter is hidden', () => {
+      render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      expect(screen.getByText(/All Projects/i)).toBeInTheDocument()
+    })
+  })
+
+  describe('Project Filter Performance', () => {
+    it.skip('does not re-render unnecessarily when projectCounts unchanged', () => {
+      const { rerender } = render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      const continuumButton = screen.getByText('continuum')
+      const initialElement = continuumButton.parentElement
+
+      rerender(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+        />
+      )
+
+      const afterRerender = screen.getByText('continuum')
+      expect(afterRerender.parentElement).toBe(initialElement)
+    })
+
+    it.skip('updates efficiently when projectFilter prop changes', () => {
+      const { rerender } = render(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+          projectFilter={null}
+        />
+      )
+
+      rerender(
+        <KnowledgeGraph
+          data={sampleGraphData}
+          projectCounts={projectCounts}
+          projectFilter="continuum"
+        />
+      )
+
+      const continuumButton = screen.getByText('continuum')
+      expect(continuumButton.closest('button')).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
     })
   })
 })

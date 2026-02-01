@@ -11,6 +11,7 @@ export interface Decision {
   created_at: string
   entities: Entity[]
   source?: "claude_logs" | "interview" | "manual" | "unknown"
+  project_name?: string
 }
 
 export interface Entity {
@@ -144,6 +145,7 @@ class ApiClient {
     include_temporal?: boolean
     include_entity_relations?: boolean
     source_filter?: "claude_logs" | "interview" | "manual" | "unknown"
+    project_filter?: string
   }): Promise<GraphData> {
     const params = new URLSearchParams()
     if (options?.include_similarity !== undefined)
@@ -154,12 +156,18 @@ class ApiClient {
       params.append("include_entity_relations", String(options.include_entity_relations))
     if (options?.source_filter)
       params.append("source_filter", options.source_filter)
+    if (options?.project_filter)
+      params.append("project_filter", options.project_filter)
     const query = params.toString()
     return this.fetch<GraphData>(`/api/graph${query ? `?${query}` : ""}`)
   }
 
   async getDecisionSources(): Promise<Record<string, number>> {
     return this.fetch<Record<string, number>>("/api/graph/sources")
+  }
+
+  async getProjectCounts(): Promise<Record<string, number>> {
+    return this.fetch<Record<string, number>>("/api/graph/projects")
   }
 
   async getNodeDetails(nodeId: string): Promise<GraphNode> {
@@ -194,6 +202,7 @@ class ApiClient {
   async getRelationshipTypes(): Promise<Record<string, number>> {
     return this.fetch<Record<string, number>>("/api/graph/relationships/types")
   }
+
 
   // Entities
   async deleteEntity(id: string): Promise<{ status: string; message: string }> {

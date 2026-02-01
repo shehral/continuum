@@ -431,6 +431,9 @@ interface KnowledgeGraphProps {
   sourceFilter?: string | null
   onSourceFilterChange?: (source: string | null) => void
   sourceCounts?: Record<string, number>
+  projectFilter?: string | null
+  onProjectFilterChange?: (project: string | null) => void
+  projectCounts?: Record<string, number>
   onDeleteDecision?: (decisionId: string) => Promise<void>
 }
 
@@ -441,6 +444,9 @@ function KnowledgeGraphInner({
   sourceFilter,
   onSourceFilterChange,
   sourceCounts = {},
+  projectFilter,
+  onProjectFilterChange,
+  projectCounts = {},
   onDeleteDecision,
 }: KnowledgeGraphProps) {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
@@ -981,8 +987,78 @@ function KnowledgeGraphInner({
           </Panel>
         )}
 
-        {/* Node Type Legend - positioned below Source Filter when visible */}
-        <Panel position="top-left" className={`m-4 ${showSourceLegend ? "mt-[280px]" : ""}`}>
+        {/* Project Filter Panel - positioned below Source Filter */}
+        {showSourceLegend && (
+          <Panel position="top-left" className="m-4 mt-[280px]">
+            <Card className="w-56 bg-slate-800/90 backdrop-blur-xl border-white/10">
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
+                  <FolderOpen className="h-4 w-4" aria-hidden="true" /> Projects
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="py-2 px-4 space-y-2">
+                {/* All Projects button */}
+                <button
+                  onClick={() => onProjectFilterChange?.(null)}
+                  className={`w-full text-left px-3 py-2 rounded-md transition-all text-sm flex items-center justify-between ${
+                    projectFilter === null
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                      : "bg-white/5 text-slate-300 hover:bg-white/10 border border-transparent"
+                  }`}
+                  aria-pressed={projectFilter === null}
+                  aria-label="Show all projects"
+                >
+                  <span>All Projects</span>
+                  <Badge
+                    variant="secondary"
+                    className={projectFilter === null ? "bg-cyan-500/30 text-cyan-200" : "bg-slate-700 text-slate-300"}
+                  >
+                    {Object.values(projectCounts).reduce((sum, count) => sum + count, 0)}
+                  </Badge>
+                </button>
+
+                {/* Individual project buttons */}
+                {Object.entries(projectCounts)
+                  .filter(([name]) => name !== "unassigned" || projectCounts[name] > 0)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([project, count]) => (
+                    <button
+                      key={project}
+                      onClick={() => onProjectFilterChange?.(projectFilter === project ? null : project)}
+                      className={`w-full text-left px-3 py-2 rounded-md transition-all text-sm flex items-center justify-between ${
+                        projectFilter === project
+                          ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10 border border-transparent"
+                      }`}
+                      aria-pressed={projectFilter === project}
+                      aria-label={`Filter by project: ${project}`}
+                    >
+                      <span className="truncate">{project}</span>
+                      <Badge
+                        variant="secondary"
+                        className={
+                          projectFilter === project ? "bg-cyan-500/30 text-cyan-200" : "bg-slate-700 text-slate-300"
+                        }
+                      >
+                        {count}
+                      </Badge>
+                    </button>
+                  ))}
+
+                <div className="pt-2 mt-2 border-t border-white/10">
+                  <p className="text-[10px] text-slate-500">
+                    {projectFilter
+                      ? `Showing ${projectCounts[projectFilter] || 0} decisions in ${projectFilter}`
+                      : "Click to filter by project"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Panel>
+        )}
+
+        {/* Node Type Legend - positioned below Source Filter and Project Filter when visible */}
+        <Panel position="top-left" className={`m-4 ${showSourceLegend ? "mt-[560px]" : ""}`}>
           <Card className="w-52 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Entity types legend">
             <CardHeader className="py-3 px-4">
               <CardTitle className="text-sm text-slate-200 flex items-center gap-2">

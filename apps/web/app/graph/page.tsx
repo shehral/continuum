@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 export default function GraphPage() {
   const queryClient = useQueryClient()
   const [sourceFilter, setSourceFilter] = useState<string | null>(null)
+  const [projectFilter, setProjectFilter] = useState<string | null>(null)
 
   const {
     data: graphData,
@@ -23,13 +24,14 @@ export default function GraphPage() {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ["graph", sourceFilter],
+    queryKey: ["graph", sourceFilter, projectFilter],
     queryFn: () =>
       api.getGraph({
         include_similarity: true,
         include_temporal: true,
         include_entity_relations: true,
         source_filter: sourceFilter as "claude_logs" | "interview" | "manual" | "unknown" | undefined,
+        project_filter: projectFilter || undefined,
       }),
     staleTime: 5 * 60 * 1000, // 5 minutes for graph data (P1-5)
     gcTime: 10 * 60 * 1000, // 10 minutes garbage collection
@@ -38,6 +40,12 @@ export default function GraphPage() {
   const { data: sourceCounts } = useQuery({
     queryKey: ["graph-sources"],
     queryFn: () => api.getDecisionSources(),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const { data: projectCounts } = useQuery({
+    queryKey: ["project-counts"],
+    queryFn: () => api.getProjectCounts(),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -53,6 +61,10 @@ export default function GraphPage() {
 
   const handleSourceFilterChange = useCallback((source: string | null) => {
     setSourceFilter(source)
+  }, [])
+
+  const handleProjectFilterChange = useCallback((project: string | null) => {
+    setProjectFilter(project)
   }, [])
 
   const handleDeleteDecision = useCallback(async (decisionId: string) => {
@@ -119,6 +131,9 @@ export default function GraphPage() {
               sourceFilter={sourceFilter}
               onSourceFilterChange={handleSourceFilterChange}
               sourceCounts={sourceCounts || {}}
+              projectFilter={projectFilter}
+              onProjectFilterChange={handleProjectFilterChange}
+              projectCounts={projectCounts || {}}
               onDeleteDecision={handleDeleteDecision}
             />
           )}
