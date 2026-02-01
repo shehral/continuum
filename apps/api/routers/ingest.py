@@ -53,6 +53,22 @@ class PreviewResponse(BaseModel):
     exclude_projects: list[str]
 
 
+class FileInfo(BaseModel):
+    """Information about a single JSONL file."""
+    file_path: str
+    project_name: str
+    project_dir: str
+    conversation_count: int
+    size_bytes: int
+    last_modified: str
+
+
+class ImportSelectedRequest(BaseModel):
+    """Request to import selected files to a target project."""
+    file_paths: list[str]
+    target_project: Optional[str] = None
+
+
 @router.get("/projects", response_model=list[ProjectInfo])
 async def list_available_projects():
     """List all Claude Code projects available for ingestion.
@@ -63,6 +79,61 @@ async def list_available_projects():
     settings = get_settings()
     parser = ClaudeLogParser(settings.claude_logs_path)
     return parser.get_available_projects()
+
+
+@router.get("/files", response_model=list[FileInfo])
+async def list_files(
+    project: Optional[str] = Query(
+        None, description="Only include this project (partial match)"
+    ),
+):
+    """List all Claude Code log files with metadata for selective import.
+
+    Returns file information including path, project, conversation count, size, and timestamp.
+    Use this to build a file browser UI for selective import.
+    """
+    settings = get_settings()
+    parser = ClaudeLogParser(settings.claude_logs_path)
+
+    if not parser.logs_path.exists():
+        return []
+
+    files_info = []
+
+    # Find all JSONL files
+    for file_path in parser.logs_path.glob("**/*.jsonl"):
+        # Skip subagent files
+        if "subagents" in str(file_path):
+            continue
+
+        project_name = parser._extract_project_name(file_path)
+        project_dir = file_path.parent.name
+
+        # Apply project filter if provided
+        if project and project.lower() not in project_dir.lower():
+            continue
+
+        # Get file stats
+        stat = file_path.stat()
+
+        # Count conversations in file
+        conversations = parser._parse_jsonl_file(file_path)
+
+        files_info.append(
+            FileInfo(
+                file_path=str(file_path),
+                project_name=project_name,
+                project_dir=project_dir,
+                conversation_count=len(conversations),
+                size_bytes=stat.st_size,
+                last_modified=datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(),
+            )
+        )
+
+    # Sort by last modified (newest first)
+    files_info.sort(key=lambda x: x.last_modified, reverse=True)
+
+    return files_info
 
 
 @router.get("/preview", response_model=PreviewResponse)
@@ -212,6 +283,120 @@ async def trigger_ingestion(
     except Exception as e:
         logger.error(
             f"Unexpected error during ingestion: {type(e).__name__}: {e}", exc_info=True
+        )
+        return IngestionResult(
+            status=f"error: {type(e).__name__}",
+            processed=files_processed,
+            decisions_extracted=decisions_extracted,
+        )
+
+
+@router.post("/import-selected", response_model=IngestionResult)
+async def import_selected_files(
+    request: ImportSelectedRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Import only selected files with optional target project assignment.
+
+    This endpoint allows fine-grained control over which files to import
+    and which project to assign them to. Useful for organizing imported
+    decisions into specific projects.
+
+    Examples:
+    - Import specific files to a project: {"file_paths": [...], "target_project": "continuum"}
+    - Import files with original project names: {"file_paths": [...], "target_project": null}
+    """
+    from pathlib import Path
+
+    settings = get_settings()
+    parser = ClaudeLogParser(settings.claude_logs_path)
+    extractor = DecisionExtractor()
+
+    files_processed = 0
+    decisions_extracted = 0
+    errors: list[str] = []
+
+    try:
+        for file_path_str in request.file_paths:
+            file_path = Path(file_path_str)
+
+            # Validate file exists and is within logs directory
+            if not file_path.exists():
+                errors.append(f"not_found:{file_path_str}")
+                continue
+
+            # Security: Ensure file is within logs directory (prevent path traversal)
+            try:
+                file_path.resolve().relative_to(parser.logs_path.resolve())
+            except ValueError:
+                logger.warning(f"Attempted to import file outside logs directory: {file_path}")
+                errors.append(f"invalid_path:{file_path_str}")
+                continue
+
+            try:
+                # Parse the file
+                conversations = parser._parse_jsonl_file(file_path)
+
+                for conversation in conversations:
+                    try:
+                        # Extract decisions from conversation
+                        decisions = await extractor.extract_decisions(conversation)
+                        decisions_extracted += len(decisions)
+
+                        # Save decisions with target project or original project
+                        project_name = request.target_project or conversation.project_name
+
+                        for decision in decisions:
+                            try:
+                                await extractor.save_decision(
+                                    decision,
+                                    source="claude_logs",
+                                    project_name=project_name,
+                                )
+                            except Exception as save_error:
+                                logger.error(
+                                    f"Failed to save decision: {type(save_error).__name__}: {save_error}",
+                                    exc_info=True,
+                                )
+                                errors.append(f"save_decision:{file_path}")
+                    except Exception as extract_error:
+                        logger.error(
+                            f"Failed to extract decisions from {file_path}: "
+                            f"{type(extract_error).__name__}: {extract_error}",
+                            exc_info=True,
+                        )
+                        errors.append(f"extract:{file_path}")
+
+                files_processed += 1
+            except Exception as file_error:
+                logger.error(
+                    f"Error processing file {file_path}: {type(file_error).__name__}: {file_error}",
+                    exc_info=True,
+                )
+                errors.append(f"file:{file_path}")
+
+        ingestion_state["files_processed"] += files_processed
+        ingestion_state["last_run"] = datetime.now(UTC)
+
+        # Build status message
+        if errors:
+            status = f"completed with {len(errors)} errors"
+            logger.warning(f"Selective import completed with errors: {errors}")
+        else:
+            status = "completed"
+
+        # Invalidate caches since data changed
+        await invalidate_user_caches("anonymous")
+
+        return IngestionResult(
+            status=status,
+            processed=files_processed,
+            decisions_extracted=decisions_extracted,
+        )
+    except Exception as e:
+        logger.error(
+            f"Unexpected error during selective import: {type(e).__name__}: {e}",
+            exc_info=True,
         )
         return IngestionResult(
             status=f"error: {type(e).__name__}",

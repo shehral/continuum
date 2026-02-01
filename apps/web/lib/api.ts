@@ -298,6 +298,37 @@ class ApiClient {
     }>("/api/ingest/status")
   }
 
+  async getImportFiles(options?: {
+    project?: string
+  }): Promise<{
+    file_path: string
+    project_name: string
+    project_dir: string
+    conversation_count: number
+    size_bytes: number
+    last_modified: string
+  }[]> {
+    const params = new URLSearchParams()
+    if (options?.project) params.append("project", options.project)
+    return this.fetch(`/api/ingest/files?${params}`)
+  }
+
+  async importSelectedFiles(
+    filePaths: string[],
+    targetProject?: string | null
+  ): Promise<{ status: string; processed: number; decisions_extracted: number }> {
+    return this.fetch<{ status: string; processed: number; decisions_extracted: number }>(
+      "/api/ingest/import-selected",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          file_paths: filePaths,
+          target_project: targetProject,
+        }),
+      }
+    )
+  }
+
   async resetGraph(): Promise<{ status: string; message: string }> {
     return this.fetch("/api/graph/reset?confirm=true", { method: "DELETE" })
   }

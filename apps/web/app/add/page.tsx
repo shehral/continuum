@@ -16,6 +16,7 @@ import {
   Eye,
   Trash2,
   RefreshCw,
+  FileStack,
 } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
@@ -39,6 +40,8 @@ import {
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { FileBrowser } from "@/components/import/file-browser"
+import { ProjectSelector } from "@/components/projects/project-selector"
 import { api } from "@/lib/api"
 
 type IngestionStatus = "idle" | "running" | "success" | "error"
@@ -52,10 +55,31 @@ export default function AddKnowledgePage() {
   const [showPreview, setShowPreview] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
 
+  // Selective import state
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
+  const [targetProject, setTargetProject] = useState<string | null>(null)
+  const [showFileBrowser, setShowFileBrowser] = useState(false)
+
   // Fetch available projects
   const { data: projects, isLoading: projectsLoading } = useQuery({
     queryKey: ["ingest-projects"],
     queryFn: () => api.getAvailableProjects(),
+  })
+
+  // Fetch project counts for target project selector
+  const { data: projectCounts } = useQuery({
+    queryKey: ["project-counts"],
+    queryFn: () => api.getProjectCounts(),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const availableProjects = Object.keys(projectCounts || {}).filter((p) => p !== "unassigned")
+
+  // Fetch import files
+  const { data: importFiles, isLoading: filesLoading } = useQuery({
+    queryKey: ["import-files"],
+    queryFn: () => api.getImportFiles(),
+    enabled: showFileBrowser,
   })
 
   // Preview query
@@ -81,6 +105,25 @@ export default function AddKnowledgePage() {
       queryClient.invalidateQueries({ queryKey: ["decisions"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
       queryClient.invalidateQueries({ queryKey: ["graph"] })
+    },
+    onError: () => {
+      setIngestionStatus("error")
+    },
+  })
+
+  const selectiveImportMutation = useMutation({
+    mutationFn: () => api.importSelectedFiles(selectedFiles, targetProject),
+    onMutate: () => {
+      setIngestionStatus("running")
+    },
+    onSuccess: (data) => {
+      setIngestionStatus("success")
+      setIngestionResult({ processed: data.processed, decisions: data.decisions_extracted })
+      queryClient.invalidateQueries({ queryKey: ["decisions"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
+      queryClient.invalidateQueries({ queryKey: ["graph"] })
+      setSelectedFiles([])
+      setShowFileBrowser(false)
     },
     onError: () => {
       setIngestionStatus("error")
@@ -206,6 +249,107 @@ export default function AddKnowledgePage() {
                 <AlertCircle className="h-4 w-4" />
                 Import failed. Check API keys and try again.
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Selective Import Section */}
+        <Card className="bg-white/[0.03] backdrop-blur-xl border-white/[0.06]">
+          <CardHeader>
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                  <FileStack className="h-5 w-5 text-blue-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-slate-100">Selective File Import</CardTitle>
+                  <CardDescription className="text-slate-400">
+                    Choose specific files and assign them to a target project
+                  </CardDescription>
+                </div>
+              </div>
+              <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+                Advanced
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!showFileBrowser ? (
+              <Button
+                onClick={() => setShowFileBrowser(true)}
+                variant="outline"
+                className="w-full bg-white/[0.05] border-white/10 text-slate-300 hover:bg-white/[0.08]"
+              >
+                <FileStack className="h-4 w-4 mr-2" />
+                Browse Files
+              </Button>
+            ) : (
+              <>
+                {filesLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+                  </div>
+                ) : (
+                  <>
+                    <FileBrowser
+                      files={importFiles || []}
+                      selectedFiles={selectedFiles}
+                      onSelectionChange={setSelectedFiles}
+                    />
+
+                    {/* Target Project Selection */}
+                    {selectedFiles.length > 0 && (
+                      <div className="space-y-3 pt-2 border-t border-white/10">
+                        <div>
+                          <label className="text-sm font-medium text-slate-300 mb-2 block">
+                            Target Project <span className="text-slate-500">(optional)</span>
+                          </label>
+                          <p className="text-xs text-slate-500 mb-2">
+                            Assign selected files to a specific project, or leave empty to use their original project names
+                          </p>
+                          <ProjectSelector
+                            value={targetProject}
+                            onChange={setTargetProject}
+                            projects={availableProjects}
+                            placeholder="Use original project names..."
+                          />
+                        </div>
+
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => selectiveImportMutation.mutate()}
+                            disabled={ingestionStatus === "running"}
+                            className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(59,130,246,0.3)] hover:shadow-[0_6px_20px_rgba(59,130,246,0.4)]"
+                          >
+                            {ingestionStatus === "running" ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Importing {selectedFiles.length} files...
+                              </>
+                            ) : (
+                              <>
+                                <Play className="h-4 w-4 mr-2" />
+                                Import {selectedFiles.length} Selected
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowFileBrowser(false)
+                              setSelectedFiles([])
+                              setTargetProject(null)
+                            }}
+                            className="bg-white/[0.05] border-white/10"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
