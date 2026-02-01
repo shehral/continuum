@@ -705,7 +705,7 @@ class DecisionExtractor:
             )
 
         try:
-            response = await self.llm.generate(prompt, temperature=0.3)
+            response = await self.llm.generate(prompt, temperature=0.3, sanitize_input=False)
 
             # Use robust JSON extraction
             decisions_data = extract_json_from_response(response)
@@ -823,7 +823,7 @@ class DecisionExtractor:
         prompt = ENTITY_EXTRACTION_PROMPT.format(decision_text=text)
 
         try:
-            response = await self.llm.generate(prompt, temperature=0.3)
+            response = await self.llm.generate(prompt, temperature=0.3, sanitize_input=False)
 
             # Use robust JSON extraction
             result = extract_json_from_response(response)
@@ -932,7 +932,7 @@ class DecisionExtractor:
         )
 
         try:
-            response = await self.llm.generate(prompt, temperature=0.3)
+            response = await self.llm.generate(prompt, temperature=0.3, sanitize_input=False)
 
             # Use robust JSON extraction
             result = extract_json_from_response(response)
@@ -1068,7 +1068,7 @@ class DecisionExtractor:
         )
 
         try:
-            response = await self.llm.generate(prompt, temperature=0.3)
+            response = await self.llm.generate(prompt, temperature=0.3, sanitize_input=False)
 
             # Use robust JSON extraction
             result = extract_json_from_response(response)
