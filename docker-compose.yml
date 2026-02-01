@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: continuum-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
 
   neo4j:
-    image: neo4j:5.26-community
+    image: neo4j:2025.01-community
     container_name: continuum-neo4j
     environment:
       NEO4J_AUTH: ${NEO4J_USER:?NEO4J_USER must be set}/${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set}
