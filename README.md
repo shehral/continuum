@@ -37,11 +37,12 @@ This project explores human-AI collaboration patterns in software engineering—
 
 | Layer | Technologies |
 |-------|--------------|
-| **Frontend** | Next.js 14, React Flow, TailwindCSS, shadcn/ui |
-| **Backend** | FastAPI, SQLAlchemy (async), Pydantic |
-| **Databases** | PostgreSQL, Neo4j, Redis |
+| **Frontend** | Next.js 16, React 19, TailwindCSS 4, shadcn/ui |
+| **Backend** | FastAPI, SQLAlchemy (async), Pydantic, Python 3.14 |
+| **Databases** | PostgreSQL 18, Neo4j 2025.01, Redis 7.4 |
 | **AI** | NVIDIA NIM API (Llama 3.3 Nemotron, NV-EmbedQA) |
-| **Infrastructure** | Docker, Kubernetes, GitHub Actions |
+| **Auth** | Auth.js v5 (next-auth) |
+| **Infrastructure** | Docker, Kubernetes, GitHub Actions, Node.js 24 LTS |
 
 ---
 
