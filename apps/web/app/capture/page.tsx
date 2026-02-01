@@ -23,6 +23,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { api, type CaptureSession, type CaptureMessage, type Entity } from "@/lib/api"
+import { ProjectSelector } from "@/components/projects/project-selector"
 
 export default function CapturePage() {
   const queryClient = useQueryClient()
@@ -32,10 +33,20 @@ export default function CapturePage() {
   const [completedStages, setCompletedStages] = useState<TraceStage[]>([])
   const [suggestedEntities, setSuggestedEntities] = useState<Entity[]>([])
   const [showCompleteDialog, setShowCompleteDialog] = useState(false)
+  const [selectedProject, setSelectedProject] = useState<string | null>(null)
+
+  // Fetch available projects
+  const { data: projectCounts } = useQuery({
+    queryKey: ["project-counts"],
+    queryFn: () => api.getProjectCounts(),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const projects = Object.keys(projectCounts || {}).filter((p) => p !== "unassigned")
 
   // Start session mutation
   const startSessionMutation = useMutation({
-    mutationFn: () => api.startCaptureSession(),
+    mutationFn: () => api.startCaptureSession(selectedProject),
     onSuccess: (session) => {
       setActiveSession(session)
       setMessages([
@@ -235,7 +246,26 @@ export default function CapturePage() {
                   helping you capture the trigger, context, options considered, and rationale.
                 </p>
 
-                <div className="flex flex-col gap-3 items-center">
+                <div className="flex flex-col gap-3 w-full max-w-sm mx-auto">
+                  {/* Project Selection */}
+                  <div className="space-y-2">
+                    <label htmlFor="project-selector" className="text-sm font-medium text-slate-300">
+                      Project <span className="text-slate-500">(optional)</span>
+                    </label>
+                    <ProjectSelector
+                      value={selectedProject}
+                      onChange={setSelectedProject}
+                      projects={projects}
+                      placeholder="Select or create project..."
+                    />
+                    {selectedProject && (
+                      <p className="text-xs text-slate-500">
+                        Session will be tagged with project: <span className="text-cyan-400">{selectedProject}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Start Button */}
                   <Button
                     onClick={() => startSessionMutation.mutate()}
                     disabled={startSessionMutation.isPending}

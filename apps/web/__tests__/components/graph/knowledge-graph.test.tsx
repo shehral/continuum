@@ -123,7 +123,8 @@ describe('KnowledgeGraph', () => {
   describe('Rendering', () => {
     it('renders without crashing', () => {
       render(<KnowledgeGraph />)
-      expect(screen.getByTestId('react-flow')).toBeInTheDocument()
+      // Without data, should show empty state
+      expect(screen.getByText(/Your Knowledge Graph is Empty/i)).toBeInTheDocument()
     })
 
     it('renders with graph data', () => {
@@ -158,12 +159,14 @@ describe('KnowledgeGraph', () => {
   describe('Empty State', () => {
     it('renders with empty data', () => {
       render(<KnowledgeGraph data={{ nodes: [], edges: [] }} />)
-      expect(screen.getByTestId('react-flow')).toBeInTheDocument()
+      // Empty nodes should show empty state
+      expect(screen.getByText(/Your Knowledge Graph is Empty/i)).toBeInTheDocument()
     })
 
     it('renders with undefined data', () => {
       render(<KnowledgeGraph data={undefined} />)
-      expect(screen.getByTestId('react-flow')).toBeInTheDocument()
+      // Undefined data should show empty state
+      expect(screen.getByText(/Your Knowledge Graph is Empty/i)).toBeInTheDocument()
     })
   })
 

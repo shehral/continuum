@@ -214,9 +214,12 @@ class ApiClient {
 
 
   // Capture Sessions
-  async startCaptureSession(): Promise<CaptureSession> {
+  async startCaptureSession(projectName?: string | null): Promise<CaptureSession> {
     return this.fetch<CaptureSession>("/api/capture/sessions", {
       method: "POST",
+      ...(projectName && {
+        body: JSON.stringify({ project_name: projectName }),
+      }),
     })
   }
 
@@ -317,6 +320,7 @@ class ApiClient {
     decision: string
     rationale: string
     entities: string[]
+    project_name?: string | null
   }): Promise<Decision> {
     return this.fetch<Decision>("/api/decisions", {
       method: "POST",

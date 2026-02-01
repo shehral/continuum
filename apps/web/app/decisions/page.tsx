@@ -28,6 +28,7 @@ import { api, type Decision } from "@/lib/api"
 import { getEntityStyle } from "@/lib/constants"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { ProjectSelector } from "@/components/projects/project-selector"
 import { Slider } from "@/components/ui/slider"
 
 // Confidence badge styling based on level (Product-QW-1: Enhanced with tooltips)
@@ -281,6 +282,15 @@ function AddDecisionDialog({
   const [decision, setDecision] = useState("")
   const [rationale, setRationale] = useState("")
   const [entities, setEntities] = useState("")
+  const [selectedProject, setSelectedProject] = useState<string | null>(null)
+
+  const { data: projectCounts } = useQuery({
+    queryKey: ["project-counts"],
+    queryFn: () => api.getProjectCounts(),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const projects = Object.keys(projectCounts || {}).filter((p) => p !== "unassigned")
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -291,6 +301,7 @@ function AddDecisionDialog({
         decision,
         rationale,
         entities: entities.split(",").map((e) => e.trim()).filter(Boolean),
+        project_name: selectedProject,
       }),
     onSuccess: () => {
       onSuccess()
@@ -302,6 +313,7 @@ function AddDecisionDialog({
       setDecision("")
       setRationale("")
       setEntities("")
+      setSelectedProject(null)
     },
   })
 
@@ -384,6 +396,18 @@ function AddDecisionDialog({
               value={entities}
               onChange={(e) => setEntities(e.target.value)}
               className={inputClass}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="project" className="text-slate-300">
+              Project <span className="text-slate-500 font-normal">(optional)</span>
+            </Label>
+            <ProjectSelector
+              value={selectedProject}
+              onChange={setSelectedProject}
+              projects={projects}
+              placeholder="Select or create project..."
             />
           </div>
         </div>
