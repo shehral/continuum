@@ -44,6 +44,7 @@ from routers import (
     export,
     graph,
     ingest,
+    projects,
     search,
     users,
 )
@@ -520,6 +521,7 @@ app.include_router(decisions.router, prefix="/api/decisions", tags=["Decisions"]
 app.include_router(graph.router, prefix="/api/graph", tags=["Graph"])
 app.include_router(capture.router, prefix="/api/capture", tags=["Capture"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["Ingest"])
+app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(entities.router, prefix="/api/entities", tags=["Entities"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
