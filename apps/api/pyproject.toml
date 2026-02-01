@@ -3,19 +3,19 @@ name = "continuum-api"
 version = "0.1.0"
 description = "Continuum Knowledge Management API"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115.6",
     "uvicorn[standard]>=0.34.0",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
-    "alembic>=1.14.0",
+    "alembic>=1.18.3",
     "neo4j>=5.27.0",
     "redis>=5.2.1",
     "python-dotenv>=1.0.1",
     "pydantic>=2.10.4",
     "pydantic-settings>=2.7.1",
-    "google-generativeai>=0.8.0",
+    "google-generativeai>=0.10.0",
     "websockets>=14.1",
     "python-multipart>=0.0.20",
     "httpx>=0.28.1",
@@ -29,7 +29,7 @@ dependencies = [
     # SEC-013: Explicit cryptography version for security updates
     "cryptography>=42.0.0",
     # SEC-013: Starlette pinned for security (dependency of FastAPI)
-    "starlette>=0.41.0",
+    "starlette>=0.52.1",
 ]
 
 [project.optional-dependencies]
@@ -54,7 +54,7 @@ packages = ["."]
 
 [tool.ruff]
 line-length = 88
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]

@@ -1,5 +1,5 @@
-# Python 3.12 slim image for smaller footprint and latest security patches
-FROM python:3.12-slim
+# Python 3.14 slim image for smaller footprint and latest security patches
+FROM python:3.14-slim
 
 # Prevent Python from writing .pyc files and buffering stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1

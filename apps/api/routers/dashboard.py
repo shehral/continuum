@@ -45,9 +45,11 @@ async def get_dashboard_stats(
     recent_decisions = []
     errors = []
 
-    # Get session count from PostgreSQL
+    # Get session count from PostgreSQL (filtered by user_id)
     try:
-        result = await db.execute(select(func.count(CaptureSession.id)))
+        result = await db.execute(
+            select(func.count(CaptureSession.id)).where(CaptureSession.user_id == user_id)
+        )
         total_sessions = result.scalar() or 0
     except SQLAlchemyError as e:
         logger.error(

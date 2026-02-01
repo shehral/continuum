@@ -57,8 +57,8 @@ class Settings(BaseSettings):
     llm_retry_base_delay: float = 1.0  # Base delay in seconds for exponential backoff
 
     # LLM prompt size limits (ML-P1-3)
-    # Llama 3.3 Nemotron has 128k context, but we limit to prevent runaway costs
-    max_prompt_tokens: int = 12000  # Maximum input tokens (conservative default)
+    # Llama 3.3 Nemotron has 128k context
+    max_prompt_tokens: int = 70000  # Maximum input tokens (handles very large conversations)
     prompt_warning_threshold: float = 0.8  # Warn when prompt exceeds this % of max
 
     # LLM response cache settings (KG-P0-2)

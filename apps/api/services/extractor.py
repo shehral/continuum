@@ -83,10 +83,16 @@ def apply_decision_defaults(decision_data: dict) -> dict:
 DECISION_EXTRACTION_PROMPT = """Analyze this conversation and extract any technical decisions made.
 
 ## What constitutes a decision?
-A decision is a choice made between alternatives that affects the project. It should have:
-- A trigger (problem, requirement, or question that prompted the decision)
+A decision is a choice that affects the project direction, architecture, or implementation. This includes:
+- **Explicit decisions**: "Should we use X or Y? Let's use X because..."
+- **Implicit decisions**: "Let's use X for this" (even without stated alternatives)
+- **Technical choices**: Framework selections, architecture patterns, tool adoptions
+- **Implementation strategies**: How to solve a problem, approach to take
+
+Each decision should have:
+- A trigger (problem, requirement, or question that prompted it)
 - Context (background information, constraints)
-- Options (alternatives that were considered)
+- Options (alternatives considered - can be just one if no alternatives mentioned)
 - The actual decision (what was chosen)
 - Rationale (why this choice was made)
 
@@ -136,7 +142,25 @@ Output:
 ]
 ```
 
-### Example 3: No decisions (just discussion)
+### Example 3: Implicit decision (no alternatives stated)
+Conversation:
+"Let's add TypeScript to this component for better type safety. I'll update the imports and add interfaces."
+
+Output:
+```json
+[
+  {{
+    "trigger": "Need for better type safety in component",
+    "context": "Existing component lacks type checking",
+    "options": ["TypeScript"],
+    "decision": "Add TypeScript to the component",
+    "rationale": "Improves type safety and code quality",
+    "confidence": 0.85
+  }}
+]
+```
+
+### Example 4: No decisions (just discussion)
 Conversation:
 "What do you think about microservices? I've heard they can be complex but offer good scalability. We should probably discuss this more with the team before deciding anything."
 
@@ -149,12 +173,16 @@ Output:
 For each decision found, provide:
 - trigger: What prompted the decision (be specific)
 - context: Relevant background (constraints, requirements, team situation)
-- options: All alternatives considered (include the chosen one)
+- options: Alternatives considered (can be just [chosen_option] if no alternatives mentioned)
 - decision: What was decided (clear statement)
-- rationale: Why this choice (key factors)
+- rationale: Why this choice (extract reasoning from context, or "Not explicitly stated" if unclear)
 - confidence: 0.0-1.0 (how clear/complete the decision is)
 
-If no clear decisions are found, return an empty array [].
+**Important**:
+- Extract both explicit decisions (X vs Y) and implicit ones ("Let's use X")
+- Implementation choices count as decisions (e.g., "I'll refactor this using pattern X")
+- If only one option is mentioned, that's still a decision
+- If no clear decisions are found, return an empty array []
 
 ## Conversation to analyze:
 {conversation_text}
@@ -1125,10 +1153,13 @@ class DecisionExtractor:
         """
         decision_id = str(uuid4())
         created_at = datetime.now(UTC).isoformat()
-        # Use source from decision if provided, otherwise use parameter
-        decision_source = getattr(decision, "source", None) or source
+        # Use source parameter (decisions from LLM don't include source field)
+        decision_source = source
         # Use project_name from decision if provided, otherwise use parameter
         decision_project = getattr(decision, "project_name", None) or project_name
+        # Normalize project name to lowercase for consistency
+        if decision_project:
+            decision_project = decision_project.lower()
 
         # KG-P2-4: Build provenance if not provided
         if provenance is None:
