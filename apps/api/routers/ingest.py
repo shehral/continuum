@@ -149,11 +149,13 @@ async def trigger_ingestion(
                         decisions = await extractor.extract_decisions(conversation)
                         decisions_extracted += len(decisions)
 
-                        # Save decisions to Neo4j with source tag
+                        # Save decisions to Neo4j with source tag and project name
                         for decision in decisions:
                             try:
                                 await extractor.save_decision(
-                                    decision, source="claude_logs"
+                                    decision,
+                                    source="claude_logs",
+                                    project_name=conversation.project_name if conversation else None
                                 )
                             except Exception as save_error:
                                 logger.error(
@@ -241,7 +243,11 @@ async def process_changed_file(file_path: str) -> None:
 
                 for decision in decisions:
                     try:
-                        await extractor.save_decision(decision, source="claude_logs")
+                        await extractor.save_decision(
+                            decision,
+                            source="claude_logs",
+                            project_name=conversation.project_name
+                        )
                     except Exception as save_error:
                         logger.error(
                             f"Failed to save decision from {file_path}: "

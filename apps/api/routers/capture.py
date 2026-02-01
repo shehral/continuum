@@ -153,6 +153,7 @@ async def _verify_session_ownership(
 
 @router.post("/sessions", response_model=CaptureSessionSchema)
 async def start_capture_session(
+    project_name: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
@@ -165,6 +166,7 @@ async def start_capture_session(
         id=str(uuid4()),
         user_id=user_id,
         status=SessionStatus.ACTIVE,
+        project_name=project_name,
     )
     db.add(session)
     await db.commit()
@@ -336,10 +338,14 @@ async def complete_capture_session(
             rationale=decision_data.get("rationale", ""),
             confidence=decision_data.get("confidence", 0.8),
             source="interview",  # Tag as human-captured via interview
+            project_name=session.project_name,
         )
-        # Pass user_id for multi-tenant isolation
+        # Pass user_id for multi-tenant isolation and project_name
         decision_id = await extractor.save_decision(
-            decision, source="interview", user_id=user_id
+            decision,
+            source="interview",
+            user_id=user_id,
+            project_name=session.project_name
         )
         logger.info(
             f"Decision saved with ID: {decision_id} for session {session_id} (source: interview)"

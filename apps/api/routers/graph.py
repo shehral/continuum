@@ -108,6 +108,9 @@ async def get_graph(
     source_filter: Optional[str] = Query(
         None, description="Filter by source: claude_logs, interview, manual, unknown"
     ),
+    project_filter: Optional[str] = Query(
+        None, description="Filter by project name"
+    ),
     min_confidence: float = Query(
         0.0, ge=0.0, le=1.0, description="Minimum confidence for relationships"
     ),
@@ -131,26 +134,27 @@ async def get_graph(
             # Calculate pagination offset
             offset = (page - 1) * page_size
 
-            # First, get total count of decisions for pagination metadata
+            # Build WHERE clause for filters
+            where_clauses = ["(d.user_id = $user_id OR d.user_id IS NULL)"]
+            query_params = {"user_id": user_id}
+
             if source_filter:
-                count_query = """
-                    MATCH (d:DecisionTrace)
-                    WHERE (d.user_id = $user_id OR d.user_id IS NULL)
-                    AND (d.source = $source OR (d.source IS NULL AND $source = 'unknown'))
-                    RETURN count(d) as total
-                """
-                count_result = await session.run(
-                    count_query, source=source_filter, user_id=user_id
-                )
-            else:
-                count_result = await session.run(
-                    """
-                    MATCH (d:DecisionTrace)
-                    WHERE d.user_id = $user_id OR d.user_id IS NULL
-                    RETURN count(d) as total
-                    """,
-                    user_id=user_id,
-                )
+                where_clauses.append("(d.source = $source OR (d.source IS NULL AND $source = 'unknown'))")
+                query_params["source"] = source_filter
+
+            if project_filter:
+                where_clauses.append("d.project_name = $project")
+                query_params["project"] = project_filter
+
+            where_clause = " AND ".join(where_clauses)
+
+            # First, get total count of decisions for pagination metadata
+            count_query = f"""
+                MATCH (d:DecisionTrace)
+                WHERE {where_clause}
+                RETURN count(d) as total
+            """
+            count_result = await session.run(count_query, **query_params)
 
             count_record = await count_result.single()
             total_count = count_record["total"] if count_record else 0
@@ -159,38 +163,18 @@ async def get_graph(
             )
             has_more = page < total_pages
 
-            # Build decision query with user isolation, pagination, and optional source filter
-            if source_filter:
-                decision_query = """
-                    MATCH (d:DecisionTrace)
-                    WHERE (d.user_id = $user_id OR d.user_id IS NULL)
-                    AND (d.source = $source OR (d.source IS NULL AND $source = 'unknown'))
-                    RETURN d, d.embedding IS NOT NULL AS has_embedding
-                    ORDER BY d.created_at DESC
-                    SKIP $offset
-                    LIMIT $limit
-                """
-                result = await session.run(
-                    decision_query,
-                    source=source_filter,
-                    user_id=user_id,
-                    offset=offset,
-                    limit=page_size,
-                )
-            else:
-                result = await session.run(
-                    """
-                    MATCH (d:DecisionTrace)
-                    WHERE d.user_id = $user_id OR d.user_id IS NULL
-                    RETURN d, d.embedding IS NOT NULL AS has_embedding
-                    ORDER BY d.created_at DESC
-                    SKIP $offset
-                    LIMIT $limit
-                    """,
-                    user_id=user_id,
-                    offset=offset,
-                    limit=page_size,
-                )
+            # Build decision query with user isolation, pagination, and optional filters
+            decision_query = f"""
+                MATCH (d:DecisionTrace)
+                WHERE {where_clause}
+                RETURN d, d.embedding IS NOT NULL AS has_embedding
+                ORDER BY d.created_at DESC
+                SKIP $offset
+                LIMIT $limit
+            """
+            query_params["offset"] = offset
+            query_params["limit"] = page_size
+            result = await session.run(decision_query, **query_params)
 
             async for record in result:
                 d = record["d"]
@@ -341,6 +325,9 @@ async def get_full_graph(
     source_filter: Optional[str] = Query(
         None, description="Filter by source: claude_logs, interview, manual, unknown"
     ),
+    project_filter: Optional[str] = Query(
+        None, description="Filter by project name"
+    ),
     min_confidence: float = Query(
         0.0, ge=0.0, le=1.0, description="Minimum confidence for relationships"
     ),
@@ -360,26 +347,27 @@ async def get_full_graph(
             edges = []
             decision_ids = set()  # Track which decisions belong to user
 
-            # Build decision query with user isolation and optional source filter
+            # Build WHERE clause for filters
+            where_clauses = ["(d.user_id = $user_id OR d.user_id IS NULL)"]
+            query_params = {"user_id": user_id}
+
             if source_filter:
-                decision_query = """
-                    MATCH (d:DecisionTrace)
-                    WHERE (d.user_id = $user_id OR d.user_id IS NULL)
-                    AND (d.source = $source OR (d.source IS NULL AND $source = 'unknown'))
-                    RETURN d, d.embedding IS NOT NULL AS has_embedding
-                """
-                result = await session.run(
-                    decision_query, source=source_filter, user_id=user_id
-                )
-            else:
-                result = await session.run(
-                    """
-                    MATCH (d:DecisionTrace)
-                    WHERE d.user_id = $user_id OR d.user_id IS NULL
-                    RETURN d, d.embedding IS NOT NULL AS has_embedding
-                    """,
-                    user_id=user_id,
-                )
+                where_clauses.append("(d.source = $source OR (d.source IS NULL AND $source = 'unknown'))")
+                query_params["source"] = source_filter
+
+            if project_filter:
+                where_clauses.append("d.project_name = $project")
+                query_params["project"] = project_filter
+
+            where_clause = " AND ".join(where_clauses)
+
+            # Build decision query with user isolation and optional filters
+            decision_query = f"""
+                MATCH (d:DecisionTrace)
+                WHERE {where_clause}
+                RETURN d, d.embedding IS NOT NULL AS has_embedding
+            """
+            result = await session.run(decision_query, **query_params)
 
             async for record in result:
                 d = record["d"]
@@ -1734,6 +1722,43 @@ async def get_decision_sources(
         # SD-024: Cache the result for 60 seconds
         await set_cached("graph_sources", user_id, sources, ttl=60)
         return sources
+
+
+@router.get("/projects")
+async def get_decision_projects(
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get decision counts by project for the user.
+
+    Returns project names with decision counts. Cached for 60 seconds.
+    """
+    # Check cache first
+    cached = await get_cached("graph_projects", user_id)
+    if cached is not None:
+        logger.debug(f"Returning cached graph projects for user {user_id}")
+        return cached
+
+    session = await get_neo4j_session()
+    async with session:
+        result = await session.run(
+            """
+            MATCH (d:DecisionTrace)
+            WHERE d.user_id = $user_id OR d.user_id IS NULL
+            RETURN
+                COALESCE(d.project_name, 'unassigned') as project,
+                count(d) as count
+            ORDER BY count DESC
+            """,
+            user_id=user_id,
+        )
+
+        projects = {}
+        async for record in result:
+            projects[record["project"]] = record["count"]
+
+        # Cache the result for 60 seconds
+        await set_cached("graph_projects", user_id, projects, ttl=60)
+        return projects
 
 
 @router.post("/tag-sources")

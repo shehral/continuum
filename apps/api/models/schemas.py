@@ -93,11 +93,13 @@ class Decision(DecisionBase):
     created_at: datetime
     entities: list[Entity]
     source: str = DecisionSource.UNKNOWN  # Where this decision came from
+    project_name: Optional[str] = None  # Project this decision belongs to
 
 
 class DecisionCreate(DecisionBase):
     confidence: float = Field(0.8, ge=0.0, le=1.0)
     source: str = DecisionSource.UNKNOWN
+    project_name: Optional[str] = Field(None, max_length=200)
 
 
 class DecisionUpdate(BaseModel):

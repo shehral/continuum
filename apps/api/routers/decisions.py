@@ -33,6 +33,7 @@ class ManualDecisionInput(BaseModel):
     rationale: str
     entities: list[str] = []  # Entity names to link (optional manual override)
     auto_extract: bool = True  # Whether to auto-extract entities
+    project_name: Optional[str] = None  # Project this decision belongs to
 
 
 @router.get("", response_model=list[Decision])
@@ -329,13 +330,17 @@ async def create_decision(
         decision=input.decision,
         rationale=input.rationale,
         source="manual",
+        project_name=input.project_name,
     )
 
     if input.auto_extract:
         # Use the enhanced extractor for automatic entity extraction
         extractor = get_extractor()
         decision_id = await extractor.save_decision(
-            decision_create, source="manual", user_id=user_id
+            decision_create,
+            source="manual",
+            user_id=user_id,
+            project_name=input.project_name
         )
     else:
         # Manual creation without extraction
@@ -356,7 +361,8 @@ async def create_decision(
                     confidence: 1.0,
                     created_at: $created_at,
                     source: 'manual',
-                    user_id: $user_id
+                    user_id: $user_id,
+                    project_name: $project_name
                 })
                 """,
                 id=decision_id,
@@ -367,6 +373,7 @@ async def create_decision(
                 rationale=input.rationale,
                 created_at=created_at,
                 user_id=user_id,
+                project_name=input.project_name,
             )
 
             # Create and link manually specified entities

@@ -1103,6 +1103,7 @@ class DecisionExtractor:
         provenance: Optional[Provenance] = None,
         source_path: Optional[str] = None,
         message_index: Optional[int] = None,
+        project_name: Optional[str] = None,
     ) -> str:
         """Save a decision to Neo4j with embeddings, rich relationships, and provenance (KG-P2-4).
 
@@ -1117,6 +1118,7 @@ class DecisionExtractor:
             provenance: Optional provenance information for data lineage (KG-P2-4)
             source_path: Optional path to source file for provenance tracking
             message_index: Optional index of message in conversation
+            project_name: Optional project this decision belongs to
 
         Returns:
             The ID of the created decision
@@ -1125,6 +1127,8 @@ class DecisionExtractor:
         created_at = datetime.now(UTC).isoformat()
         # Use source from decision if provided, otherwise use parameter
         decision_source = getattr(decision, "source", None) or source
+        # Use project_name from decision if provided, otherwise use parameter
+        decision_project = getattr(decision, "project_name", None) or project_name
 
         # KG-P2-4: Build provenance if not provided
         if provenance is None:
@@ -1183,6 +1187,7 @@ class DecisionExtractor:
                         created_at: $created_at,
                         source: $source,
                         user_id: $user_id,
+                        project_name: $project_name,
                         embedding: $embedding,
                         provenance: $provenance,
                         extraction_method: $extraction_method,
@@ -1199,6 +1204,7 @@ class DecisionExtractor:
                     created_at=created_at,
                     source=decision_source,
                     user_id=user_id,
+                    project_name=decision_project,
                     embedding=embedding,
                     provenance=provenance_json,
                     extraction_method=provenance.extraction.method.value
@@ -1220,6 +1226,7 @@ class DecisionExtractor:
                         created_at: $created_at,
                         source: $source,
                         user_id: $user_id,
+                        project_name: $project_name,
                         provenance: $provenance,
                         extraction_method: $extraction_method,
                         created_by: $created_by
@@ -1235,6 +1242,7 @@ class DecisionExtractor:
                     created_at=created_at,
                     source=decision_source,
                     user_id=user_id,
+                    project_name=decision_project,
                     provenance=provenance_json,
                     extraction_method=provenance.extraction.method.value
                     if provenance
