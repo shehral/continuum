@@ -33,6 +33,11 @@ Automatically extract decisions from your Claude Code conversation history with 
 
 ![Import Claude Logs](media/import-logs.gif)
 
+### AI-Guided Interview Capture
+Document decisions through a guided conversation with an AI interviewer that extracts structured decision traces.
+
+![Capture Session](media/capture-session.gif)
+
 ### Interactive Knowledge Graph
 Explore decisions and entities as an interactive graph with filtering, search, and relationship visualization.
 
