@@ -189,6 +189,23 @@ async def init_postgres():
         operation_name="PostgreSQL table creation",
     )
 
+    # Seed the anonymous user if it doesn't exist (required for unauthenticated sessions)
+    async with async_session_maker() as session:
+        from sqlalchemy import text
+
+        result = await session.execute(
+            text("SELECT id FROM users WHERE id = 'anonymous'")
+        )
+        if result.scalar_one_or_none() is None:
+            await session.execute(
+                text(
+                    "INSERT INTO users (id, email, password_hash, name, created_at, updated_at) "
+                    "VALUES ('anonymous', 'anonymous@localhost', '', 'Anonymous', NOW(), NOW())"
+                )
+            )
+            await session.commit()
+            logger.info("Seeded anonymous user for unauthenticated access")
+
     logger.info("PostgreSQL connection pool initialized successfully")
 
 

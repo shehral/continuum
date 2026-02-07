@@ -281,6 +281,8 @@ async def get_graph(
                         or record.get("confidence")
                         or 1.0
                     )
+                    # Clamp to [0, 1] to handle floating point precision
+                    weight = max(0.0, min(1.0, weight))
 
                     edges.append(
                         GraphEdge(
@@ -486,6 +488,8 @@ async def get_full_graph(
                     or record.get("confidence")
                     or 1.0
                 )
+                # Clamp to [0, 1] to handle floating point precision
+                weight = max(0.0, min(1.0, weight))
 
                 edges.append(
                     GraphEdge(
@@ -628,6 +632,9 @@ async def get_node_neighbors(
                     or record.get("score")
                     or record.get("confidence")
                 )
+                # Clamp to [0, 1] to handle floating point precision
+                if weight is not None:
+                    weight = max(0.0, min(1.0, weight))
 
                 neighbors.append(
                     NeighborNode(
@@ -699,6 +706,9 @@ async def get_node_neighbors(
                     or record.get("score")
                     or record.get("confidence")
                 )
+                # Clamp to [0, 1] to handle floating point precision
+                if weight is not None:
+                    weight = max(0.0, min(1.0, weight))
 
                 neighbors.append(
                     NeighborNode(
