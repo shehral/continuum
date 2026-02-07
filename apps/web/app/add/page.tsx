@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -17,6 +17,8 @@ import {
   Trash2,
   RefreshCw,
   FileStack,
+  XCircle,
+  StopCircle,
 } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
@@ -40,11 +42,12 @@ import {
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Progress } from "@/components/ui/progress"
 import { FileBrowser } from "@/components/import/file-browser"
 import { ProjectSelector } from "@/components/projects/project-selector"
 import { api } from "@/lib/api"
 
-type IngestionStatus = "idle" | "running" | "success" | "error"
+type IngestionStatus = "idle" | "running" | "success" | "error" | "cancelled"
 
 export default function AddKnowledgePage() {
   const router = useRouter()
@@ -54,11 +57,56 @@ export default function AddKnowledgePage() {
   const [selectedProject, setSelectedProject] = useState<string>("all")
   const [showPreview, setShowPreview] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
 
   // Selective import state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([])
   const [targetProject, setTargetProject] = useState<string | null>(null)
   const [showFileBrowser, setShowFileBrowser] = useState(false)
+
+  // Import progress tracking
+  const { data: importProgress, refetch: refetchProgress } = useQuery({
+    queryKey: ["import-progress"],
+    queryFn: () => api.getImportProgress(),
+    refetchInterval: ingestionStatus === "running" ? 1000 : false,
+    enabled: ingestionStatus === "running",
+  })
+
+  // Update local state based on progress
+  useEffect(() => {
+    if (importProgress) {
+      if (importProgress.status === "running" || importProgress.status === "starting") {
+        setIngestionStatus("running")
+      } else if (importProgress.status === "completed" || importProgress.status.startsWith("completed")) {
+        setIngestionStatus("success")
+        setIngestionResult({
+          processed: importProgress.processed_files,
+          decisions: importProgress.decisions_extracted,
+        })
+        queryClient.invalidateQueries({ queryKey: ["decisions"] })
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
+        queryClient.invalidateQueries({ queryKey: ["graph"] })
+      } else if (importProgress.status === "cancelled") {
+        setIngestionStatus("cancelled")
+        setIngestionResult({
+          processed: importProgress.processed_files,
+          decisions: importProgress.decisions_extracted,
+        })
+      } else if (importProgress.status.startsWith("error")) {
+        setIngestionStatus("error")
+      }
+    }
+  }, [importProgress, queryClient])
+
+  // Check for existing running import on mount
+  useEffect(() => {
+    api.getImportProgress().then((progress) => {
+      if (progress.status === "running" || progress.status === "starting") {
+        setIngestionStatus("running")
+        setCurrentJobId(progress.job_id)
+      }
+    })
+  }, [])
 
   // Fetch available projects
   const { data: projects, isLoading: projectsLoading } = useQuery({
@@ -98,13 +146,16 @@ export default function AddKnowledgePage() {
     }),
     onMutate: () => {
       setIngestionStatus("running")
+      setIngestionResult(null)
     },
     onSuccess: (data) => {
-      setIngestionStatus("success")
-      setIngestionResult({ processed: data.processed, decisions: data.decisions_extracted })
-      queryClient.invalidateQueries({ queryKey: ["decisions"] })
-      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
-      queryClient.invalidateQueries({ queryKey: ["graph"] })
+      if (data.status === "started") {
+        setCurrentJobId(data.job_id)
+        // Progress polling will handle the rest
+      } else if (data.status === "no_files") {
+        setIngestionStatus("idle")
+        setIngestionResult({ processed: 0, decisions: 0 })
+      }
     },
     onError: () => {
       setIngestionStatus("error")
@@ -115,18 +166,27 @@ export default function AddKnowledgePage() {
     mutationFn: () => api.importSelectedFiles(selectedFiles, targetProject),
     onMutate: () => {
       setIngestionStatus("running")
+      setIngestionResult(null)
     },
     onSuccess: (data) => {
-      setIngestionStatus("success")
-      setIngestionResult({ processed: data.processed, decisions: data.decisions_extracted })
-      queryClient.invalidateQueries({ queryKey: ["decisions"] })
-      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
-      queryClient.invalidateQueries({ queryKey: ["graph"] })
-      setSelectedFiles([])
-      setShowFileBrowser(false)
+      if (data.status === "started") {
+        setCurrentJobId(data.job_id)
+        setSelectedFiles([])
+        setShowFileBrowser(false)
+        // Progress polling will handle the rest
+      } else if (data.status === "no_valid_files") {
+        setIngestionStatus("error")
+      }
     },
     onError: () => {
       setIngestionStatus("error")
+    },
+  })
+
+  const cancelMutation = useMutation({
+    mutationFn: () => api.cancelImport(),
+    onSuccess: () => {
+      // Status will update via progress polling
     },
   })
 
@@ -237,11 +297,59 @@ export default function AddKnowledgePage() {
               </Button>
             </div>
 
+            {/* Progress Bar */}
+            {ingestionStatus === "running" && importProgress && (
+              <div className="space-y-3 p-4 bg-white/[0.03] rounded-lg border border-white/[0.06]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+                    <span className="text-sm font-medium text-slate-200">
+                      Importing... {importProgress.processed_files}/{importProgress.total_files} files
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => cancelMutation.mutate()}
+                    disabled={cancelMutation.isPending}
+                    className="text-red-400 border-red-400/30 hover:bg-red-400/10"
+                  >
+                    {cancelMutation.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <StopCircle className="h-3 w-3 mr-1" />
+                    )}
+                    Cancel
+                  </Button>
+                </div>
+                <Progress
+                  value={importProgress.total_files > 0
+                    ? (importProgress.processed_files / importProgress.total_files) * 100
+                    : 0}
+                  className="h-2"
+                />
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>
+                    {importProgress.current_file
+                      ? `Processing: ${importProgress.current_file}`
+                      : "Starting..."}
+                  </span>
+                  <span>{importProgress.decisions_extracted} decisions extracted</span>
+                </div>
+              </div>
+            )}
+
             {/* Status Messages */}
             {ingestionStatus === "success" && ingestionResult && (
               <div className="flex items-center gap-2 text-sm text-green-400 bg-green-400/10 px-3 py-2 rounded-lg">
                 <CheckCircle2 className="h-4 w-4" />
                 Processed {ingestionResult.processed} files, extracted {ingestionResult.decisions} decisions
+              </div>
+            )}
+            {ingestionStatus === "cancelled" && ingestionResult && (
+              <div className="flex items-center gap-2 text-sm text-amber-400 bg-amber-400/10 px-3 py-2 rounded-lg">
+                <XCircle className="h-4 w-4" />
+                Import cancelled. Processed {ingestionResult.processed} files, extracted {ingestionResult.decisions} decisions
               </div>
             )}
             {ingestionStatus === "error" && (

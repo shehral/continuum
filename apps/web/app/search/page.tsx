@@ -12,12 +12,12 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { api, type Decision, type Entity } from "@/lib/api"
+import { api, type SearchResult } from "@/lib/api"
 import { getEntityStyle } from "@/lib/constants"
 
 // Type guard to check if result is a Decision
-function isDecision(result: Decision | Entity): result is Decision {
-  return "trigger" in result && "decision" in result
+function isDecisionResult(result: SearchResult): boolean {
+  return result.type === "decision"
 }
 
 export default function SearchPage() {
@@ -113,50 +113,55 @@ export default function SearchPage() {
               </div>
             )}
 
-            {results?.map((result, index) => (
-              <Card
-                key={result.id}
-                className="bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4"
-                style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'backwards' }}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    {isDecision(result) ? (
-                      <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">
-                        📋 Decision
-                      </Badge>
+            {results?.map((result, index) => {
+              const isDecision = isDecisionResult(result)
+              const entityType = result.data.type || "concept"
+
+              return (
+                <Card
+                  key={result.id}
+                  className="bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4"
+                  style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'backwards' }}
+                >
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center gap-2">
+                      {isDecision ? (
+                        <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">
+                          📋 Decision
+                        </Badge>
+                      ) : (
+                        <Badge className={`${getEntityStyle(entityType).bg} ${getEntityStyle(entityType).text} ${getEntityStyle(entityType).border}`}>
+                          {getEntityStyle(entityType).icon} {entityType}
+                        </Badge>
+                      )}
+                      <CardTitle className="text-base text-slate-200 group-hover:text-cyan-300 transition-colors">
+                        {result.label}
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {isDecision ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <p className="text-sm text-slate-400 line-clamp-2 cursor-help">
+                              {result.data.decision}
+                            </p>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-sm">
+                            <p>{result.data.decision}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     ) : (
-                      <Badge className={`${getEntityStyle(result.type).bg} ${getEntityStyle(result.type).text} ${getEntityStyle(result.type).border}`}>
-                        {getEntityStyle(result.type).icon} {result.type}
-                      </Badge>
+                      <p className="text-sm text-slate-500">
+                        Click to view in knowledge graph
+                      </p>
                     )}
-                    <CardTitle className="text-base text-slate-200 group-hover:text-cyan-300 transition-colors">
-                      {isDecision(result) ? result.trigger : result.name}
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {isDecision(result) ? (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <p className="text-sm text-slate-400 line-clamp-2 cursor-help">
-                            {result.decision}
-                          </p>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-sm">
-                          <p>{result.decision}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ) : (
-                    <p className="text-sm text-slate-500">
-                      Click to view in knowledge graph
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         </ScrollArea>
       </div>

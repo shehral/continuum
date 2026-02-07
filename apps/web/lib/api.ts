@@ -61,6 +61,23 @@ export interface SimilarDecision {
   shared_entities: string[]
 }
 
+// Search result from /api/search endpoint
+export interface SearchResult {
+  type: "decision" | "entity"
+  id: string
+  label: string
+  score: number
+  data: {
+    // Decision fields
+    trigger?: string
+    decision?: string
+    confidence?: number
+    // Entity fields
+    name?: string
+    type?: string
+  }
+}
+
 export interface GraphStats {
   decisions: { total: number; with_embeddings: number }
   entities: { total: number; with_embeddings: number }
@@ -276,11 +293,11 @@ class ApiClient {
   async triggerIngestion(options?: {
     project?: string
     exclude?: string[]
-  }): Promise<{ status: string; processed: number; decisions_extracted: number }> {
+  }): Promise<{ status: string; job_id: string | null; total_files: number }> {
     const params = new URLSearchParams()
     if (options?.project) params.append("project", options.project)
     if (options?.exclude?.length) params.append("exclude", options.exclude.join(","))
-    return this.fetch<{ status: string; processed: number; decisions_extracted: number }>(
+    return this.fetch<{ status: string; job_id: string | null; total_files: number }>(
       `/api/ingest/trigger?${params}`,
       { method: "POST" }
     )
@@ -316,8 +333,8 @@ class ApiClient {
   async importSelectedFiles(
     filePaths: string[],
     targetProject?: string | null
-  ): Promise<{ status: string; processed: number; decisions_extracted: number }> {
-    return this.fetch<{ status: string; processed: number; decisions_extracted: number }>(
+  ): Promise<{ status: string; job_id: string; total_files: number; validation_errors?: string[] }> {
+    return this.fetch<{ status: string; job_id: string; total_files: number; validation_errors?: string[] }>(
       "/api/ingest/import-selected",
       {
         method: "POST",
@@ -329,6 +346,24 @@ class ApiClient {
     )
   }
 
+  async getImportProgress(): Promise<{
+    job_id: string | null
+    status: string
+    total_files: number
+    processed_files: number
+    current_file: string | null
+    decisions_extracted: number
+    errors: string[]
+    started_at: string | null
+    completed_at: string | null
+  }> {
+    return this.fetch("/api/ingest/import/progress")
+  }
+
+  async cancelImport(): Promise<{ status: string; job_id: string }> {
+    return this.fetch("/api/ingest/import/cancel", { method: "POST" })
+  }
+
   async resetGraph(): Promise<{ status: string; message: string }> {
     return this.fetch("/api/graph/reset?confirm=true", { method: "DELETE" })
   }
@@ -337,10 +372,10 @@ class ApiClient {
   async search(
     query: string,
     type?: "decision" | "entity"
-  ): Promise<(Decision | Entity)[]> {
+  ): Promise<SearchResult[]> {
     const params = new URLSearchParams({ query })
     if (type) params.append("type", type)
-    return this.fetch<(Decision | Entity)[]>(`/api/search?${params}`)
+    return this.fetch<SearchResult[]>(`/api/search?${params}`)
   }
 
   // Create decision manually

@@ -494,8 +494,9 @@ function KnowledgeGraphInner({
         position: { x: 0, y: 0 }, // Will be set by layout
         data: {
           label: node.label,
-          decision: node.type === "decision" ? node.data : undefined,
-          entity: node.type === "entity" ? node.data : undefined,
+          // Include the node.id in the decision/entity data for related decisions lookup
+          decision: node.type === "decision" ? { ...node.data, id: node.id } : undefined,
+          entity: node.type === "entity" ? { ...node.data, id: node.id } : undefined,
           hasEmbedding: node.has_embedding,
           isFocused: false,
           isHighlighted,
@@ -882,8 +883,9 @@ function KnowledgeGraphInner({
         proOptions={{ hideAttribution: true }}
       >
         <Controls
-          className="!bg-slate-800/80 !border-white/10 !rounded-xl [&>button]:!bg-slate-700/50 [&>button]:!border-white/10 [&>button]:!text-slate-300 [&>button:hover]:!bg-slate-600/50"
+          className="!bg-slate-800/80 !border-white/10 !rounded-xl !shadow-xl [&>button]:!bg-slate-700/50 [&>button]:!border-white/10 [&>button]:!text-slate-300 [&>button:hover]:!bg-slate-600/50 !left-4 !bottom-4"
           aria-label="Graph controls"
+          showInteractive={false}
         />
         <MiniMap
           nodeColor={(node) =>
@@ -900,282 +902,238 @@ function KnowledgeGraphInner({
           color="rgba(148, 163, 184, 0.15)"
         />
 
-        {/* Source Filter Panel */}
-        {showSourceLegend && (
-          <Panel position="top-left" className="m-4">
-            <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10">
-              <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
-                  <Bot className="h-4 w-4" aria-hidden="true" /> Decision Sources
-                </CardTitle>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowSourceLegend(false)}
-                        className="h-6 w-6 text-slate-400 hover:text-slate-200"
-                        aria-label="Close source legend"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Close panel</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </CardHeader>
-              <CardContent className="py-2 px-4 space-y-1.5">
-                {/* All sources button */}
-                <button
-                  onClick={() => handleSourceFilterClick(null)}
-                  aria-pressed={!sourceFilter}
-                  aria-label="Show all decision sources"
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
-                    !sourceFilter
-                      ? "bg-white/10 border border-white/20"
-                      : "hover:bg-white/5"
-                  }`}
-                >
-                  <div className="w-4 h-4 rounded bg-gradient-to-br from-slate-600 to-slate-700 border border-white/20" aria-hidden="true" />
-                  <span className="text-xs text-slate-300 flex-1 text-left">All Sources</span>
-                  <Badge className="text-[9px] px-1.5 py-0 bg-slate-700 text-slate-300 border-slate-600">
-                    {Object.values(sourceCounts).reduce((a, b) => a + b, 0)}
-                  </Badge>
-                </button>
-
-                {/* Individual source filters */}
-                {Object.entries(SOURCE_STYLES).map(([key, style]) => {
-                  const count = sourceCounts[key] || 0
-                  if (count === 0 && key !== "unknown") return null
-                  const badgeStyle = SOURCE_BADGE_STYLES[key as keyof typeof SOURCE_BADGE_STYLES] || SOURCE_BADGE_STYLES.unknown
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => handleSourceFilterClick(sourceFilter === key ? null : key)}
-                      aria-pressed={sourceFilter === key}
-                      aria-label={`Filter by ${style.label}`}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
-                        sourceFilter === key
-                          ? "bg-white/10 border border-white/20"
-                          : "hover:bg-white/5"
-                      }`}
-                    >
-                      {style.icon}
-                      <span className="text-xs text-slate-300 flex-1 text-left">{style.label}</span>
-                      <Badge
-                        className="text-[9px] px-1.5 py-0"
-                        style={{
-                          backgroundColor: badgeStyle.backgroundColor,
-                          color: badgeStyle.color,
-                          borderColor: "transparent",
-                        }}
-                      >
-                        {count}
-                      </Badge>
-                    </button>
-                  )
-                })}
-
-                <div className="pt-2 mt-2 border-t border-white/10">
-                  <p className="text-[10px] text-slate-500">
-                    {sourceFilter && sourceFilter !== ""
-                      ? `Showing ${sourceCounts[sourceFilter] || 0} ${SOURCE_STYLES[sourceFilter]?.label || sourceFilter} decisions`
-                      : "Click to filter by source"}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </Panel>
-        )}
-
-        {/* Project Filter Panel - positioned below Source Filter */}
-        {showProjectFilter && (
-          <Panel position="top-left" className="m-4" style={{ marginTop: showSourceLegend ? '292px' : '16px' }}>
-            <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10">
-              <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
-                  <FolderOpen className="h-4 w-4" aria-hidden="true" /> Projects
-                </CardTitle>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowProjectFilter(false)}
-                        className="h-6 w-6 text-slate-400 hover:text-slate-200"
-                        aria-label="Close project filter"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Close panel</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </CardHeader>
-              <CardContent className="py-2 px-4 space-y-2">
-                {/* All Projects button */}
-                <button
-                  onClick={() => onProjectFilterChange?.(null)}
-                  className={`w-full text-left px-3 py-2 rounded-md transition-all text-sm flex items-center justify-between ${
-                    projectFilter === null
-                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-                      : "bg-white/5 text-slate-300 hover:bg-white/10 border border-transparent"
-                  }`}
-                  aria-pressed={projectFilter === null}
-                  aria-label="Show all projects"
-                >
-                  <span>All Projects</span>
-                  <Badge
-                    variant="secondary"
-                    className={projectFilter === null ? "bg-cyan-500/30 text-cyan-200" : "bg-slate-700 text-slate-300"}
+        {/* Left Side Panels - Stacked vertically */}
+        <Panel position="top-left" className="m-4">
+          <div className="flex flex-col gap-3 max-h-[calc(100vh-180px)] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
+            {/* Source Filter Panel */}
+            {showSourceLegend && (
+              <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10 shrink-0">
+                <CardHeader className="py-2 px-3 flex flex-row items-center justify-between">
+                  <CardTitle className="text-xs text-slate-200 flex items-center gap-2">
+                    <Bot className="h-3.5 w-3.5" aria-hidden="true" /> Sources
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowSourceLegend(false)}
+                    className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                    aria-label="Close source legend"
                   >
-                    {Object.values(projectCounts).reduce((sum, count) => sum + count, 0)}
-                  </Badge>
-                </button>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="py-1.5 px-3 space-y-1">
+                  {/* All sources button */}
+                  <button
+                    onClick={() => handleSourceFilterClick(null)}
+                    aria-pressed={!sourceFilter}
+                    aria-label="Show all decision sources"
+                    className={`w-full flex items-center gap-2 px-2 py-1 rounded-md transition-colors text-[11px] ${
+                      !sourceFilter
+                        ? "bg-white/10 border border-white/20"
+                        : "hover:bg-white/5"
+                    }`}
+                  >
+                    <div className="w-3 h-3 rounded bg-gradient-to-br from-slate-600 to-slate-700 border border-white/20" aria-hidden="true" />
+                    <span className="text-slate-300 flex-1 text-left">All</span>
+                    <Badge className="text-[9px] px-1 py-0 bg-slate-700 text-slate-300 border-slate-600">
+                      {Object.values(sourceCounts).reduce((a, b) => a + b, 0)}
+                    </Badge>
+                  </button>
 
-                {/* Individual project buttons */}
-                {Object.entries(projectCounts)
-                  .filter(([name]) => name !== "unassigned" || projectCounts[name] > 0)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([project, count]) => (
-                    <button
-                      key={project}
-                      onClick={() => onProjectFilterChange?.(projectFilter === project ? null : project)}
-                      className={`w-full text-left px-3 py-2 rounded-md transition-all text-sm flex items-center justify-between ${
-                        projectFilter === project
-                          ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-                          : "bg-white/5 text-slate-300 hover:bg-white/10 border border-transparent"
-                      }`}
-                      aria-pressed={projectFilter === project}
-                      aria-label={`Filter by project: ${project}`}
-                    >
-                      <span className="truncate">{project}</span>
-                      <Badge
-                        variant="secondary"
-                        className={
-                          projectFilter === project ? "bg-cyan-500/30 text-cyan-200" : "bg-slate-700 text-slate-300"
-                        }
+                  {/* Individual source filters */}
+                  {Object.entries(SOURCE_STYLES).map(([key, style]) => {
+                    const count = sourceCounts[key] || 0
+                    if (count === 0 && key !== "unknown") return null
+                    const badgeStyle = SOURCE_BADGE_STYLES[key as keyof typeof SOURCE_BADGE_STYLES] || SOURCE_BADGE_STYLES.unknown
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => handleSourceFilterClick(sourceFilter === key ? null : key)}
+                        aria-pressed={sourceFilter === key}
+                        aria-label={`Filter by ${style.label}`}
+                        className={`w-full flex items-center gap-2 px-2 py-1 rounded-md transition-colors text-[11px] ${
+                          sourceFilter === key
+                            ? "bg-white/10 border border-white/20"
+                            : "hover:bg-white/5"
+                        }`}
                       >
-                        {count}
-                      </Badge>
-                    </button>
-                  ))}
+                        <span className="[&>svg]:h-3 [&>svg]:w-3">{style.icon}</span>
+                        <span className="text-slate-300 flex-1 text-left">{style.label}</span>
+                        <Badge
+                          className="text-[9px] px-1 py-0"
+                          style={{
+                            backgroundColor: badgeStyle.backgroundColor,
+                            color: badgeStyle.color,
+                            borderColor: "transparent",
+                          }}
+                        >
+                          {count}
+                        </Badge>
+                      </button>
+                    )
+                  })}
+                </CardContent>
+              </Card>
+            )}
 
-                <div className="pt-2 mt-2 border-t border-white/10">
-                  <p className="text-[10px] text-slate-500">
-                    {projectFilter
-                      ? `Showing ${projectCounts[projectFilter] || 0} decisions in ${projectFilter}`
-                      : "Click to filter by project"}
-                  </p>
+            {/* Project Filter Panel */}
+            {showProjectFilter && (
+              <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10 shrink-0">
+                <CardHeader className="py-2 px-3 flex flex-row items-center justify-between">
+                  <CardTitle className="text-xs text-slate-200 flex items-center gap-2">
+                    <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" /> Projects
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowProjectFilter(false)}
+                    className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                    aria-label="Close project filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="py-1.5 px-3 space-y-1">
+                  {/* All Projects button */}
+                  <button
+                    onClick={() => onProjectFilterChange?.(null)}
+                    className={`w-full text-left px-2 py-1 rounded-md transition-all text-[11px] flex items-center justify-between ${
+                      projectFilter === null
+                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                        : "bg-white/5 text-slate-300 hover:bg-white/10 border border-transparent"
+                    }`}
+                    aria-pressed={projectFilter === null}
+                    aria-label="Show all projects"
+                  >
+                    <span>All Projects</span>
+                    <Badge
+                      variant="secondary"
+                      className={`text-[9px] px-1 py-0 ${projectFilter === null ? "bg-cyan-500/30 text-cyan-200" : "bg-slate-700 text-slate-300"}`}
+                    >
+                      {Object.values(projectCounts).reduce((sum, count) => sum + count, 0)}
+                    </Badge>
+                  </button>
+
+                  {/* Individual project buttons - limited to prevent overflow */}
+                  <div className="max-h-[120px] overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-slate-600">
+                    {Object.entries(projectCounts)
+                      .filter(([name]) => name !== "unassigned" || projectCounts[name] > 0)
+                      .sort(([, a], [, b]) => b - a)
+                      .map(([project, count]) => (
+                        <button
+                          key={project}
+                          onClick={() => onProjectFilterChange?.(projectFilter === project ? null : project)}
+                          className={`w-full text-left px-2 py-1 rounded-md transition-all text-[11px] flex items-center justify-between ${
+                            projectFilter === project
+                              ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                              : "bg-white/5 text-slate-300 hover:bg-white/10 border border-transparent"
+                          }`}
+                          aria-pressed={projectFilter === project}
+                          aria-label={`Filter by project: ${project}`}
+                        >
+                          <span className="truncate max-w-[100px]">{project}</span>
+                          <Badge
+                            variant="secondary"
+                            className={`text-[9px] px-1 py-0 shrink-0 ${
+                              projectFilter === project ? "bg-cyan-500/30 text-cyan-200" : "bg-slate-700 text-slate-300"
+                            }`}
+                          >
+                            {count}
+                          </Badge>
+                        </button>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Entity Types Legend */}
+            <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10 shrink-0" role="region" aria-label="Entity types legend">
+              <CardHeader className="py-2 px-3">
+                <CardTitle className="text-xs text-slate-200 flex items-center gap-2">
+                  <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" /> Entity Types
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="py-1.5 px-3 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-blue-500/20 border border-blue-400 flex items-center justify-center" aria-hidden="true">
+                    <Atom className="h-2.5 w-2.5 text-blue-400" />
+                  </div>
+                  <span className="text-[11px] text-slate-300">Concept</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-green-500/20 border border-green-400 flex items-center justify-center" aria-hidden="true">
+                    <Server className="h-2.5 w-2.5 text-green-400" />
+                  </div>
+                  <span className="text-[11px] text-slate-300">System</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-orange-500/20 border border-orange-400 flex items-center justify-center" aria-hidden="true">
+                    <Code className="h-2.5 w-2.5 text-orange-400" />
+                  </div>
+                  <span className="text-[11px] text-slate-300">Technology</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-purple-500/20 border border-purple-400 flex items-center justify-center" aria-hidden="true">
+                    <User className="h-2.5 w-2.5 text-purple-400" />
+                  </div>
+                  <span className="text-[11px] text-slate-300">Person</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-pink-500/20 border border-pink-400 flex items-center justify-center" aria-hidden="true">
+                    <Target className="h-2.5 w-2.5 text-pink-400" />
+                  </div>
+                  <span className="text-[11px] text-slate-300">Pattern</span>
+                </div>
+                <div className="flex items-center gap-2 pt-1 border-t border-white/10 mt-1">
+                  <Sparkles className="h-3.5 w-3.5 text-purple-400" aria-hidden="true" />
+                  <span className="text-[10px] text-slate-400">= Has embedding</span>
                 </div>
               </CardContent>
             </Card>
-          </Panel>
-        )}
-
-        {/* Node Type Legend - positioned below Source Filter and Project Filter when visible */}
-        <Panel
-          position="top-left"
-          className="m-4"
-          style={{
-            marginTop: showSourceLegend && showProjectFilter ? '572px' :
-                      showSourceLegend ? '292px' :
-                      showProjectFilter ? '292px' :
-                      '16px'
-          }}
-        >
-          <Card className="w-52 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Entity types legend">
-            <CardHeader className="py-3 px-4">
-              <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" aria-hidden="true" /> Entity Types
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="py-2 px-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-blue-500/20 border-2 border-blue-400 flex items-center justify-center" aria-hidden="true">
-                  <Atom className="h-3 w-3 text-blue-400" />
-                </div>
-                <span className="text-xs text-slate-300">Concept</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-green-500/20 border-2 border-green-400 flex items-center justify-center" aria-hidden="true">
-                  <Server className="h-3 w-3 text-green-400" />
-                </div>
-                <span className="text-xs text-slate-300">System</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-orange-500/20 border-2 border-orange-400 flex items-center justify-center" aria-hidden="true">
-                  <Code className="h-3 w-3 text-orange-400" />
-                </div>
-                <span className="text-xs text-slate-300">Technology</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-purple-500/20 border-2 border-purple-400 flex items-center justify-center" aria-hidden="true">
-                  <User className="h-3 w-3 text-purple-400" />
-                </div>
-                <span className="text-xs text-slate-300">Person</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-pink-500/20 border-2 border-pink-400 flex items-center justify-center" aria-hidden="true">
-                  <Target className="h-3 w-3 text-pink-400" />
-                </div>
-                <span className="text-xs text-slate-300">Pattern</span>
-              </div>
-              <div className="flex items-center gap-2 pt-1 border-t border-white/10 mt-2">
-                <Sparkles className="h-4 w-4 text-purple-400" aria-hidden="true" />
-                <span className="text-xs text-slate-400">= Has embedding</span>
-              </div>
-            </CardContent>
-          </Card>
+          </div>
         </Panel>
 
         {/* Relationship Legend */}
         {showRelationshipLegend && (
           <Panel position="top-right" className="m-4">
-            <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Relationship types legend">
-              <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm text-slate-200 flex items-center gap-2">
-                  <GitBranch className="h-4 w-4" aria-hidden="true" /> Relationships
+            <Card className="w-44 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Relationship types legend">
+              <CardHeader className="py-2 px-3 flex flex-row items-center justify-between">
+                <CardTitle className="text-xs text-slate-200 flex items-center gap-2">
+                  <GitBranch className="h-3.5 w-3.5" aria-hidden="true" /> Relationships
                 </CardTitle>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowRelationshipLegend(false)}
-                        className="h-6 w-6 text-slate-400 hover:text-slate-200"
-                        aria-label="Close relationship legend"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Close panel</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowRelationshipLegend(false)}
+                  className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                  aria-label="Close relationship legend"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
               </CardHeader>
-              <CardContent className="py-2 px-4 space-y-1.5">
+              <CardContent className="py-1.5 px-3 space-y-1">
                 {Object.entries(RELATIONSHIP_STYLES).map(([key, style]) => {
                   const count = relationshipCounts[key] || 0
                   if (count === 0 && key !== "INVOLVES") return null
                   return (
-                    <div key={key} className="flex items-center gap-2">
+                    <div key={key} className="flex items-center gap-1.5 text-[11px]">
                       <div
-                        className="w-6 h-0.5 rounded"
+                        className="w-4 h-0.5 rounded shrink-0"
                         style={{
                           backgroundColor: style.color,
                           opacity: count > 0 ? 1 : 0.3,
                         }}
                         aria-hidden="true"
                       />
-                      <span className="text-xs text-slate-300 flex-1">
-                        {style.icon} {style.label}
+                      <span className="text-slate-300 flex-1 flex items-center gap-1">
+                        <span className="[&>svg]:h-2.5 [&>svg]:w-2.5">{style.icon}</span>
+                        {style.label}
                       </span>
                       {count > 0 && (
                         <Badge
-                          className="text-[9px] px-1.5 py-0"
+                          className="text-[9px] px-1 py-0"
                           style={{
                             backgroundColor: `${style.color}20`,
                             color: style.color,
@@ -1193,13 +1151,6 @@ function KnowledgeGraphInner({
           </Panel>
         )}
 
-        {/* Keyboard Navigation Help Panel */}
-        <Panel position="bottom-left" className="m-4">
-          <div className="px-3 py-2 rounded-lg bg-slate-800/80 backdrop-blur-xl border border-white/10 text-xs text-slate-400 space-y-1">
-            <div>Arrow keys: Navigate | Enter: Select | Esc: Deselect</div>
-            <div>Click and drag to pan | Scroll to zoom</div>
-          </div>
-        </Panel>
 
         {/* Layout Selector */}
         <Panel position="bottom-center" className="m-4">
@@ -1373,25 +1324,48 @@ function KnowledgeGraphInner({
                           Related Entities
                         </h4>
                         <div className="flex flex-wrap gap-2" role="list" aria-label="Related entities">
-                          {(decision.entities ?? []).length > 0 ? (
-                            decision.entities.map((entity) => {
-                              const entityConfig = ENTITY_TYPE_CONFIG[entity.type] || ENTITY_TYPE_CONFIG.concept
+                          {(() => {
+                            // Find connected entities from graph edges
+                            const connectedEntityIds = new Set<string>()
+                            data?.edges?.forEach(edge => {
+                              if (edge.source === selectedNode.id && edge.relationship === "INVOLVES") {
+                                connectedEntityIds.add(edge.target)
+                              }
+                            })
+                            const connectedEntities = data?.nodes?.filter(
+                              n => n.type === "entity" && connectedEntityIds.has(n.id)
+                            ) || []
+
+                            if (connectedEntities.length === 0) {
+                              return <span className="text-sm text-slate-500">No entities linked</span>
+                            }
+
+                            return connectedEntities.map((entityNode) => {
+                              const entityData = entityNode.data as { name?: string; type?: string }
+                              const entityType = (entityData.type || "concept") as keyof typeof ENTITY_TYPE_CONFIG
+                              const entityConfig = ENTITY_TYPE_CONFIG[entityType] || ENTITY_TYPE_CONFIG.concept
                               return (
                                 <Badge
-                                  key={entity.id}
-                                  className="bg-blue-500/20 text-blue-400 border-blue-500/30 flex items-center gap-1.5"
+                                  key={entityNode.id}
+                                  className="bg-blue-500/20 text-blue-400 border-blue-500/30 flex items-center gap-1.5 cursor-pointer hover:bg-blue-500/30 transition-colors"
                                   role="listitem"
+                                  onClick={() => {
+                                    const node = nodes.find(n => n.id === entityNode.id)
+                                    if (node) {
+                                      setSelectedNode(node)
+                                      setFocusedNodeId(node.id)
+                                      centerOnNode(node)
+                                    }
+                                  }}
                                 >
                                   <span className="h-3 w-3 flex items-center justify-center [&>svg]:h-3 [&>svg]:w-3">
                                     {entityConfig.icon}
                                   </span>
-                                  {entity.name}
+                                  {entityData.name || entityNode.label}
                                 </Badge>
                               )
                             })
-                          ) : (
-                            <span className="text-sm text-slate-500">No entities linked</span>
-                          )}
+                          })()}
                         </div>
                       </div>
                       {/* P1-3: Related Decisions Sidebar */}

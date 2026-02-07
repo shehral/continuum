@@ -4,6 +4,8 @@ SEC-014: Replaced silent exception handling with specific exception handling and
 SD-024: Cache invalidation added after ingestion completes.
 """
 
+import asyncio
+import uuid
 from datetime import UTC, datetime
 from typing import Optional
 
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.postgres import get_db
+from db.redis import get_redis
 from models.schemas import IngestionResult, IngestionStatus
 from services.extractor import DecisionExtractor
 from services.file_watcher import get_file_watcher
@@ -30,6 +33,10 @@ ingestion_state = {
     "last_run": None,
     "files_processed": 0,
 }
+
+# Import job state keys
+IMPORT_JOB_KEY = "import:current_job"
+IMPORT_CANCEL_KEY = "import:cancel"
 
 
 class ProjectInfo(BaseModel):
@@ -67,6 +74,19 @@ class ImportSelectedRequest(BaseModel):
     """Request to import selected files to a target project."""
     file_paths: list[str]
     target_project: Optional[str] = None
+
+
+class ImportProgress(BaseModel):
+    """Current import job progress."""
+    job_id: Optional[str] = None
+    status: str  # idle, running, completed, cancelled, error
+    total_files: int = 0
+    processed_files: int = 0
+    current_file: Optional[str] = None
+    decisions_extracted: int = 0
+    errors: list[str] = []
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
 
 
 @router.get("/projects", response_model=list[ProjectInfo])
@@ -179,172 +199,172 @@ async def get_ingestion_status():
     )
 
 
-@router.post("/trigger", response_model=IngestionResult)
-async def trigger_ingestion(
-    project: Optional[str] = Query(
-        None, description="Only include this project (partial match)"
-    ),
-    exclude: Optional[str] = Query(
-        None, description="Comma-separated list of projects to exclude"
-    ),
-    db: AsyncSession = Depends(get_db),
-):
-    """Trigger ingestion of Claude Code logs with optional filtering.
+async def get_import_progress() -> ImportProgress:
+    """Get current import job progress from Redis."""
+    redis = await get_redis()
+    if not redis:
+        return ImportProgress(status="idle")
 
-    Examples:
-    - /api/ingest/trigger?project=continuum - Only import from continuum project
-    - /api/ingest/trigger?exclude=CS5330,CS6120 - Exclude coursework
-    - /api/ingest/trigger?project=continuum&exclude=test - Continuum except test files
+    job_data = await redis.hgetall(IMPORT_JOB_KEY)
+    if not job_data:
+        return ImportProgress(status="idle")
 
-    SEC-014: Proper error handling with specific exceptions and error details.
+    return ImportProgress(
+        job_id=job_data.get("job_id"),
+        status=job_data.get("status", "idle"),
+        total_files=int(job_data.get("total_files", 0)),
+        processed_files=int(job_data.get("processed_files", 0)),
+        current_file=job_data.get("current_file"),
+        decisions_extracted=int(job_data.get("decisions_extracted", 0)),
+        errors=job_data.get("errors", "").split("|") if job_data.get("errors") else [],
+        started_at=job_data.get("started_at"),
+        completed_at=job_data.get("completed_at"),
+    )
+
+
+async def update_import_progress(
+    job_id: str,
+    status: str,
+    total_files: int = 0,
+    processed_files: int = 0,
+    current_file: Optional[str] = None,
+    decisions_extracted: int = 0,
+    errors: Optional[list[str]] = None,
+    completed_at: Optional[str] = None,
+) -> None:
+    """Update import job progress in Redis."""
+    redis = await get_redis()
+    if not redis:
+        return
+
+    data = {
+        "job_id": job_id,
+        "status": status,
+        "total_files": str(total_files),
+        "processed_files": str(processed_files),
+        "current_file": current_file or "",
+        "decisions_extracted": str(decisions_extracted),
+        "errors": "|".join(errors) if errors else "",
+    }
+    if completed_at:
+        data["completed_at"] = completed_at
+
+    await redis.hset(IMPORT_JOB_KEY, mapping=data)
+    # Expire job data after 1 hour
+    await redis.expire(IMPORT_JOB_KEY, 3600)
+
+
+async def is_import_cancelled() -> bool:
+    """Check if current import should be cancelled."""
+    redis = await get_redis()
+    if not redis:
+        return False
+    return await redis.exists(IMPORT_CANCEL_KEY) > 0
+
+
+async def clear_import_state() -> None:
+    """Clear import job state."""
+    redis = await get_redis()
+    if redis:
+        await redis.delete(IMPORT_JOB_KEY, IMPORT_CANCEL_KEY)
+
+
+@router.get("/import/progress", response_model=ImportProgress)
+async def get_current_import_progress():
+    """Get the current import job progress.
+
+    Poll this endpoint while an import is running to track progress.
     """
-    settings = get_settings()
-    parser = ClaudeLogParser(settings.claude_logs_path)
-    extractor = DecisionExtractor()
-
-    exclude_list = [e.strip() for e in exclude.split(",")] if exclude else []
-
-    files_processed = 0
-    decisions_extracted = 0
-    errors: list[str] = []
-
-    try:
-        async for file_path, conversations in parser.parse_all_logs(
-            project_filter=project,
-            exclude_projects=exclude_list,
-        ):
-            try:
-                for conversation in conversations:
-                    # Extract decisions from conversation
-                    try:
-                        decisions = await extractor.extract_decisions(conversation)
-                        decisions_extracted += len(decisions)
-
-                        # Save decisions to Neo4j with source tag and project name
-                        for decision in decisions:
-                            try:
-                                await extractor.save_decision(
-                                    decision,
-                                    source="claude_logs",
-                                    project_name=conversation.project_name if conversation else None
-                                )
-                            except Exception as save_error:
-                                logger.error(
-                                    f"Failed to save decision: {type(save_error).__name__}: {save_error}",
-                                    exc_info=True,
-                                )
-                                errors.append(f"save_decision:{file_path}")
-                    except Exception as extract_error:
-                        logger.error(
-                            f"Failed to extract decisions from {file_path}: "
-                            f"{type(extract_error).__name__}: {extract_error}",
-                            exc_info=True,
-                        )
-                        errors.append(f"extract:{file_path}")
-
-                files_processed += 1
-            except Exception as file_error:
-                logger.error(
-                    f"Error processing file {file_path}: {type(file_error).__name__}: {file_error}",
-                    exc_info=True,
-                )
-                errors.append(f"file:{file_path}")
-
-        ingestion_state["files_processed"] += files_processed
-        ingestion_state["last_run"] = datetime.now(UTC)
-
-        # Build status message
-        if errors:
-            status = f"completed with {len(errors)} errors"
-            logger.warning(f"Ingestion completed with errors: {errors}")
-        else:
-            status = "completed"
-
-        # SD-024: Invalidate caches since data changed
-        # Using "anonymous" as default user since ingestion doesn't have auth context yet
-        await invalidate_user_caches("anonymous")
-
-        return IngestionResult(
-            status=status,
-            processed=files_processed,
-            decisions_extracted=decisions_extracted,
-        )
-    except FileNotFoundError as e:
-        logger.error(f"Ingestion path not found: {e}")
-        raise HTTPException(
-            status_code=404,
-            detail=f"Claude logs path not found: {settings.claude_logs_path}",
-        )
-    except PermissionError as e:
-        logger.error(f"Permission denied accessing logs: {e}")
-        raise HTTPException(
-            status_code=403, detail="Permission denied accessing Claude logs directory"
-        )
-    except Exception as e:
-        logger.error(
-            f"Unexpected error during ingestion: {type(e).__name__}: {e}", exc_info=True
-        )
-        return IngestionResult(
-            status=f"error: {type(e).__name__}",
-            processed=files_processed,
-            decisions_extracted=decisions_extracted,
-        )
+    return await get_import_progress()
 
 
-@router.post("/import-selected", response_model=IngestionResult)
-async def import_selected_files(
-    request: ImportSelectedRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """Import only selected files with optional target project assignment.
+@router.post("/import/cancel")
+async def cancel_import():
+    """Cancel the currently running import job.
 
-    This endpoint allows fine-grained control over which files to import
-    and which project to assign them to. Useful for organizing imported
-    decisions into specific projects.
-
-    Examples:
-    - Import specific files to a project: {"file_paths": [...], "target_project": "continuum"}
-    - Import files with original project names: {"file_paths": [...], "target_project": null}
+    Sets a cancellation flag that the import process checks periodically.
+    The import will stop after completing the current file.
     """
+    progress = await get_import_progress()
+    if progress.status != "running":
+        raise HTTPException(status_code=400, detail="No import is currently running")
+
+    redis = await get_redis()
+    if redis:
+        await redis.set(IMPORT_CANCEL_KEY, "1", ex=300)  # 5 min expiry
+
+    return {"status": "cancellation_requested", "job_id": progress.job_id}
+
+
+async def run_import_job(
+    job_id: str,
+    file_paths: list[str],
+    target_project: Optional[str] = None,
+) -> None:
+    """Background task to run the import with progress tracking."""
     from pathlib import Path
 
     settings = get_settings()
     parser = ClaudeLogParser(settings.claude_logs_path)
     extractor = DecisionExtractor()
 
-    files_processed = 0
+    total_files = len(file_paths)
+    processed_files = 0
     decisions_extracted = 0
     errors: list[str] = []
 
     try:
-        for file_path_str in request.file_paths:
+        # Update initial state
+        await update_import_progress(
+            job_id=job_id,
+            status="running",
+            total_files=total_files,
+            processed_files=0,
+            decisions_extracted=0,
+        )
+
+        for file_path_str in file_paths:
+            # Check for cancellation
+            if await is_import_cancelled():
+                logger.info(f"Import job {job_id} cancelled by user")
+                await update_import_progress(
+                    job_id=job_id,
+                    status="cancelled",
+                    total_files=total_files,
+                    processed_files=processed_files,
+                    decisions_extracted=decisions_extracted,
+                    errors=errors,
+                    completed_at=datetime.now(UTC).isoformat(),
+                )
+                return
+
             file_path = Path(file_path_str)
 
-            # Validate file exists and is within logs directory
-            if not file_path.exists():
-                errors.append(f"not_found:{file_path_str}")
-                continue
-
-            # Security: Ensure file is within logs directory (prevent path traversal)
-            try:
-                file_path.resolve().relative_to(parser.logs_path.resolve())
-            except ValueError:
-                logger.warning(f"Attempted to import file outside logs directory: {file_path}")
-                errors.append(f"invalid_path:{file_path_str}")
-                continue
+            # Update current file
+            await update_import_progress(
+                job_id=job_id,
+                status="running",
+                total_files=total_files,
+                processed_files=processed_files,
+                current_file=file_path.name,
+                decisions_extracted=decisions_extracted,
+                errors=errors,
+            )
 
             try:
-                # Parse the file
                 conversations = parser._parse_jsonl_file(file_path)
 
                 for conversation in conversations:
+                    # Check for cancellation between conversations
+                    if await is_import_cancelled():
+                        break
+
                     try:
-                        # Extract decisions from conversation
                         decisions = await extractor.extract_decisions(conversation)
                         decisions_extracted += len(decisions)
 
-                        # Save decisions with target project or original project
-                        project_name = request.target_project or conversation.project_name
+                        # Use target project or original project
+                        project_name = target_project or conversation.project_name
 
                         for decision in decisions:
                             try:
@@ -354,55 +374,220 @@ async def import_selected_files(
                                     project_name=project_name,
                                 )
                             except Exception as save_error:
-                                logger.error(
-                                    f"Failed to save decision: {type(save_error).__name__}: {save_error}",
-                                    exc_info=True,
-                                )
-                                errors.append(f"save_decision:{file_path}")
+                                logger.error(f"Failed to save decision: {save_error}")
+                                errors.append(f"save:{file_path.name}")
                     except Exception as extract_error:
-                        logger.error(
-                            f"Failed to extract decisions from {file_path}: "
-                            f"{type(extract_error).__name__}: {extract_error}",
-                            exc_info=True,
-                        )
-                        errors.append(f"extract:{file_path}")
+                        logger.error(f"Failed to extract from {file_path}: {extract_error}")
+                        errors.append(f"extract:{file_path.name}")
 
-                files_processed += 1
+                    # Update progress after each conversation
+                    await update_import_progress(
+                        job_id=job_id,
+                        status="running",
+                        total_files=total_files,
+                        processed_files=processed_files,
+                        current_file=file_path.name,
+                        decisions_extracted=decisions_extracted,
+                        errors=errors,
+                    )
+
+                processed_files += 1
+
             except Exception as file_error:
-                logger.error(
-                    f"Error processing file {file_path}: {type(file_error).__name__}: {file_error}",
-                    exc_info=True,
-                )
-                errors.append(f"file:{file_path}")
+                logger.error(f"Error processing {file_path}: {file_error}")
+                errors.append(f"file:{file_path.name}")
+                processed_files += 1
 
-        ingestion_state["files_processed"] += files_processed
+        # Completed
+        ingestion_state["files_processed"] += processed_files
         ingestion_state["last_run"] = datetime.now(UTC)
 
-        # Build status message
-        if errors:
-            status = f"completed with {len(errors)} errors"
-            logger.warning(f"Selective import completed with errors: {errors}")
-        else:
-            status = "completed"
+        final_status = "completed" if not errors else f"completed with {len(errors)} errors"
+        await update_import_progress(
+            job_id=job_id,
+            status=final_status,
+            total_files=total_files,
+            processed_files=processed_files,
+            current_file=None,
+            decisions_extracted=decisions_extracted,
+            errors=errors,
+            completed_at=datetime.now(UTC).isoformat(),
+        )
 
-        # Invalidate caches since data changed
+        # Invalidate caches
         await invalidate_user_caches("anonymous")
+        logger.info(f"Import job {job_id} completed: {processed_files} files, {decisions_extracted} decisions")
 
-        return IngestionResult(
-            status=status,
-            processed=files_processed,
-            decisions_extracted=decisions_extracted,
-        )
     except Exception as e:
-        logger.error(
-            f"Unexpected error during selective import: {type(e).__name__}: {e}",
-            exc_info=True,
-        )
-        return IngestionResult(
+        logger.error(f"Import job {job_id} failed: {e}", exc_info=True)
+        await update_import_progress(
+            job_id=job_id,
             status=f"error: {type(e).__name__}",
-            processed=files_processed,
+            total_files=total_files,
+            processed_files=processed_files,
             decisions_extracted=decisions_extracted,
+            errors=errors + [str(e)],
+            completed_at=datetime.now(UTC).isoformat(),
         )
+
+
+@router.post("/trigger")
+async def trigger_ingestion(
+    background_tasks: BackgroundTasks,
+    project: Optional[str] = Query(
+        None, description="Only include this project (partial match)"
+    ),
+    exclude: Optional[str] = Query(
+        None, description="Comma-separated list of projects to exclude"
+    ),
+):
+    """Trigger ingestion of Claude Code logs with optional filtering.
+
+    This starts a background import job. Use GET /import/progress to track progress.
+    Use POST /import/cancel to stop an in-progress import.
+
+    Examples:
+    - /api/ingest/trigger?project=continuum - Only import from continuum project
+    - /api/ingest/trigger?exclude=CS5330,CS6120 - Exclude coursework
+    """
+    # Check if import is already running
+    progress = await get_import_progress()
+    if progress.status == "running":
+        raise HTTPException(
+            status_code=409,
+            detail="An import is already in progress. Cancel it first or wait for completion."
+        )
+
+    settings = get_settings()
+    parser = ClaudeLogParser(settings.claude_logs_path)
+
+    exclude_list = [e.strip() for e in exclude.split(",")] if exclude else []
+
+    # Collect all file paths
+    file_paths: list[str] = []
+    try:
+        async for file_path, _ in parser.parse_all_logs(
+            project_filter=project,
+            exclude_projects=exclude_list,
+        ):
+            file_paths.append(str(file_path))
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Claude logs path not found: {settings.claude_logs_path}",
+        )
+
+    if not file_paths:
+        return {"status": "no_files", "job_id": None, "total_files": 0}
+
+    # Clear any previous state
+    await clear_import_state()
+
+    # Start background job
+    job_id = str(uuid.uuid4())
+
+    # Initialize progress
+    redis = await get_redis()
+    if redis:
+        await redis.hset(IMPORT_JOB_KEY, mapping={
+            "job_id": job_id,
+            "status": "starting",
+            "total_files": str(len(file_paths)),
+            "processed_files": "0",
+            "current_file": "",
+            "decisions_extracted": "0",
+            "errors": "",
+            "started_at": datetime.now(UTC).isoformat(),
+        })
+        await redis.expire(IMPORT_JOB_KEY, 3600)
+
+    background_tasks.add_task(run_import_job, job_id, file_paths, None)
+
+    return {
+        "status": "started",
+        "job_id": job_id,
+        "total_files": len(file_paths),
+    }
+
+
+@router.post("/import-selected")
+async def import_selected_files(
+    request: ImportSelectedRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Import only selected files with optional target project assignment.
+
+    This starts a background import job. Use GET /import/progress to track progress.
+    Use POST /import/cancel to stop an in-progress import.
+
+    Examples:
+    - Import specific files to a project: {"file_paths": [...], "target_project": "continuum"}
+    - Import files with original project names: {"file_paths": [...], "target_project": null}
+    """
+    from pathlib import Path
+
+    # Check if import is already running
+    progress = await get_import_progress()
+    if progress.status == "running":
+        raise HTTPException(
+            status_code=409,
+            detail="An import is already in progress. Cancel it first or wait for completion."
+        )
+
+    settings = get_settings()
+    parser = ClaudeLogParser(settings.claude_logs_path)
+
+    # Validate files
+    valid_paths: list[str] = []
+    errors: list[str] = []
+
+    for file_path_str in request.file_paths:
+        file_path = Path(file_path_str)
+
+        if not file_path.exists():
+            errors.append(f"not_found:{file_path_str}")
+            continue
+
+        # Security: Ensure file is within logs directory
+        try:
+            file_path.resolve().relative_to(parser.logs_path.resolve())
+            valid_paths.append(file_path_str)
+        except ValueError:
+            logger.warning(f"Attempted to import file outside logs directory: {file_path}")
+            errors.append(f"invalid_path:{file_path_str}")
+
+    if not valid_paths:
+        return {"status": "no_valid_files", "job_id": None, "total_files": 0, "errors": errors}
+
+    # Clear any previous state
+    await clear_import_state()
+
+    # Start background job
+    job_id = str(uuid.uuid4())
+
+    # Initialize progress
+    redis = await get_redis()
+    if redis:
+        await redis.hset(IMPORT_JOB_KEY, mapping={
+            "job_id": job_id,
+            "status": "starting",
+            "total_files": str(len(valid_paths)),
+            "processed_files": "0",
+            "current_file": "",
+            "decisions_extracted": "0",
+            "errors": "|".join(errors) if errors else "",
+            "started_at": datetime.now(UTC).isoformat(),
+        })
+        await redis.expire(IMPORT_JOB_KEY, 3600)
+
+    background_tasks.add_task(run_import_job, job_id, valid_paths, request.target_project)
+
+    return {
+        "status": "started",
+        "job_id": job_id,
+        "total_files": len(valid_paths),
+        "validation_errors": errors,
+    }
 
 
 async def process_changed_file(file_path: str) -> None:
