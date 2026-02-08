@@ -159,11 +159,11 @@ function DecisionCard({ decision, index = 0 }: { decision: Decision; index?: num
             <Tooltip>
               <TooltipTrigger asChild>
                 <CardDescription className="line-clamp-2 text-slate-400 mt-1 cursor-help">
-                  {decision.decision}
+                  {decision.agent_decision}
                 </CardDescription>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-lg bg-slate-800 border-white/10">
-                <p>{decision.decision}</p>
+                <p>{decision.agent_decision}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -219,6 +219,7 @@ export default function DashboardPage() {
     total_decisions: 0,
     total_entities: 0,
     total_sessions: 0,
+    needs_review: 0,
     recent_decisions: [],
   }
 

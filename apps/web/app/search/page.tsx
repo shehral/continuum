@@ -337,16 +337,16 @@ export default function SearchPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    {isDecision && result.data.decision && (
+                    {isDecision && (result.data.agent_decision || result.data.decision) && (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <p className="text-xs text-slate-400 line-clamp-2 cursor-help">
-                              {result.data.decision}
+                              {result.data.agent_decision || result.data.decision}
                             </p>
                           </TooltipTrigger>
                           <TooltipContent side="bottom" className="max-w-lg bg-slate-800 border-white/10">
-                            <p>{result.data.decision}</p>
+                            <p>{result.data.agent_decision || result.data.decision}</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>

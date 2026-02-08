@@ -261,11 +261,11 @@ const DecisionNode = React.memo(
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="text-xs text-slate-400 mt-2 line-clamp-2 cursor-help">
-                {nodeData.decision?.decision || "Decision trace"}
+                {nodeData.decision?.agent_decision || "Decision trace"}
               </div>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-lg">
-              <p>{nodeData.decision?.decision || "Decision trace"}</p>
+              <p>{nodeData.decision?.agent_decision || "Decision trace"}</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -1571,13 +1571,13 @@ function KnowledgeGraphInner({
                         <h4 className="text-xs font-medium text-cyan-400 uppercase tracking-wider mb-1">
                           Decision
                         </h4>
-                        <p className="text-sm text-slate-200 font-medium">{decision.decision}</p>
+                        <p className="text-sm text-slate-200 font-medium">{decision.agent_decision}</p>
                       </div>
                       <div>
                         <h4 className="text-xs font-medium text-cyan-400 uppercase tracking-wider mb-1">
                           Rationale
                         </h4>
-                        <p className="text-sm text-slate-300">{decision.rationale}</p>
+                        <p className="text-sm text-slate-300">{decision.agent_rationale}</p>
                       </div>
                       <div>
                         <h4 className="text-xs font-medium text-cyan-400 uppercase tracking-wider mb-2">

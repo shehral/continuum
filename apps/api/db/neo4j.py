@@ -314,7 +314,7 @@ async def init_neo4j():
                     """
                     CREATE FULLTEXT INDEX decision_fulltext IF NOT EXISTS
                     FOR (d:DecisionTrace)
-                    ON EACH [d.trigger, d.context, d.decision, d.rationale]
+                    ON EACH [d.trigger, d.context, d.agent_decision, d.agent_rationale]
                     """
                 )
                 logger.info("Created decision_fulltext index")
@@ -498,8 +498,8 @@ async def get_decisions_involving_entity(
             MATCH (d:DecisionTrace)-[:INVOLVES]->(e)
             RETURN d.id AS id,
                    d.trigger AS trigger,
-                   d.decision AS decision,
-                   d.rationale AS rationale,
+                   COALESCE(d.agent_decision, d.decision) AS decision,
+                   COALESCE(d.agent_rationale, d.rationale) AS rationale,
                    d.created_at AS created_at,
                    d.source AS source
             ORDER BY d.{order_by} ASC

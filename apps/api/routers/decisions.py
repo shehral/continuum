@@ -26,12 +26,35 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
+def _decision_from_record(d, entities) -> Decision:
+    """Build a Decision from a Neo4j node dict and entity list."""
+    return Decision(
+        id=d["id"],
+        trigger=d.get("trigger", ""),
+        context=d.get("context", ""),
+        options=d.get("options", []),
+        agent_decision=d.get("agent_decision", d.get("decision", "")),
+        agent_rationale=d.get("agent_rationale", d.get("rationale", "")),
+        human_decision=d.get("human_decision"),
+        human_rationale=d.get("human_rationale"),
+        confidence=d.get("confidence", 0.0),
+        created_at=d.get("created_at", ""),
+        entities=[
+            Entity(id=e["id"], name=e["name"], type=e.get("type", "concept"))
+            for e in entities
+            if e
+        ],
+        source=d.get("source", "unknown"),
+        project_name=d.get("project_name"),
+    )
+
+
 class ManualDecisionInput(BaseModel):
     trigger: str
     context: str
     options: list[str]
-    decision: str
-    rationale: str
+    decision: str  # backward compat alias — stored as agent_decision
+    rationale: str  # backward compat alias — stored as agent_rationale
     entities: list[str] = []  # Entity names to link (optional manual override)
     auto_extract: bool = True  # Whether to auto-extract entities
     project_name: Optional[str] = None  # Project this decision belongs to
@@ -72,27 +95,7 @@ async def get_decisions(
                 d = record["d"]
                 entities = record["entities"]
 
-                decision = Decision(
-                    id=d["id"],
-                    trigger=d.get("trigger", ""),
-                    context=d.get("context", ""),
-                    options=d.get("options", []),
-                    decision=d.get("decision", ""),
-                    rationale=d.get("rationale", ""),
-                    confidence=d.get("confidence", 0.0),
-                    created_at=d.get("created_at", ""),
-                    entities=[
-                        Entity(
-                            id=e["id"],
-                            name=e["name"],
-                            type=e.get("type", "concept"),
-                        )
-                        for e in entities
-                        if e
-                    ],
-                    source=d.get("source", "unknown"),
-                )
-                decisions.append(decision)
+                decisions.append(_decision_from_record(d, entities))
 
             return decisions
     except DriverError as e:
@@ -101,6 +104,59 @@ async def get_decisions(
     except (ClientError, DatabaseError) as e:
         logger.error(f"Error fetching decisions: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch decisions")
+
+
+@router.get("/needs-review", response_model=dict)
+async def get_needs_review(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get decisions that need human review (missing human_rationale).
+
+    Returns decisions ordered by confidence descending — high-confidence
+    agent decisions are easiest to quickly confirm or override.
+    """
+    session = await get_neo4j_session()
+    async with session:
+        # Get total count
+        count_result = await session.run(
+            """
+            MATCH (d:DecisionTrace)
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+              AND d.human_rationale IS NULL
+            RETURN count(d) as total
+            """,
+            user_id=user_id,
+        )
+        count_record = await count_result.single()
+        total = count_record["total"]
+
+        # Get paginated decisions
+        result = await session.run(
+            """
+            MATCH (d:DecisionTrace)
+            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+              AND d.human_rationale IS NULL
+            OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
+            WITH d, collect(e) as entities
+            ORDER BY d.confidence DESC
+            SKIP $offset
+            LIMIT $limit
+            RETURN d, entities
+            """,
+            user_id=user_id,
+            offset=offset,
+            limit=limit,
+        )
+
+        decisions = []
+        async for record in result:
+            d = record["d"]
+            entities = record["entities"]
+            decisions.append(_decision_from_record(d, entities))
+
+        return {"total_needs_review": total, "decisions": decisions}
 
 
 @router.delete("/{decision_id}")
@@ -181,26 +237,7 @@ async def get_decision(
         d = record["d"]
         entities = record["entities"]
 
-        return Decision(
-            id=d["id"],
-            trigger=d.get("trigger", ""),
-            context=d.get("context", ""),
-            options=d.get("options", []),
-            decision=d.get("decision", ""),
-            rationale=d.get("rationale", ""),
-            confidence=d.get("confidence", 0.0),
-            created_at=d.get("created_at", ""),
-            entities=[
-                Entity(
-                    id=e["id"],
-                    name=e["name"],
-                    type=e.get("type", "concept"),
-                )
-                for e in entities
-                if e
-            ],
-            source=d.get("source", "unknown"),
-        )
+        return _decision_from_record(d, entities)
 
 
 @router.put("/{decision_id}", response_model=Decision)
@@ -284,26 +321,7 @@ async def update_decision(
 
         logger.info(f"Updated decision {decision_id} for user {user_id}")
 
-        return Decision(
-            id=d["id"],
-            trigger=d.get("trigger", ""),
-            context=d.get("context", ""),
-            options=d.get("options", []),
-            decision=d.get("decision", ""),
-            rationale=d.get("rationale", ""),
-            confidence=d.get("confidence", 0.0),
-            created_at=d.get("created_at", ""),
-            entities=[
-                Entity(
-                    id=e["id"],
-                    name=e["name"],
-                    type=e.get("type", "concept"),
-                )
-                for e in entities
-                if e
-            ],
-            source=d.get("source", "unknown"),
-        )
+        return _decision_from_record(d, entities)
 
 
 @router.post("", response_model=Decision)
@@ -328,8 +346,8 @@ async def create_decision(
         trigger=input.trigger,
         context=input.context,
         options=input.options,
-        decision=input.decision,
-        rationale=input.rationale,
+        agent_decision=input.decision,
+        agent_rationale=input.rationale,
         source="manual",
         project_name=input.project_name,
     )
@@ -357,8 +375,8 @@ async def create_decision(
                     trigger: $trigger,
                     context: $context,
                     options: $options,
-                    decision: $decision,
-                    rationale: $rationale,
+                    agent_decision: $agent_decision,
+                    agent_rationale: $agent_rationale,
                     confidence: 1.0,
                     created_at: $created_at,
                     source: 'manual',
@@ -370,8 +388,8 @@ async def create_decision(
                 trigger=input.trigger,
                 context=input.context,
                 options=input.options,
-                decision=input.decision,
-                rationale=input.rationale,
+                agent_decision=input.decision,
+                agent_rationale=input.rationale,
                 created_at=created_at,
                 user_id=user_id,
                 project_name=input.project_name,
@@ -416,23 +434,4 @@ async def create_decision(
         d = record["d"]
         entities = record["entities"]
 
-        return Decision(
-            id=d["id"],
-            trigger=d.get("trigger", ""),
-            context=d.get("context", ""),
-            options=d.get("options", []),
-            decision=d.get("decision", ""),
-            rationale=d.get("rationale", ""),
-            confidence=d.get("confidence", 0.0),
-            created_at=d.get("created_at", ""),
-            entities=[
-                Entity(
-                    id=e["id"],
-                    name=e["name"],
-                    type=e.get("type", "concept"),
-                )
-                for e in entities
-                if e
-            ],
-            source=d.get("source", "unknown"),
-        )
+        return _decision_from_record(d, entities)

@@ -69,9 +69,9 @@ async def search(
                         """
                         MATCH (d:DecisionTrace)
                         WHERE toLower(d.trigger) CONTAINS $search_term
-                           OR toLower(d.decision) CONTAINS $search_term
+                           OR toLower(COALESCE(d.agent_decision, d.decision, '')) CONTAINS $search_term
                            OR toLower(d.context) CONTAINS $search_term
-                           OR toLower(d.rationale) CONTAINS $search_term
+                           OR toLower(COALESCE(d.agent_rationale, d.rationale, '')) CONTAINS $search_term
                         RETURN d, 1.0 as score
                         LIMIT 20
                         """,

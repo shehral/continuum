@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # SEC-005: UUID pattern for ID validation
 UUID_PATTERN = re.compile(
@@ -67,11 +67,21 @@ class DecisionSource:
 
 # Decision schemas
 class DecisionBase(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     trigger: str = Field(..., min_length=1, max_length=5000)
     context: str = Field(..., min_length=1, max_length=10000)
     options: list[str] = Field(..., min_length=1, max_length=50)
-    decision: str = Field(..., min_length=1, max_length=5000)
-    rationale: str = Field(..., min_length=1, max_length=10000)
+    agent_decision: str = Field(
+        ..., min_length=1, max_length=5000,
+        alias="decision", serialization_alias="agent_decision",
+    )
+    agent_rationale: str = Field(
+        ..., min_length=1, max_length=10000,
+        alias="rationale", serialization_alias="agent_rationale",
+    )
+    human_decision: Optional[str] = Field(None, max_length=5000)
+    human_rationale: Optional[str] = Field(None, max_length=10000)
 
     @field_validator("options")
     @classmethod
@@ -109,11 +119,19 @@ class DecisionUpdate(BaseModel):
     Entity management is handled separately via entity linking endpoints.
     """
 
+    model_config = ConfigDict(populate_by_name=True)
+
     trigger: Optional[str] = Field(None, min_length=1, max_length=5000)
     context: Optional[str] = Field(None, min_length=1, max_length=10000)
     options: Optional[list[str]] = Field(None, min_length=1, max_length=50)
-    decision: Optional[str] = Field(None, min_length=1, max_length=5000)
-    rationale: Optional[str] = Field(None, min_length=1, max_length=10000)
+    agent_decision: Optional[str] = Field(
+        None, min_length=1, max_length=5000, alias="decision",
+    )
+    agent_rationale: Optional[str] = Field(
+        None, min_length=1, max_length=10000, alias="rationale",
+    )
+    human_decision: Optional[str] = Field(None, max_length=5000)
+    human_rationale: Optional[str] = Field(None, max_length=10000)
 
     @field_validator("options")
     @classmethod
@@ -180,9 +198,11 @@ class SemanticSearchRequest(BaseModel):
 
 
 class SimilarDecision(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     trigger: str
-    decision: str
+    agent_decision: str = Field(alias="decision", serialization_alias="agent_decision")
     similarity: float = Field(..., ge=0.0, le=1.0)
     shared_entities: list[str] = []
 
@@ -224,6 +244,7 @@ class DashboardStats(BaseModel):
     total_decisions: int = Field(..., ge=0)
     total_entities: int = Field(..., ge=0)
     total_sessions: int = Field(..., ge=0)
+    needs_review: int = Field(0, ge=0)
     recent_decisions: list[Decision]
 
 

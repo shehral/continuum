@@ -225,7 +225,7 @@ function DecisionDetailDialog({
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" aria-hidden="true" />
                 Decision
               </h4>
-              <p className="text-sm font-medium text-slate-200">{decision.decision}</p>
+              <p className="text-sm font-medium text-slate-200">{decision.agent_decision}</p>
             </div>
 
             <div className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
@@ -233,7 +233,7 @@ function DecisionDetailDialog({
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400" aria-hidden="true" />
                 Rationale
               </h4>
-              <p className="text-sm text-slate-300 leading-relaxed">{decision.rationale}</p>
+              <p className="text-sm text-slate-300 leading-relaxed">{decision.agent_rationale}</p>
             </div>
 
             <div>
@@ -499,11 +499,11 @@ function DecisionCard({
             <Tooltip>
               <TooltipTrigger asChild>
                 <CardDescription className="text-slate-400 line-clamp-2 mt-1 cursor-help">
-                  {decision.decision}
+                  {decision.agent_decision}
                 </CardDescription>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-lg">
-                <p>{decision.decision}</p>
+                <p>{decision.agent_decision}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -735,7 +735,7 @@ function DecisionsPageContent() {
     // Text search filter
     const matchesSearch = searchQuery === "" ||
       d.trigger.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.decision.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      d.agent_decision.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.entities.some((e) =>
         e.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
@@ -999,11 +999,11 @@ function DecisionsPageContent() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <CardDescription className="text-slate-400 line-clamp-2 mt-1 cursor-help">
-                              {decision.decision}
+                              {decision.agent_decision}
                             </CardDescription>
                           </TooltipTrigger>
                           <TooltipContent side="bottom" className="max-w-lg">
-                            <p>{decision.decision}</p>
+                            <p>{decision.agent_decision}</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
