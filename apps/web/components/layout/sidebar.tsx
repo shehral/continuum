@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
 import { signOut, useSession } from "next-auth/react"
 import { useState, useEffect } from "react"
@@ -17,6 +17,7 @@ import {
   Network,
   ClipboardList,
   Search,
+  Folder,
   Sun,
   Moon,
   Settings,
@@ -32,6 +33,7 @@ const navigation = [
   { name: "Add Knowledge", href: "/add", icon: Brain },
   { name: "Knowledge Graph", href: "/graph", icon: Network },
   { name: "Decisions", href: "/decisions", icon: ClipboardList },
+  { name: "Projects", href: "/projects", icon: Folder },
   { name: "Search", href: "/search", icon: Search },
 ]
 
@@ -42,6 +44,7 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: SidebarProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const { theme, setTheme } = useTheme()
   const { data: session } = useSession()
   const [mounted, setMounted] = useState(false)
@@ -213,6 +216,7 @@ export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: S
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => router.push("/settings")}
                 className="flex-1 text-muted-foreground hover:text-foreground hover:bg-muted group"
                 aria-label="Open settings"
               >
@@ -278,6 +282,7 @@ export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: S
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => router.push("/settings")}
                     className="w-full text-muted-foreground hover:text-foreground hover:bg-muted"
                     aria-label="Open settings"
                   >

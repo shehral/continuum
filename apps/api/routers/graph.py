@@ -1220,7 +1220,7 @@ async def hybrid_search(
                 # Fulltext search on decisions
                 result = await session.run(
                     """
-                    CALL db.index.fulltext.queryNodes('decision_fulltext', $query)
+                    CALL db.index.fulltext.queryNodes('decision_fulltext', $search_text)
                     YIELD node, score AS fulltext_score
                     WHERE node.user_id = $user_id OR node.user_id IS NULL
                     RETURN node.id AS id, 'decision' AS type,
@@ -1231,9 +1231,11 @@ async def hybrid_search(
                     ORDER BY fulltext_score DESC
                     LIMIT $limit
                     """,
-                    query=request.query,
-                    user_id=user_id,
-                    limit=request.top_k * 2,  # Get more for merging
+                    parameters={
+                        "search_text": request.query,
+                        "user_id": user_id,
+                        "limit": request.top_k * 2,
+                    },
                 )
 
                 async for r in result:
@@ -1272,7 +1274,7 @@ async def hybrid_search(
                 # Fulltext search on entities (connected to user's decisions)
                 result = await session.run(
                     """
-                    CALL db.index.fulltext.queryNodes('entity_fulltext', $query)
+                    CALL db.index.fulltext.queryNodes('entity_fulltext', $search_text)
                     YIELD node, score AS fulltext_score
                     WHERE EXISTS {
                         MATCH (d:DecisionTrace)-[:INVOLVES]->(node)
@@ -1285,9 +1287,11 @@ async def hybrid_search(
                     ORDER BY fulltext_score DESC
                     LIMIT $limit
                     """,
-                    query=request.query,
-                    user_id=user_id,
-                    limit=request.top_k * 2,
+                    parameters={
+                        "search_text": request.query,
+                        "user_id": user_id,
+                        "limit": request.top_k * 2,
+                    },
                 )
 
                 async for r in result:

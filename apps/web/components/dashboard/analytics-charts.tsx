@@ -199,7 +199,7 @@ export function AnalyticsCharts({ decisions }: AnalyticsChartsProps) {
         </CardHeader>
         <CardContent>
           <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
               <LineChart data={decisionsOverTime}>
                 <defs>
                   <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
@@ -242,7 +242,7 @@ export function AnalyticsCharts({ decisions }: AnalyticsChartsProps) {
         <CardContent>
           <div className="h-[200px]">
             {entityTypeDistribution.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
                 <PieChart>
                   <Pie
                     data={entityTypeDistribution}
@@ -294,7 +294,7 @@ export function AnalyticsCharts({ decisions }: AnalyticsChartsProps) {
         </CardHeader>
         <CardContent>
           <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
               <BarChart data={confidenceDistribution}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="range" fontSize={11} tickLine={false} axisLine={false} stroke="#64748b" />

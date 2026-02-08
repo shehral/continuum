@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, History, X, MessageSquare, Lightbulb, ArrowRight } from "lucide-react"
+import { Plus, History, X, MessageSquare, Lightbulb, ArrowRight, PanelRightOpen, PanelRightClose } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { ChatInterface } from "@/components/capture/chat-interface"
@@ -34,6 +34,7 @@ export default function CapturePage() {
   const [suggestedEntities, setSuggestedEntities] = useState<Entity[]>([])
   const [showCompleteDialog, setShowCompleteDialog] = useState(false)
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const [showSessionHistory, setShowSessionHistory] = useState(false)
 
   // Fetch available projects
   const { data: projectCounts } = useQuery({
@@ -169,7 +170,20 @@ export default function CapturePage() {
                   : "Start a session to capture knowledge"}
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSessionHistory(!showSessionHistory)}
+                className="text-slate-400 hover:text-slate-200 hidden lg:flex"
+              >
+                {showSessionHistory ? (
+                  <PanelRightClose className="h-4 w-4 mr-2" />
+                ) : (
+                  <PanelRightOpen className="h-4 w-4 mr-2" />
+                )}
+                Session History
+              </Button>
               {activeSession ? (
                 <>
                   <Button
@@ -285,28 +299,33 @@ export default function CapturePage() {
           )}
         </div>
 
-        {/* Sidebar with session history */}
-        <div className="w-72 border-l bg-background hidden lg:block">
-          <div className="p-4 border-b">
-            <div className="flex items-center gap-2">
-              <History className="h-4 w-4" />
-              <h2 className="font-medium">Recent Sessions</h2>
-            </div>
-          </div>
-          <ScrollArea className="h-[calc(100%-57px)]">
-            <div className="p-4 space-y-2">
-              <div className="text-center py-8">
-                <History className="h-8 w-8 text-slate-600 mx-auto mb-2" aria-hidden="true" />
-                <p className="text-sm text-slate-500">
-                  No recent sessions
-                </p>
-                <p className="text-xs text-slate-600 mt-1">
-                  Your session history will appear here
-                </p>
+        {/* Sidebar with session history (slide-over, hidden by default) */}
+        {showSessionHistory && (
+          <div className="w-72 border-l bg-background hidden lg:block animate-in slide-in-from-right duration-200">
+            <div className="p-4 border-b flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <History className="h-4 w-4" />
+                <h2 className="font-medium">Recent Sessions</h2>
               </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowSessionHistory(false)} className="h-6 w-6 p-0">
+                <X className="h-3.5 w-3.5" />
+              </Button>
             </div>
-          </ScrollArea>
-        </div>
+            <ScrollArea className="h-[calc(100%-57px)]">
+              <div className="p-4 space-y-2">
+                <div className="text-center py-8">
+                  <History className="h-8 w-8 text-slate-600 mx-auto mb-2" aria-hidden="true" />
+                  <p className="text-sm text-slate-500">
+                    No recent sessions
+                  </p>
+                  <p className="text-xs text-slate-600 mt-1">
+                    Your session history will appear here
+                  </p>
+                </div>
+              </div>
+            </ScrollArea>
+          </div>
+        )}
 
         {/* Complete session dialog */}
         <Dialog open={showCompleteDialog} onOpenChange={setShowCompleteDialog}>

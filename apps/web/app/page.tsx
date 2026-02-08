@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ErrorState } from "@/components/ui/error-state"
 import { StatCardSkeleton, DecisionCardSkeleton } from "@/components/ui/skeleton"
-import { api, type DashboardStats, type Decision } from "@/lib/api"
+import { api, type DashboardStats, type GraphStats, type Decision, type ValidationSummary } from "@/lib/api"
 import { getEntityStyle } from "@/lib/constants"
 import {
   FileText,
@@ -24,6 +24,11 @@ import {
   Sparkles,
   Lightbulb,
   TrendingUp,
+  ShieldCheck,
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  CheckCircle2,
 } from "lucide-react"
 
 // Animated number counter for stats
@@ -197,6 +202,18 @@ export default function DashboardPage() {
     staleTime: 60 * 1000, // 1 minute
   })
 
+  const { data: graphStats } = useQuery({
+    queryKey: ["graph-stats"],
+    queryFn: () => api.getGraphStats(),
+    staleTime: 60 * 1000,
+  })
+
+  const { data: validation } = useQuery({
+    queryKey: ["graph-validation"],
+    queryFn: () => api.getGraphValidation(),
+    staleTime: 5 * 60 * 1000, // 5 minutes — validation is expensive
+  })
+
   // Fallback data for when API is not available
   const displayStats: DashboardStats = stats || {
     total_decisions: 0,
@@ -288,7 +305,7 @@ export default function DashboardPage() {
             />
             <StatCard
               title="Graph Connections"
-              value={displayStats.total_entities * 2}
+              value={graphStats?.relationships ?? 0}
               description="Relationships mapped"
               iconType="connections"
               href="/graph"
@@ -305,6 +322,64 @@ export default function DashboardPage() {
               Analytics
             </h2>
             <AnalyticsCharts decisions={displayStats.recent_decisions} />
+          </div>
+        )}
+
+        {/* Graph Health */}
+        {validation && validation.total_issues > 0 && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: "500ms" }}>
+            <h2 className="text-xl font-semibold text-slate-100 mb-4 flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-emerald-400" />
+              Graph Health
+            </h2>
+            <Card variant="glass">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-6 mb-4">
+                  {(validation.by_severity.error ?? 0) > 0 && (
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-red-400" aria-hidden="true" />
+                      <span className="text-sm font-medium text-red-400">{validation.by_severity.error} errors</span>
+                    </div>
+                  )}
+                  {(validation.by_severity.warning ?? 0) > 0 && (
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-400" aria-hidden="true" />
+                      <span className="text-sm font-medium text-amber-400">{validation.by_severity.warning} warnings</span>
+                    </div>
+                  )}
+                  {(validation.by_severity.info ?? 0) > 0 && (
+                    <div className="flex items-center gap-2">
+                      <Info className="h-4 w-4 text-sky-400" aria-hidden="true" />
+                      <span className="text-sm font-medium text-sky-400">{validation.by_severity.info} info</span>
+                    </div>
+                  )}
+                  {validation.total_issues === 0 && (
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+                      <span className="text-sm font-medium text-emerald-400">No issues found</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(validation.by_type).map(([type, count]) => (
+                    <Badge
+                      key={type}
+                      className="bg-white/[0.04] text-slate-300 border-white/[0.08]"
+                    >
+                      {type.replace(/_/g, " ")}: {count}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="mt-4">
+                  <Button variant="ghost" size="sm" asChild className="text-violet-400 hover:text-violet-300 hover:bg-violet-500/10">
+                    <Link href="/graph" className="flex items-center gap-1">
+                      View in Graph
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
