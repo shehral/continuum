@@ -1021,6 +1021,12 @@ function DecisionsPageContent() {
                   Timeline
                 </Link>
               </Button>
+              <Button variant="ghost" size="sm" asChild className="text-amber-400 hover:text-amber-300 hover:bg-amber-500/10">
+                <Link href="/decisions/review" className="flex items-center gap-1">
+                  <UserCircle className="h-4 w-4" />
+                  Review
+                </Link>
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"
