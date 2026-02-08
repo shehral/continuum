@@ -25,6 +25,12 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
+# SEC: Allowlist of fields that can be written to Neo4j properties via update endpoint
+ALLOWED_UPDATE_FIELDS = frozenset({
+    "trigger", "context", "options", "agent_decision", "agent_rationale",
+    "human_decision", "human_rationale",
+})
+
 
 def _decision_from_record(d, entities) -> Decision:
     """Build a Decision from a Neo4j node dict and entity list."""
@@ -117,46 +123,53 @@ async def get_needs_review(
     Returns decisions ordered by confidence descending — high-confidence
     agent decisions are easiest to quickly confirm or override.
     """
-    session = await get_neo4j_session()
-    async with session:
-        # Get total count
-        count_result = await session.run(
-            """
-            MATCH (d:DecisionTrace)
-            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
-              AND d.human_rationale IS NULL
-            RETURN count(d) as total
-            """,
-            user_id=user_id,
-        )
-        count_record = await count_result.single()
-        total = count_record["total"]
+    try:
+        session = await get_neo4j_session()
+        async with session:
+            # Get total count
+            count_result = await session.run(
+                """
+                MATCH (d:DecisionTrace)
+                WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+                  AND d.human_rationale IS NULL
+                RETURN count(d) as total
+                """,
+                user_id=user_id,
+            )
+            count_record = await count_result.single()
+            total = count_record["total"]
 
-        # Get paginated decisions
-        result = await session.run(
-            """
-            MATCH (d:DecisionTrace)
-            WHERE (d.user_id = $user_id OR d.user_id IS NULL)
-              AND d.human_rationale IS NULL
-            OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
-            WITH d, collect(e) as entities
-            ORDER BY d.confidence DESC
-            SKIP $offset
-            LIMIT $limit
-            RETURN d, entities
-            """,
-            user_id=user_id,
-            offset=offset,
-            limit=limit,
-        )
+            # Get paginated decisions
+            result = await session.run(
+                """
+                MATCH (d:DecisionTrace)
+                WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+                  AND d.human_rationale IS NULL
+                OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
+                WITH d, collect(e) as entities
+                ORDER BY d.confidence DESC
+                SKIP $offset
+                LIMIT $limit
+                RETURN d, entities
+                """,
+                user_id=user_id,
+                offset=offset,
+                limit=limit,
+            )
 
-        decisions = []
-        async for record in result:
-            d = record["d"]
-            entities = record["entities"]
-            decisions.append(_decision_from_record(d, entities))
+            decisions = []
+            async for record in result:
+                d = record["d"]
+                entities = record["entities"]
+                decisions.append(_decision_from_record(d, entities))
 
-        return {"total_needs_review": total, "decisions": decisions}
+            return {"total_needs_review": total, "decisions": decisions}
+    except DriverError as e:
+        logger.error(f"Database connection error: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    except (ClientError, DatabaseError) as e:
+        logger.error(f"Error fetching needs-review decisions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch review queue")
 
 
 @router.delete("/{decision_id}")
@@ -289,6 +302,10 @@ async def update_decision(
         params = {"id": decision_id, "user_id": user_id, "edited_at": edited_at}
 
         for field, value in update_data.items():
+            if field not in ALLOWED_UPDATE_FIELDS:
+                raise HTTPException(
+                    status_code=400, detail=f"Field '{field}' cannot be updated"
+                )
             set_parts.append(f"d.{field} = ${field}")
             params[field] = value
 
@@ -320,6 +337,9 @@ async def update_decision(
         entities = record["entities"]
 
         logger.info(f"Updated decision {decision_id} for user {user_id}")
+
+        # SD-024: Invalidate caches since data changed (e.g. needs_review count)
+        await invalidate_user_caches(user_id)
 
         return _decision_from_record(d, entities)
 

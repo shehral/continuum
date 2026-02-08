@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Upload, Lightbulb, Download, Bot, UserCircle, MessageSquarePlus, Pencil, Check } from "lucide-react"
+import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Download, Bot, UserCircle, Pencil } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -187,9 +187,11 @@ function EditableField({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value ?? "")
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+  const cancelledRef = useRef(false)
 
   useEffect(() => {
     if (editing && inputRef.current) {
+      cancelledRef.current = false
       inputRef.current.focus()
       // Move cursor to end
       const len = inputRef.current.value.length
@@ -203,6 +205,7 @@ function EditableField({
   }, [value, editing])
 
   const handleSave = useCallback(() => {
+    if (cancelledRef.current) return
     const trimmed = draft.trim()
     if (trimmed && trimmed !== (value ?? "")) {
       onSave(trimmed)
@@ -211,6 +214,7 @@ function EditableField({
   }, [draft, value, onSave])
 
   const handleCancel = useCallback(() => {
+    cancelledRef.current = true
     setDraft(value ?? "")
     setEditing(false)
   }, [value])
@@ -231,7 +235,7 @@ function EditableField({
   }, [handleSave, handleCancel, multiline])
 
   if (editing) {
-    const inputClass = "w-full rounded-md border bg-white/[0.05] border-cyan-500/40 text-slate-200 px-2 py-1.5 text-sm focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none"
+    const inputClass = "w-full rounded-md border bg-muted/50 border-primary/40 text-foreground px-2 py-1.5 text-sm focus:border-primary/60 focus:ring-1 focus:ring-primary/20 focus:outline-none"
 
     return (
       <div className={`relative ${className}`}>
@@ -257,7 +261,7 @@ function EditableField({
             placeholder={placeholder}
           />
         )}
-        <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500">
+        <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground/60">
           <span>{multiline ? "Ctrl+Enter to save" : "Enter to save"}</span>
           <span>· Esc to cancel</span>
         </div>
@@ -267,7 +271,7 @@ function EditableField({
 
   return (
     <div
-      className={`group/edit relative cursor-pointer rounded px-1 -mx-1 hover:bg-white/[0.04] transition-colors ${className}`}
+      className={`group/edit relative cursor-pointer rounded px-1 -mx-1 hover:bg-accent/50 transition-colors ${className}`}
       onClick={() => setEditing(true)}
       role="button"
       tabIndex={0}
@@ -277,10 +281,10 @@ function EditableField({
       {value ? (
         <span className={textClassName}>{value}</span>
       ) : (
-        <span className="text-sm text-slate-500 italic">{placeholder}</span>
+        <span className="text-sm text-muted-foreground italic">{placeholder}</span>
       )}
-      <Pencil className="h-3 w-3 text-slate-500 opacity-0 group-hover/edit:opacity-100 transition-opacity absolute top-1 right-1" aria-hidden="true" />
-      {isSaving && <Loader2 className="h-3 w-3 text-cyan-400 animate-spin absolute top-1 right-1" aria-hidden="true" />}
+      <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover/edit:opacity-100 transition-opacity absolute top-1 right-1" aria-hidden="true" />
+      {isSaving && <Loader2 className="h-3 w-3 text-primary animate-spin absolute top-1 right-1" aria-hidden="true" />}
     </div>
   )
 }
@@ -290,20 +294,23 @@ function DecisionDetailDialog({
   open,
   onOpenChange,
   onDelete,
+  onUpdated,
 }: {
   decision: Decision | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onDelete: (decision: Decision) => void
+  onUpdated?: (updated: Decision) => void
 }) {
   const queryClient = useQueryClient()
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Parameters<typeof api.updateDecision>[1] }) =>
       api.updateDecision(id, data),
-    onSuccess: () => {
+    onSuccess: (updated: Decision) => {
       queryClient.invalidateQueries({ queryKey: ["decisions"] })
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
+      onUpdated?.(updated)
     },
   })
 
@@ -979,9 +986,6 @@ function DecisionsPageContent() {
     return matchesSearch && matchesSource && matchesConfidence && matchesDateRange
   })
 
-  // Determine if filters are active (for empty state)
-  const hasActiveFilters = sourceFilter !== "all" || confidenceFilter > 0 || dateRangeFilter !== "all"
-
   const handleExportJson = useCallback(() => {
     if (!filteredDecisions?.length) return
     const blob = new Blob([JSON.stringify(filteredDecisions, null, 2)], { type: "application/json" })
@@ -1298,6 +1302,7 @@ function DecisionsPageContent() {
           open={!!selectedDecision}
           onOpenChange={(open) => !open && setSelectedDecision(null)}
           onDelete={handleDeleteClick}
+          onUpdated={setSelectedDecision}
         />
 
         <AddDecisionDialog

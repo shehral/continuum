@@ -138,7 +138,13 @@ async def get_dashboard_stats(
             # Count decisions needing human review
             try:
                 result = await session.run(
-                    "MATCH (d:DecisionTrace) WHERE d.human_rationale IS NULL RETURN count(d) as count"
+                    """
+                    MATCH (d:DecisionTrace)
+                    WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+                      AND d.human_rationale IS NULL
+                    RETURN count(d) as count
+                    """,
+                    user_id=user_id,
                 )
                 record = await result.single()
                 needs_review = record["count"] if record else 0

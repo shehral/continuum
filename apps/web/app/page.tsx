@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ErrorState } from "@/components/ui/error-state"
 import { StatCardSkeleton, DecisionCardSkeleton } from "@/components/ui/skeleton"
-import { api, type DashboardStats, type GraphStats, type Decision, type ValidationSummary } from "@/lib/api"
+import { api, type DashboardStats, type Decision } from "@/lib/api"
 import { getEntityStyle } from "@/lib/constants"
 import {
   FileText,
