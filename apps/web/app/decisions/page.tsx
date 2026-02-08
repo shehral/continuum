@@ -353,7 +353,7 @@ function DecisionDetailDialog({
             </Badge>
           </div>
         </DialogHeader>
-        <ScrollArea className="flex-1 pr-4">
+        <ScrollArea className="flex-1 min-h-0 pr-4">
           <div className="space-y-5">
             <div className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
               <h4 className="text-sm font-medium text-cyan-400 mb-2 flex items-center gap-2">
