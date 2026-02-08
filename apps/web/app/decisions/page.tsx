@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Upload, Lightbulb, Download } from "lucide-react"
+import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Upload, Lightbulb, Download, Bot, UserCircle, MessageSquarePlus } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -57,6 +57,17 @@ const getConfidenceExplanation = (confidence: number): { level: string; descript
     level: "Low Confidence",
     description: "Decision may need review. Could have unclear trigger, missing context, or incomplete rationale.",
   }
+}
+
+// Review status derived from human fields
+function getReviewStatus(decision: Decision): { label: string; className: string } {
+  if (decision.human_decision) {
+    return { label: "Overridden", className: "bg-violet-500/20 text-violet-300 border-violet-500/30" }
+  }
+  if (decision.human_rationale) {
+    return { label: "Reviewed", className: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" }
+  }
+  return { label: "Needs review", className: "bg-amber-500/20 text-amber-300 border-amber-500/30" }
 }
 
 // Date range filter options (Product-QW-2)
@@ -191,9 +202,14 @@ function DecisionDetailDialog({
               </Tooltip>
             </TooltipProvider>
           </div>
-          <Badge className={`w-fit ` + getConfidenceStyle(decision.confidence)}>
-            {Math.round(decision.confidence * 100)}% confidence
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge className={`w-fit ` + getConfidenceStyle(decision.confidence)}>
+              {Math.round(decision.confidence * 100)}% confidence
+            </Badge>
+            <Badge className={`w-fit ` + getReviewStatus(decision).className}>
+              {getReviewStatus(decision).label}
+            </Badge>
+          </div>
         </DialogHeader>
         <ScrollArea className="flex-1 pr-4">
           <div className="space-y-5">
@@ -220,20 +236,73 @@ function DecisionDetailDialog({
               </ul>
             </div>
 
-            <div className="p-4 rounded-lg bg-gradient-to-r from-cyan-500/10 to-teal-500/10 border border-cyan-500/20">
-              <h4 className="text-sm font-medium text-cyan-400 mb-2 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" aria-hidden="true" />
-                Decision
+            {/* Agent's Choice */}
+            <div className="p-4 rounded-lg bg-gradient-to-r from-violet-500/10 to-purple-500/10 border border-violet-500/20">
+              <h4 className="text-sm font-medium text-violet-400 mb-3 flex items-center gap-2">
+                <Bot className="h-4 w-4" aria-hidden="true" />
+                Agent&apos;s Choice
               </h4>
-              <p className="text-sm font-medium text-slate-200">{decision.agent_decision}</p>
+              <div className="space-y-3">
+                <div>
+                  <span className="text-xs text-slate-500 uppercase tracking-wider">Decision</span>
+                  <p className="text-sm font-medium text-slate-200 mt-0.5">{decision.agent_decision}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-slate-500 uppercase tracking-wider">Rationale</span>
+                  <p className="text-sm text-slate-300 leading-relaxed mt-0.5">{decision.agent_rationale}</p>
+                </div>
+                <div className="flex items-center gap-3 pt-1">
+                  {decision.source && decision.source !== "unknown" && (
+                    <Badge className={`text-[10px] px-1.5 py-0 ${
+                      decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :
+                      decision.source === "interview" ? "bg-cyan-500/15 text-cyan-300 border-cyan-400/30" :
+                      "bg-slate-500/15 text-slate-300 border-slate-400/30"
+                    }`}>
+                      {decision.source === "claude_logs" ? "claude-log" : decision.source}
+                    </Badge>
+                  )}
+                  <ConfidenceBadge confidence={decision.confidence} className="text-[10px] px-1.5 py-0" showPercentOnly />
+                </div>
+              </div>
             </div>
 
-            <div className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-              <h4 className="text-sm font-medium text-green-400 mb-2 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400" aria-hidden="true" />
-                Rationale
+            {/* Your Input */}
+            <div className={`p-4 rounded-lg border ${
+              decision.human_rationale
+                ? "bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border-emerald-500/20"
+                : "bg-gradient-to-r from-amber-500/5 to-orange-500/5 border-amber-500/20 border-dashed"
+            }`}>
+              <h4 className={`text-sm font-medium mb-3 flex items-center gap-2 ${
+                decision.human_rationale ? "text-emerald-400" : "text-amber-400"
+              }`}>
+                <UserCircle className="h-4 w-4" aria-hidden="true" />
+                Your Input
               </h4>
-              <p className="text-sm text-slate-300 leading-relaxed">{decision.agent_rationale}</p>
+              {decision.human_rationale || decision.human_decision ? (
+                <div className="space-y-3">
+                  {decision.human_decision && (
+                    <div>
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">Your Decision</span>
+                      <p className="text-sm font-medium text-slate-200 mt-0.5">{decision.human_decision}</p>
+                    </div>
+                  )}
+                  {!decision.human_decision && (
+                    <p className="text-xs text-emerald-400/70 italic">Agrees with agent&apos;s choice</p>
+                  )}
+                  {decision.human_rationale && (
+                    <div>
+                      <span className="text-xs text-slate-500 uppercase tracking-wider">Your Rationale</span>
+                      <p className="text-sm text-slate-300 leading-relaxed mt-0.5">{decision.human_rationale}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-3">
+                  <MessageSquarePlus className="h-6 w-6 text-amber-400/50 mx-auto mb-2" aria-hidden="true" />
+                  <p className="text-sm text-amber-300/70">Add your rationale to mark as reviewed</p>
+                  <p className="text-xs text-slate-500 mt-1">Click to edit fields above, or use the review queue</p>
+                </div>
+              )}
             </div>
 
             <div>
@@ -261,15 +330,6 @@ function DecisionDetailDialog({
               <span>
                 Created {new Date(decision.created_at).toLocaleDateString()}
               </span>
-              {decision.source && decision.source !== "unknown" && (
-                <Badge className={`text-[10px] px-1.5 py-0 ${
-                  decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :
-                  decision.source === "interview" ? "bg-cyan-500/15 text-cyan-300 border-cyan-400/30" :
-                  "bg-slate-500/15 text-slate-300 border-slate-400/30"
-                }`}>
-                  {decision.source === "claude_logs" ? "claude-log" : decision.source}
-                </Badge>
-              )}
               {decision.project_name && (
                 <Badge className="text-[10px] px-1.5 py-0 bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-400/30">
                   {decision.project_name}
@@ -531,6 +591,9 @@ function DecisionCard({
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
+              <Badge className={`text-[10px] px-1.5 py-0 ${getReviewStatus(decision).className}`}>
+                {getReviewStatus(decision).label}
+              </Badge>
               {decision.source && decision.source !== "unknown" && (
                 <Badge className={`text-[10px] px-1.5 py-0 ${
                   decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :
@@ -1031,6 +1094,9 @@ function DecisionsPageContent() {
                         </div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
+                          <Badge className={`text-[10px] px-1.5 py-0 ${getReviewStatus(decision).className}`}>
+                            {getReviewStatus(decision).label}
+                          </Badge>
                           {decision.source && decision.source !== "unknown" && (
                             <Badge className={`text-[10px] px-1.5 py-0 ${
                               decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :
