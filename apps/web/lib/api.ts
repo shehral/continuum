@@ -84,6 +84,22 @@ export interface GraphStats {
   relationships: number
 }
 
+export interface ValidationIssue {
+  type: string
+  severity: "error" | "warning" | "info"
+  message: string
+  affected_nodes: string[]
+  suggested_action?: string
+  details?: Record<string, unknown>
+}
+
+export interface ValidationSummary {
+  total_issues: number
+  by_severity: Record<string, number>
+  by_type: Record<string, number>
+  issues: ValidationIssue[]
+}
+
 export interface CaptureSession {
   id: string
   status: "active" | "completed" | "abandoned"
@@ -220,6 +236,9 @@ class ApiClient {
     return this.fetch<Record<string, number>>("/api/graph/relationships/types")
   }
 
+  async getGraphValidation(): Promise<ValidationSummary> {
+    return this.fetch<ValidationSummary>("/api/graph/validate")
+  }
 
   // Entities
   async deleteEntity(id: string): Promise<{ status: string; message: string }> {

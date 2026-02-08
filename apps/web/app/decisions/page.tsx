@@ -248,7 +248,8 @@ function DecisionDetailDialog({
                       className={`${style.bg} ${style.text} ${style.border} hover:scale-105 transition-transform`}
                       role="listitem"
                     >
-                      {style.icon} {entity.name}
+                      <style.lucideIcon className="h-3 w-3 mr-1" aria-hidden="true" />
+                      {entity.name}
                     </Badge>
                   )
                 })}
@@ -259,6 +260,20 @@ function DecisionDetailDialog({
               <span>
                 Created {new Date(decision.created_at).toLocaleDateString()}
               </span>
+              {decision.source && decision.source !== "unknown" && (
+                <Badge className={`text-[10px] px-1.5 py-0 ${
+                  decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :
+                  decision.source === "interview" ? "bg-cyan-500/15 text-cyan-300 border-cyan-400/30" :
+                  "bg-slate-500/15 text-slate-300 border-slate-400/30"
+                }`}>
+                  {decision.source === "claude_logs" ? "claude-log" : decision.source}
+                </Badge>
+              )}
+              {decision.project_name && (
+                <Badge className="text-[10px] px-1.5 py-0 bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-400/30">
+                  {decision.project_name}
+                </Badge>
+              )}
             </div>
           </div>
         </ScrollArea>
@@ -441,6 +456,13 @@ function AddDecisionDialog({
 }
 
 
+// Confidence-based left border accent for decision cards
+const getConfidenceBorderAccent = (confidence: number) => {
+  if (confidence >= 0.8) return "border-l-2 border-l-emerald-500/60"
+  if (confidence >= 0.6) return "border-l-2 border-l-amber-500/60"
+  return "border-l-2 border-l-rose-500/60"
+}
+
 // Decision card component for virtual list (P1-3: Virtual scrolling)
 function DecisionCard({
   decision,
@@ -458,7 +480,7 @@ function DecisionCard({
       <Card
         role="listitem"
         tabIndex={0}
-        className="bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.01] transition-all duration-300 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+        className={`bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.01] transition-all duration-300 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 ${getConfidenceBorderAccent(decision.confidence)}`}
         onClick={onClick}
         onKeyDown={onKeyDown}
         aria-label={`Decision: ${decision.trigger}`}
@@ -486,23 +508,40 @@ function DecisionCard({
           </TooltipProvider>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-wrap gap-1.5 mb-2" role="list" aria-label="Related entities">
+            {decision.entities.slice(0, 4).map((entity) => {
+              const style = getEntityStyle(entity.type)
+              return (
+                <Badge
+                  key={entity.id}
+                  className={`text-xs ${style.bg} ${style.text} ${style.border}`}
+                  role="listitem"
+                >
+                  <style.lucideIcon className="h-3 w-3 mr-1" aria-hidden="true" />
+                  {entity.name}
+                </Badge>
+              )
+            })}
+            {decision.entities.length > 4 && (
+              <Badge className="text-xs bg-slate-500/20 text-slate-400 border-slate-500/30">
+                +{decision.entities.length - 4} more
+              </Badge>
+            )}
+          </div>
           <div className="flex items-center justify-between">
-            <div className="flex flex-wrap gap-1.5" role="list" aria-label="Related entities">
-              {decision.entities.slice(0, 4).map((entity) => {
-                const style = getEntityStyle(entity.type)
-                return (
-                  <Badge
-                    key={entity.id}
-                    className={`text-xs ${style.bg} ${style.text} ${style.border}`}
-                    role="listitem"
-                  >
-                    {style.icon} {entity.name}
-                  </Badge>
-                )
-              })}
-              {decision.entities.length > 4 && (
-                <Badge className="text-xs bg-slate-500/20 text-slate-400 border-slate-500/30">
-                  +{decision.entities.length - 4} more
+            <div className="flex items-center gap-2">
+              {decision.source && decision.source !== "unknown" && (
+                <Badge className={`text-[10px] px-1.5 py-0 ${
+                  decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :
+                  decision.source === "interview" ? "bg-cyan-500/15 text-cyan-300 border-cyan-400/30" :
+                  "bg-slate-500/15 text-slate-300 border-slate-400/30"
+                }`}>
+                  {decision.source === "claude_logs" ? "claude-log" : decision.source}
+                </Badge>
+              )}
+              {decision.project_name && (
+                <Badge className="text-[10px] px-1.5 py-0 bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-400/30">
+                  {decision.project_name}
                 </Badge>
               )}
             </div>
@@ -911,7 +950,7 @@ function DecisionsPageContent() {
                     key={decision.id}
                     role="listitem"
                     tabIndex={0}
-                    className="bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.01] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 mb-4"
+                    className={`bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.01] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 mb-4 ${getConfidenceBorderAccent(decision.confidence)}`}
                     style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
                     onClick={() => handleCardClick(decision)}
                     onKeyDown={(e) => handleCardKeyDown(e, decision)}
@@ -940,23 +979,40 @@ function DecisionsPageContent() {
                       </TooltipProvider>
                     </CardHeader>
                     <CardContent>
+                      <div className="flex flex-wrap gap-1.5 mb-2" role="list" aria-label="Related entities">
+                        {decision.entities.slice(0, 4).map((entity) => {
+                          const style = getEntityStyle(entity.type)
+                          return (
+                            <Badge
+                              key={entity.id}
+                              className={`text-xs ${style.bg} ${style.text} ${style.border}`}
+                              role="listitem"
+                            >
+                              <style.lucideIcon className="h-3 w-3 mr-1" aria-hidden="true" />
+                              {entity.name}
+                            </Badge>
+                          )
+                        })}
+                        {decision.entities.length > 4 && (
+                          <Badge className="text-xs bg-slate-500/20 text-slate-400 border-slate-500/30">
+                            +{decision.entities.length - 4} more
+                            </Badge>
+                          )}
+                        </div>
                       <div className="flex items-center justify-between">
-                        <div className="flex flex-wrap gap-1.5" role="list" aria-label="Related entities">
-                          {decision.entities.slice(0, 4).map((entity) => {
-                            const style = getEntityStyle(entity.type)
-                            return (
-                              <Badge
-                                key={entity.id}
-                                className={`text-xs ${style.bg} ${style.text} ${style.border}`}
-                                role="listitem"
-                              >
-                                {style.icon} {entity.name}
-                              </Badge>
-                            )
-                          })}
-                          {decision.entities.length > 4 && (
-                            <Badge className="text-xs bg-slate-500/20 text-slate-400 border-slate-500/30">
-                              +{decision.entities.length - 4} more
+                        <div className="flex items-center gap-2">
+                          {decision.source && decision.source !== "unknown" && (
+                            <Badge className={`text-[10px] px-1.5 py-0 ${
+                              decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :
+                              decision.source === "interview" ? "bg-cyan-500/15 text-cyan-300 border-cyan-400/30" :
+                              "bg-slate-500/15 text-slate-300 border-slate-400/30"
+                            }`}>
+                              {decision.source === "claude_logs" ? "claude-log" : decision.source}
+                            </Badge>
+                          )}
+                          {decision.project_name && (
+                            <Badge className="text-[10px] px-1.5 py-0 bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-400/30">
+                              {decision.project_name}
                             </Badge>
                           )}
                         </div>

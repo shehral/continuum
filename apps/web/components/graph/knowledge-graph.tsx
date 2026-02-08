@@ -28,10 +28,11 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   X, Sparkles, GitBranch, Bot, User, FileText, Trash2, Loader2, Link2, Network,
-  FolderOpen, Plus, Layout, ChevronDown, Target, Columns, Lightbulb, Settings,
+  FolderOpen, Plus, Layout, ChevronDown, ChevronUp, Target, Columns, Lightbulb, Settings,
   Wrench, Code, ArrowUpRight, Box, RefreshCw, Zap, Clock, CircleDot, BarChart3,
-  Atom, Brain, Server, Cpu, Layers
+  Atom, Brain, Server, Cpu, Layers, Search
 } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -457,6 +458,15 @@ function KnowledgeGraphInner({
   const [showProjectFilter, setShowProjectFilter] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [layoutType, setLayoutType] = useState<LayoutType>("clustered") // Default to clustered for better UX
+  // Graph search state
+  const [graphSearchQuery, setGraphSearchQuery] = useState("")
+  const [graphSearchMatchIds, setGraphSearchMatchIds] = useState<string[]>([])
+  const [graphSearchIndex, setGraphSearchIndex] = useState(0)
+  // Collapsible panel states
+  const [sourcesExpanded, setSourcesExpanded] = useState(true)
+  const [projectsExpanded, setProjectsExpanded] = useState(true)
+  const [entityTypesExpanded, setEntityTypesExpanded] = useState(true)
+  const [relationshipsExpanded, setRelationshipsExpanded] = useState(true)
   // P1-3: Related decisions state
   const [relatedDecisions, setRelatedDecisions] = useState<SimilarDecision[]>([])
   const [relatedLoading, setRelatedLoading] = useState(false)
@@ -841,6 +851,66 @@ function KnowledgeGraphInner({
     }
   }, [focusedNodeId, nodes])
 
+  // Graph search: find nodes matching query
+  const handleGraphSearch = useCallback(
+    (query: string) => {
+      setGraphSearchQuery(query)
+      if (!query.trim()) {
+        setGraphSearchMatchIds([])
+        setGraphSearchIndex(0)
+        // Remove highlight from nodes
+        setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, isFocused: false, isDimmed: false } })))
+        return
+      }
+      const q = query.toLowerCase()
+      const matches = nodes
+        .filter((n) => {
+          const label = (n.data as { label?: string }).label?.toLowerCase() || ""
+          return label.includes(q)
+        })
+        .map((n) => n.id)
+      setGraphSearchMatchIds(matches)
+      setGraphSearchIndex(0)
+      if (matches.length > 0) {
+        const matchNode = nodes.find((n) => n.id === matches[0])
+        if (matchNode) {
+          setFocusedNodeId(matchNode.id)
+          centerOnNode(matchNode)
+        }
+        // Dim non-matching nodes
+        setNodes((prev) =>
+          prev.map((n) => ({
+            ...n,
+            data: {
+              ...n.data,
+              isFocused: n.id === matches[0],
+              isDimmed: !matches.includes(n.id),
+            },
+          }))
+        )
+      } else {
+        setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, isFocused: false, isDimmed: false } })))
+      }
+    },
+    [nodes, centerOnNode, setNodes]
+  )
+
+  const handleGraphSearchNext = useCallback(() => {
+    if (graphSearchMatchIds.length === 0) return
+    const nextIndex = (graphSearchIndex + 1) % graphSearchMatchIds.length
+    setGraphSearchIndex(nextIndex)
+    const matchNode = nodes.find((n) => n.id === graphSearchMatchIds[nextIndex])
+    if (matchNode) {
+      setFocusedNodeId(matchNode.id)
+      centerOnNode(matchNode)
+      setNodes((prev) =>
+        prev.map((n) => ({
+          ...n,
+          data: { ...n.data, isFocused: n.id === graphSearchMatchIds[nextIndex] },
+        }))
+      )
+    }
+  }, [graphSearchMatchIds, graphSearchIndex, nodes, centerOnNode, setNodes])
 
   // Show empty state when there are no nodes (FE-QW-6)
   if (!data?.nodes || data.nodes.length === 0) {
@@ -902,27 +972,74 @@ function KnowledgeGraphInner({
           color="rgba(148, 163, 184, 0.15)"
         />
 
+        {/* Graph Search */}
+        <Panel position="top-center" className="m-4">
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+              <Input
+                placeholder="Find node..."
+                value={graphSearchQuery}
+                onChange={(e) => handleGraphSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    handleGraphSearchNext()
+                  }
+                  e.stopPropagation()
+                }}
+                className="h-8 w-52 pl-8 pr-8 text-xs bg-slate-800/90 border-white/10 text-slate-200 placeholder:text-slate-500 focus:border-violet-500/50"
+              />
+              {graphSearchQuery && (
+                <button
+                  onClick={() => handleGraphSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+            {graphSearchMatchIds.length > 0 && (
+              <span className="text-[10px] text-slate-400 bg-slate-800/80 px-2 py-1 rounded">
+                {graphSearchIndex + 1}/{graphSearchMatchIds.length}
+              </span>
+            )}
+          </div>
+        </Panel>
+
         {/* Left Side Panels - Stacked vertically */}
         <Panel position="top-left" className="m-4">
           <div className="flex flex-col gap-3 max-h-[calc(100vh-180px)] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
             {/* Source Filter Panel */}
             {showSourceLegend && (
               <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10 shrink-0">
-                <CardHeader className="py-2 px-3 flex flex-row items-center justify-between">
+                <CardHeader className="py-2 px-3 flex flex-row items-center justify-between cursor-pointer" onClick={() => setSourcesExpanded(!sourcesExpanded)}>
                   <CardTitle className="text-xs text-slate-200 flex items-center gap-2">
                     <Bot className="h-3.5 w-3.5" aria-hidden="true" /> Sources
                   </CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowSourceLegend(false)}
-                    className="h-5 w-5 text-slate-400 hover:text-slate-200"
-                    aria-label="Close source legend"
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                      aria-label={sourcesExpanded ? "Collapse" : "Expand"}
+                      onClick={(e) => { e.stopPropagation(); setSourcesExpanded(!sourcesExpanded) }}
+                    >
+                      {sourcesExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => { e.stopPropagation(); setShowSourceLegend(false) }}
+                      className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                      aria-label="Close source legend"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </CardHeader>
-                <CardContent className="py-1.5 px-3 space-y-1">
+                {sourcesExpanded && <CardContent className="py-1.5 px-3 space-y-1">
                   {/* All sources button */}
                   <button
                     onClick={() => handleSourceFilterClick(null)}
@@ -973,28 +1090,39 @@ function KnowledgeGraphInner({
                       </button>
                     )
                   })}
-                </CardContent>
+                </CardContent>}
               </Card>
             )}
 
             {/* Project Filter Panel */}
             {showProjectFilter && (
               <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10 shrink-0">
-                <CardHeader className="py-2 px-3 flex flex-row items-center justify-between">
+                <CardHeader className="py-2 px-3 flex flex-row items-center justify-between cursor-pointer" onClick={() => setProjectsExpanded(!projectsExpanded)}>
                   <CardTitle className="text-xs text-slate-200 flex items-center gap-2">
                     <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" /> Projects
                   </CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowProjectFilter(false)}
-                    className="h-5 w-5 text-slate-400 hover:text-slate-200"
-                    aria-label="Close project filter"
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                      aria-label={projectsExpanded ? "Collapse" : "Expand"}
+                      onClick={(e) => { e.stopPropagation(); setProjectsExpanded(!projectsExpanded) }}
+                    >
+                      {projectsExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => { e.stopPropagation(); setShowProjectFilter(false) }}
+                      className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                      aria-label="Close project filter"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </CardHeader>
-                <CardContent className="py-1.5 px-3 space-y-1">
+                {projectsExpanded && <CardContent className="py-1.5 px-3 space-y-1">
                   {/* All Projects button */}
                   <button
                     onClick={() => onProjectFilterChange?.(null)}
@@ -1044,18 +1172,21 @@ function KnowledgeGraphInner({
                         </button>
                       ))}
                   </div>
-                </CardContent>
+                </CardContent>}
               </Card>
             )}
 
             {/* Entity Types Legend */}
             <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10 shrink-0" role="region" aria-label="Entity types legend">
-              <CardHeader className="py-2 px-3">
-                <CardTitle className="text-xs text-slate-200 flex items-center gap-2">
-                  <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" /> Entity Types
+              <CardHeader className="py-2 px-3 cursor-pointer" onClick={() => setEntityTypesExpanded(!entityTypesExpanded)}>
+                <CardTitle className="text-xs text-slate-200 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" /> Entity Types
+                  </span>
+                  {entityTypesExpanded ? <ChevronUp className="h-3 w-3 text-slate-400" /> : <ChevronDown className="h-3 w-3 text-slate-400" />}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="py-1.5 px-3 space-y-1.5">
+              {entityTypesExpanded && <CardContent className="py-1.5 px-3 space-y-1.5">
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded-full bg-blue-500/20 border border-blue-400 flex items-center justify-center" aria-hidden="true">
                     <Atom className="h-2.5 w-2.5 text-blue-400" />
@@ -1090,7 +1221,7 @@ function KnowledgeGraphInner({
                   <Sparkles className="h-3.5 w-3.5 text-purple-400" aria-hidden="true" />
                   <span className="text-[10px] text-slate-400">= Has embedding</span>
                 </div>
-              </CardContent>
+              </CardContent>}
             </Card>
           </div>
         </Panel>
@@ -1099,21 +1230,32 @@ function KnowledgeGraphInner({
         {showRelationshipLegend && (
           <Panel position="top-right" className="m-4">
             <Card className="w-44 bg-slate-800/90 backdrop-blur-xl border-white/10" role="region" aria-label="Relationship types legend">
-              <CardHeader className="py-2 px-3 flex flex-row items-center justify-between">
+              <CardHeader className="py-2 px-3 flex flex-row items-center justify-between cursor-pointer" onClick={() => setRelationshipsExpanded(!relationshipsExpanded)}>
                 <CardTitle className="text-xs text-slate-200 flex items-center gap-2">
                   <GitBranch className="h-3.5 w-3.5" aria-hidden="true" /> Relationships
                 </CardTitle>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowRelationshipLegend(false)}
-                  className="h-5 w-5 text-slate-400 hover:text-slate-200"
-                  aria-label="Close relationship legend"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                    aria-label={relationshipsExpanded ? "Collapse" : "Expand"}
+                    onClick={(e) => { e.stopPropagation(); setRelationshipsExpanded(!relationshipsExpanded) }}
+                  >
+                    {relationshipsExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => { e.stopPropagation(); setShowRelationshipLegend(false) }}
+                    className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                    aria-label="Close relationship legend"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
               </CardHeader>
-              <CardContent className="py-1.5 px-3 space-y-1">
+              {relationshipsExpanded && <CardContent className="py-1.5 px-3 space-y-1">
                 {Object.entries(RELATIONSHIP_STYLES).map(([key, style]) => {
                   const count = relationshipCounts[key] || 0
                   if (count === 0 && key !== "INVOLVES") return null
@@ -1146,7 +1288,7 @@ function KnowledgeGraphInner({
                     </div>
                   )
                 })}
-              </CardContent>
+              </CardContent>}
             </Card>
           </Panel>
         )}
@@ -1228,7 +1370,7 @@ function KnowledgeGraphInner({
 
       {/* Detail Panel - responsive width and dynamic positioning */}
       {selectedNode && (
-        <div className={`absolute top-4 right-4 w-80 max-w-[90vw] z-10 ${showRelationshipLegend ? "mt-[220px]" : ""}`}>
+        <div className={`absolute right-4 w-80 max-w-[90vw] z-10 ${showRelationshipLegend ? "top-[260px]" : "top-4"}`}>
           <Card className="bg-slate-800/95 backdrop-blur-xl border-white/10 shadow-2xl">
             <CardHeader className="flex flex-row items-center justify-between py-3 border-b border-white/10">
               <CardTitle className="text-base text-slate-100 flex items-center gap-2">
