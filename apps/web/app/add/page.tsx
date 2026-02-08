@@ -463,9 +463,9 @@ export default function AddKnowledgePage() {
         </Card>
 
         {/* Other Methods */}
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-2 items-stretch">
           {/* AI Interview */}
-          <Card className="bg-white/[0.03] backdrop-blur-xl border-white/[0.06]">
+          <Card className="bg-white/[0.03] backdrop-blur-xl border-white/[0.06] flex flex-col">
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div className="h-10 w-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
@@ -480,7 +480,7 @@ export default function AddKnowledgePage() {
                 Guided conversation to document decisions step by step
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1 flex flex-col justify-end">
               <ul className="text-sm text-slate-400 space-y-1 mb-4">
                 <li>• AI guides you through trigger → context → options → decision → rationale</li>
                 <li>• Automatically extracts and links entities</li>
@@ -497,7 +497,7 @@ export default function AddKnowledgePage() {
           </Card>
 
           {/* Manual Entry */}
-          <Card className="bg-white/[0.03] backdrop-blur-xl border-white/[0.06]">
+          <Card className="bg-white/[0.03] backdrop-blur-xl border-white/[0.06] flex flex-col">
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div className="h-10 w-10 rounded-xl bg-slate-500/10 flex items-center justify-center">
@@ -512,7 +512,7 @@ export default function AddKnowledgePage() {
                 Direct form entry when you know all the details
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1 flex flex-col justify-end">
               <ul className="text-sm text-slate-400 space-y-1 mb-4">
                 <li>• Simple form-based entry</li>
                 <li>• No AI processing required</li>
