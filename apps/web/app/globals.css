@@ -357,36 +357,37 @@ body {
 }
 
 /* Light mode: fix hardcoded dark-mode utility classes */
+/* These MUST use :not(.dark) to avoid breaking dark mode */
 /* Cards using bg-white/[0.03] and border-white/[0.06] are invisible in light mode */
-:root [class*="bg-white/[0.0"] {
+:root:not(.dark) [class*="bg-white/[0.0"] {
   background-color: rgba(0, 0, 0, 0.02);
 }
-:root [class*="border-white/[0.0"] {
+:root:not(.dark) [class*="border-white/[0.0"] {
   border-color: rgba(0, 0, 0, 0.08);
 }
 
 /* Light mode: backdrop containers */
-:root [class*="bg-slate-900/"] {
+:root:not(.dark) [class*="bg-slate-900/"] {
   background-color: rgba(0, 0, 0, 0.02);
 }
 
 /* Light mode: improve contrast for common text classes */
-:root .text-slate-100,
-:root .text-slate-200 {
+:root:not(.dark) .text-slate-100,
+:root:not(.dark) .text-slate-200 {
   color: hsl(240 10% 15%);
 }
-:root .text-slate-300 {
+:root:not(.dark) .text-slate-300 {
   color: hsl(240 10% 25%);
 }
-:root .text-slate-400 {
+:root:not(.dark) .text-slate-400 {
   color: hsl(240 10% 35%);
 }
-:root .text-slate-500 {
+:root:not(.dark) .text-slate-500 {
   color: hsl(240 10% 45%);
 }
 
 /* Light mode: cyan glow shadows are too subtle */
-:root [class*="shadow-[0_0_20px"] {
+:root:not(.dark) [class*="shadow-[0_0_20px"] {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
