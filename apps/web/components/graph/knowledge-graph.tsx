@@ -248,7 +248,7 @@ const DecisionNode = React.memo(
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="font-semibold text-sm text-slate-100 line-clamp-2 cursor-help">
+              <div className="font-semibold text-sm text-slate-100 line-clamp-2">
                 {nodeData.label}
               </div>
             </TooltipTrigger>
@@ -260,7 +260,7 @@ const DecisionNode = React.memo(
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="text-xs text-slate-400 mt-2 line-clamp-2 cursor-help">
+              <div className="text-xs text-slate-400 mt-2 line-clamp-2">
                 {nodeData.decision?.agent_decision || "Decision trace"}
               </div>
             </TooltipTrigger>
