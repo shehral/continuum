@@ -42,6 +42,7 @@ async def get_dashboard_stats(
     total_sessions = 0
     total_decisions = 0
     total_entities = 0
+    needs_review = 0
     recent_decisions = []
     errors = []
 
@@ -107,11 +108,13 @@ async def get_dashboard_stats(
 
                     decision = Decision(
                         id=d["id"],
-                        trigger=d.get("trigger", ""),
-                        context=d.get("context", ""),
+                        trigger=d.get("trigger") or "(untitled)",
+                        context=d.get("context") or "(no context)",
                         options=d.get("options", []),
-                        decision=d.get("decision", ""),
-                        rationale=d.get("rationale", ""),
+                        agent_decision=d.get("agent_decision") or d.get("decision") or "(not recorded)",
+                        agent_rationale=d.get("agent_rationale") or d.get("rationale") or "(not recorded)",
+                        human_decision=d.get("human_decision"),
+                        human_rationale=d.get("human_rationale"),
                         confidence=d.get("confidence", 0.0),
                         created_at=d.get("created_at", ""),
                         entities=[
@@ -131,6 +134,20 @@ async def get_dashboard_stats(
                     exc_info=True,
                 )
                 errors.append("neo4j_recent_decisions")
+
+            # Count decisions needing human review
+            try:
+                result = await session.run(
+                    "MATCH (d:DecisionTrace) WHERE d.human_rationale IS NULL RETURN count(d) as count"
+                )
+                record = await result.single()
+                needs_review = record["count"] if record else 0
+            except Exception as e:
+                logger.error(
+                    f"Neo4j error counting needs_review: {type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                errors.append("neo4j_needs_review")
 
     except Neo4jServiceUnavailable as e:
         # Neo4j is not available - this is a critical infrastructure issue
@@ -167,6 +184,7 @@ async def get_dashboard_stats(
         total_decisions=total_decisions,
         total_entities=total_entities,
         total_sessions=total_sessions,
+        needs_review=needs_review,
         recent_decisions=recent_decisions,
     )
 

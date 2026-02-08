@@ -132,7 +132,7 @@ export default function TimelinePage() {
                                 {decision.trigger}
                               </p>
                               <p className="text-xs text-slate-500 mt-1 line-clamp-1">
-                                {decision.decision}
+                                {decision.agent_decision}
                               </p>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">

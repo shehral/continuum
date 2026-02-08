@@ -121,7 +121,7 @@ async def bulk_import_decisions(
                         MATCH (d:DecisionTrace)
                         WHERE d.user_id = $user_id
                           AND d.trigger = $trigger
-                          AND d.decision = $decision
+                          AND COALESCE(d.agent_decision, d.decision) = $decision
                         RETURN d.id as id
                         LIMIT 1
                         """,

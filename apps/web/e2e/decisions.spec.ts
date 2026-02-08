@@ -10,8 +10,8 @@ test.describe("Decisions Page", () => {
   test.describe("Loading and Display", () => {
     test("should load decisions page and display list", async ({ page }) => {
       const decisions = [
-        createMockDecision({ trigger: "Choose database", decision: "PostgreSQL" }),
-        createMockDecision({ trigger: "Choose framework", decision: "FastAPI" }),
+        createMockDecision({ trigger: "Choose database", agent_decision: "PostgreSQL" }),
+        createMockDecision({ trigger: "Choose framework", agent_decision: "FastAPI" }),
       ]
 
       await mockDecisions(page, decisions)
@@ -29,8 +29,8 @@ test.describe("Decisions Page", () => {
       const decision = createMockDecision({
         trigger: "Choose database for the project",
         context: "Building a new web application",
-        decision: "Use PostgreSQL",
-        rationale: "Best for relational data",
+        agent_decision: "Use PostgreSQL",
+        agent_rationale: "Best for relational data",
         entities: [entity],
       })
 
@@ -67,15 +67,15 @@ test.describe("Decisions Page", () => {
         const query = url.searchParams.get("q") || ""
 
         const allDecisions = [
-          createMockDecision({ trigger: "Choose database", decision: "PostgreSQL" }),
-          createMockDecision({ trigger: "Choose framework", decision: "FastAPI" }),
-          createMockDecision({ trigger: "Choose cache", decision: "Redis" }),
+          createMockDecision({ trigger: "Choose database", agent_decision: "PostgreSQL" }),
+          createMockDecision({ trigger: "Choose framework", agent_decision: "FastAPI" }),
+          createMockDecision({ trigger: "Choose cache", agent_decision: "Redis" }),
         ]
 
         const filtered = query
           ? allDecisions.filter((d) =>
               d.trigger.toLowerCase().includes(query.toLowerCase()) ||
-              d.decision.toLowerCase().includes(query.toLowerCase())
+              d.agent_decision.toLowerCase().includes(query.toLowerCase())
             )
           : allDecisions
 
@@ -141,8 +141,8 @@ test.describe("Decisions Page", () => {
         trigger: "Important Decision",
         context: "Very important context here",
         options: ["Option A", "Option B", "Option C"],
-        decision: "Chose Option B",
-        rationale: "Because it was the best option for our needs",
+        agent_decision: "Chose Option B",
+        agent_rationale: "Because it was the best option for our needs",
       })
 
       await mockDecisions(page, [decision])

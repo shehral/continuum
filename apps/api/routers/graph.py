@@ -1117,7 +1117,8 @@ async def get_similar_nodes(
                 WITH d, gds.similarity.cosine(d.embedding, $embedding) AS similarity
                 WHERE similarity > $threshold
                 OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
-                RETURN d.id as id, d.trigger as trigger, d.decision as decision,
+                RETURN d.id as id, d.trigger as trigger,
+                       COALESCE(d.agent_decision, d.decision) as decision,
                        similarity, collect(e.name) as shared_entities
                 ORDER BY similarity DESC
                 LIMIT $top_k
@@ -1136,7 +1137,8 @@ async def get_similar_nodes(
                 WHERE d.id <> $id AND d.embedding IS NOT NULL
                 AND (d.user_id = $user_id OR d.user_id IS NULL)
                 OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
-                RETURN d.id as id, d.trigger as trigger, d.decision as decision,
+                RETURN d.id as id, d.trigger as trigger,
+                       COALESCE(d.agent_decision, d.decision) as decision,
                        d.embedding as other_embedding, collect(e.name) as shared_entities
                 """,
                 id=node_id,
@@ -1362,8 +1364,10 @@ async def hybrid_search(
                         WHERE d.embedding IS NOT NULL
                         AND (d.user_id = $user_id OR d.user_id IS NULL)
                         RETURN d.id AS id, d.embedding AS embedding,
-                               d.trigger AS trigger, d.decision AS decision,
-                               d.context AS context, d.rationale AS rationale,
+                               d.trigger AS trigger,
+                               COALESCE(d.agent_decision, d.decision) AS decision,
+                               d.context AS context,
+                               COALESCE(d.agent_rationale, d.rationale) AS rationale,
                                d.created_at AS created_at, d.source AS source
                         """,
                         user_id=user_id,
@@ -1530,7 +1534,8 @@ async def semantic_search(
                 WHERE d.embedding IS NOT NULL
                 AND (d.user_id = $user_id OR d.user_id IS NULL)
                 OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
-                RETURN d.id as id, d.trigger as trigger, d.decision as decision,
+                RETURN d.id as id, d.trigger as trigger,
+                       COALESCE(d.agent_decision, d.decision) as decision,
                        d.embedding as other_embedding, collect(e.name) as shared_entities
                 """,
                 user_id=user_id,
@@ -1842,7 +1847,8 @@ async def enhance_graph(
             WHERE d.embedding IS NULL
             AND (d.user_id = $user_id OR d.user_id IS NULL)
             RETURN d.id as id, d.trigger as trigger, d.context as context,
-                   d.decision as decision, d.rationale as rationale,
+                   COALESCE(d.agent_decision, d.decision) as decision,
+                   COALESCE(d.agent_rationale, d.rationale) as rationale,
                    d.options as options
             """,
             user_id=user_id,

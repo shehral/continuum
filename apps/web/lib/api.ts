@@ -5,8 +5,10 @@ export interface Decision {
   trigger: string
   context: string
   options: string[]
-  decision: string
-  rationale: string
+  agent_decision: string
+  agent_rationale: string
+  human_decision?: string | null
+  human_rationale?: string | null
   confidence: number
   created_at: string
   entities: Entity[]
@@ -56,7 +58,7 @@ export type RelationshipType =
 export interface SimilarDecision {
   id: string
   trigger: string
-  decision: string
+  agent_decision: string
   similarity: number
   shared_entities: string[]
 }
@@ -70,7 +72,8 @@ export interface SearchResult {
   data: {
     // Decision fields
     trigger?: string
-    decision?: string
+    decision?: string  // backward compat from search
+    agent_decision?: string
     confidence?: number
     // Entity fields
     name?: string
@@ -120,6 +123,7 @@ export interface DashboardStats {
   total_decisions: number
   total_entities: number
   total_sessions: number
+  needs_review: number
   recent_decisions: Decision[]
 }
 
@@ -402,8 +406,8 @@ class ApiClient {
     trigger: string
     context: string
     options: string[]
-    decision: string
-    rationale: string
+    decision: string  // sent as alias, mapped to agent_decision on backend
+    rationale: string  // sent as alias, mapped to agent_rationale on backend
     entities: string[]
     project_name?: string | null
   }): Promise<Decision> {
@@ -427,6 +431,23 @@ class ApiClient {
         relationship,
       }),
     })
+  }
+
+  async updateDecision(
+    id: string,
+    data: Partial<Pick<Decision, "trigger" | "context" | "options" | "agent_decision" | "agent_rationale" | "human_decision" | "human_rationale">>
+  ): Promise<Decision> {
+    return this.fetch<Decision>(`/api/decisions/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getDecisionsNeedingReview(
+    limit = 20,
+    offset = 0
+  ): Promise<{ total_needs_review: number; decisions: Decision[] }> {
+    return this.fetch(`/api/decisions/needs-review?limit=${limit}&offset=${offset}`)
   }
 
   async getSuggestedEntities(text: string): Promise<Entity[]> {
@@ -474,9 +495,11 @@ export interface HybridSearchResult {
   combined_score: number
   data: {
     trigger?: string
-    decision?: string
+    decision?: string  // backward compat
+    agent_decision?: string
     context?: string
-    rationale?: string
+    rationale?: string  // backward compat
+    agent_rationale?: string
     created_at?: string
     source?: string
     name?: string

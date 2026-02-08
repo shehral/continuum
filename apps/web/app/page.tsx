@@ -29,6 +29,7 @@ import {
   AlertCircle,
   Info,
   CheckCircle2,
+  ClipboardCheck,
 } from "lucide-react"
 
 // Animated number counter for stats
@@ -159,11 +160,11 @@ function DecisionCard({ decision, index = 0 }: { decision: Decision; index?: num
             <Tooltip>
               <TooltipTrigger asChild>
                 <CardDescription className="line-clamp-2 text-slate-400 mt-1 cursor-help">
-                  {decision.decision}
+                  {decision.agent_decision}
                 </CardDescription>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-lg bg-slate-800 border-white/10">
-                <p>{decision.decision}</p>
+                <p>{decision.agent_decision}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -219,6 +220,7 @@ export default function DashboardPage() {
     total_decisions: 0,
     total_entities: 0,
     total_sessions: 0,
+    needs_review: 0,
     recent_decisions: [],
   }
 
@@ -312,6 +314,32 @@ export default function DashboardPage() {
               delay={300}
             />
           </div>
+        )}
+
+        {/* Needs Review Nudge */}
+        {!isLoading && !error && displayStats.needs_review > 0 && (
+          <Link href="/decisions/review">
+            <Card
+              variant="glass"
+              className="cursor-pointer group border-amber-500/20 hover:border-amber-500/40 transition-colors animate-in fade-in slide-in-from-bottom-4 duration-500"
+              style={{ animationDelay: "350ms", animationFillMode: "backwards" }}
+            >
+              <CardContent className="flex items-center gap-4 py-4">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                  <ClipboardCheck className="h-5 w-5 text-amber-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-amber-300">
+                    {displayStats.needs_review} decision{displayStats.needs_review !== 1 ? "s" : ""} awaiting your review
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Add your rationale to confirm or override agent decisions
+                  </p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-amber-400 group-hover:translate-x-1 transition-transform shrink-0" />
+              </CardContent>
+            </Card>
+          </Link>
         )}
 
         {/* Analytics Charts */}

@@ -317,8 +317,8 @@ Return ONLY valid JSON, no markdown or explanation."""
             WHERE conflicting.user_id = $user_id OR conflicting.user_id IS NULL
             RETURN d.id AS id,
                    d.trigger AS trigger,
-                   d.decision AS decision,
-                   d.rationale AS rationale,
+                   COALESCE(d.agent_decision, d.decision) AS decision,
+                   COALESCE(d.agent_rationale, d.rationale) AS rationale,
                    d.created_at AS created_at,
                    d.source AS source,
                    collect(DISTINCT superseded.id) AS supersedes,
@@ -349,7 +349,7 @@ Return ONLY valid JSON, no markdown or explanation."""
             WHERE superseded_by.user_id = $user_id OR superseded_by.user_id IS NULL
             RETURN d.id AS id,
                    d.trigger AS trigger,
-                   d.decision AS decision,
+                   COALESCE(d.agent_decision, d.decision) AS decision,
                    d.created_at AS created_at,
                    collect(DISTINCT {
                        id: influenced_by.id,
@@ -396,8 +396,8 @@ Return ONLY valid JSON, no markdown or explanation."""
             OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
             RETURN d.id AS id,
                    d.trigger AS trigger,
-                   d.decision AS decision,
-                   d.rationale AS rationale,
+                   COALESCE(d.agent_decision, d.decision) AS decision,
+                   COALESCE(d.agent_rationale, d.rationale) AS rationale,
                    d.created_at AS created_at,
                    collect(e.name) AS entities
             """,
@@ -413,8 +413,8 @@ Return ONLY valid JSON, no markdown or explanation."""
             WHERE d.user_id = $user_id OR d.user_id IS NULL
             RETURN d.id AS id,
                    d.trigger AS trigger,
-                   d.decision AS decision,
-                   d.rationale AS rationale,
+                   COALESCE(d.agent_decision, d.decision) AS decision,
+                   COALESCE(d.agent_rationale, d.rationale) AS rationale,
                    d.created_at AS created_at
             """,
             id=decision_id,

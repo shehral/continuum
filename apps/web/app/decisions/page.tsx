@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Upload, Lightbulb, Download } from "lucide-react"
+import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Upload, Lightbulb, Download, Bot, UserCircle, MessageSquarePlus, Pencil, Check } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -57,6 +57,17 @@ const getConfidenceExplanation = (confidence: number): { level: string; descript
     level: "Low Confidence",
     description: "Decision may need review. Could have unclear trigger, missing context, or incomplete rationale.",
   }
+}
+
+// Review status derived from human fields
+function getReviewStatus(decision: Decision): { label: string; className: string } {
+  if (decision.human_decision) {
+    return { label: "Overridden", className: "bg-violet-500/20 text-violet-300 border-violet-500/30" }
+  }
+  if (decision.human_rationale) {
+    return { label: "Reviewed", className: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" }
+  }
+  return { label: "Needs review", className: "bg-amber-500/20 text-amber-300 border-amber-500/30" }
 }
 
 // Date range filter options (Product-QW-2)
@@ -155,6 +166,125 @@ function DateRangeFilter({
   )
 }
 
+// Inline editable field — shows text by default, pencil on hover, input on click
+function EditableField({
+  value,
+  onSave,
+  multiline = false,
+  placeholder = "Click to add...",
+  className = "",
+  textClassName = "",
+  isSaving = false,
+}: {
+  value: string | null | undefined
+  onSave: (value: string) => void
+  multiline?: boolean
+  placeholder?: string
+  className?: string
+  textClassName?: string
+  isSaving?: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value ?? "")
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+      // Move cursor to end
+      const len = inputRef.current.value.length
+      inputRef.current.setSelectionRange(len, len)
+    }
+  }, [editing])
+
+  // Sync draft when external value changes
+  useEffect(() => {
+    if (!editing) setDraft(value ?? "")
+  }, [value, editing])
+
+  const handleSave = useCallback(() => {
+    const trimmed = draft.trim()
+    if (trimmed && trimmed !== (value ?? "")) {
+      onSave(trimmed)
+    }
+    setEditing(false)
+  }, [draft, value, onSave])
+
+  const handleCancel = useCallback(() => {
+    setDraft(value ?? "")
+    setEditing(false)
+  }, [value])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault()
+      handleCancel()
+    }
+    if (e.key === "Enter" && !multiline) {
+      e.preventDefault()
+      handleSave()
+    }
+    if (e.key === "Enter" && multiline && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      handleSave()
+    }
+  }, [handleSave, handleCancel, multiline])
+
+  if (editing) {
+    const inputClass = "w-full rounded-md border bg-white/[0.05] border-cyan-500/40 text-slate-200 px-2 py-1.5 text-sm focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none"
+
+    return (
+      <div className={`relative ${className}`}>
+        {multiline ? (
+          <textarea
+            ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={handleKeyDown}
+            className={`${inputClass} min-h-[60px] resize-y`}
+            placeholder={placeholder}
+          />
+        ) : (
+          <input
+            ref={inputRef as React.RefObject<HTMLInputElement>}
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={handleKeyDown}
+            className={inputClass}
+            placeholder={placeholder}
+          />
+        )}
+        <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500">
+          <span>{multiline ? "Ctrl+Enter to save" : "Enter to save"}</span>
+          <span>· Esc to cancel</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={`group/edit relative cursor-pointer rounded px-1 -mx-1 hover:bg-white/[0.04] transition-colors ${className}`}
+      onClick={() => setEditing(true)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter") setEditing(true) }}
+      aria-label={value ? `Edit: ${value}` : placeholder}
+    >
+      {value ? (
+        <span className={textClassName}>{value}</span>
+      ) : (
+        <span className="text-sm text-slate-500 italic">{placeholder}</span>
+      )}
+      <Pencil className="h-3 w-3 text-slate-500 opacity-0 group-hover/edit:opacity-100 transition-opacity absolute top-1 right-1" aria-hidden="true" />
+      {isSaving && <Loader2 className="h-3 w-3 text-cyan-400 animate-spin absolute top-1 right-1" aria-hidden="true" />}
+    </div>
+  )
+}
+
 function DecisionDetailDialog({
   decision,
   open,
@@ -166,14 +296,37 @@ function DecisionDetailDialog({
   onOpenChange: (open: boolean) => void
   onDelete: (decision: Decision) => void
 }) {
+  const queryClient = useQueryClient()
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof api.updateDecision>[1] }) =>
+      api.updateDecision(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["decisions"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
+    },
+  })
+
+  const handleFieldSave = useCallback((field: string, value: string) => {
+    if (!decision) return
+    updateMutation.mutate({ id: decision.id, data: { [field]: value } })
+  }, [decision, updateMutation])
+
   if (!decision) return null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col bg-slate-900/95 border-white/10 backdrop-blur-xl">
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col bg-background/95 border-border backdrop-blur-xl">
         <DialogHeader>
           <div className="flex items-start justify-between gap-4 pr-8">
-            <DialogTitle className="text-slate-100 text-xl">{decision.trigger}</DialogTitle>
+            <DialogTitle className="text-foreground text-xl">
+              <EditableField
+                value={decision.trigger}
+                onSave={(v) => handleFieldSave("trigger", v)}
+                textClassName="text-foreground text-xl font-semibold"
+                isSaving={updateMutation.isPending}
+              />
+            </DialogTitle>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -191,21 +344,32 @@ function DecisionDetailDialog({
               </Tooltip>
             </TooltipProvider>
           </div>
-          <Badge className={`w-fit ` + getConfidenceStyle(decision.confidence)}>
-            {Math.round(decision.confidence * 100)}% confidence
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge className={`w-fit ` + getConfidenceStyle(decision.confidence)}>
+              {Math.round(decision.confidence * 100)}% confidence
+            </Badge>
+            <Badge className={`w-fit ` + getReviewStatus(decision).className}>
+              {getReviewStatus(decision).label}
+            </Badge>
+          </div>
         </DialogHeader>
-        <ScrollArea className="flex-1 pr-4">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-4">
           <div className="space-y-5">
-            <div className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <div className="p-4 rounded-lg bg-muted/50 border border-border">
               <h4 className="text-sm font-medium text-cyan-400 mb-2 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" aria-hidden="true" />
                 Context
               </h4>
-              <p className="text-sm text-slate-300 leading-relaxed">{decision.context}</p>
+              <EditableField
+                value={decision.context}
+                onSave={(v) => handleFieldSave("context", v)}
+                multiline
+                textClassName="text-sm text-muted-foreground leading-relaxed"
+                isSaving={updateMutation.isPending}
+              />
             </div>
 
-            <div className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <div className="p-4 rounded-lg bg-muted/50 border border-border">
               <h4 className="text-sm font-medium text-purple-400 mb-2 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-purple-400" aria-hidden="true" />
                 Options Considered
@@ -220,20 +384,88 @@ function DecisionDetailDialog({
               </ul>
             </div>
 
-            <div className="p-4 rounded-lg bg-gradient-to-r from-cyan-500/10 to-teal-500/10 border border-cyan-500/20">
-              <h4 className="text-sm font-medium text-cyan-400 mb-2 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" aria-hidden="true" />
-                Decision
+            {/* Agent's Choice */}
+            <div className="p-4 rounded-lg bg-gradient-to-r from-violet-500/10 to-purple-500/10 border border-violet-500/20">
+              <h4 className="text-sm font-medium text-violet-400 mb-3 flex items-center gap-2">
+                <Bot className="h-4 w-4" aria-hidden="true" />
+                Agent&apos;s Choice
               </h4>
-              <p className="text-sm font-medium text-slate-200">{decision.decision}</p>
+              <div className="space-y-3">
+                <div>
+                  <span className="text-xs text-slate-500 uppercase tracking-wider">Decision</span>
+                  <EditableField
+                    value={decision.agent_decision}
+                    onSave={(v) => handleFieldSave("agent_decision", v)}
+                    textClassName="text-sm font-medium text-foreground"
+                    className="mt-0.5"
+                    isSaving={updateMutation.isPending}
+                  />
+                </div>
+                <div>
+                  <span className="text-xs text-slate-500 uppercase tracking-wider">Rationale</span>
+                  <EditableField
+                    value={decision.agent_rationale}
+                    onSave={(v) => handleFieldSave("agent_rationale", v)}
+                    multiline
+                    textClassName="text-sm text-muted-foreground leading-relaxed"
+                    className="mt-0.5"
+                    isSaving={updateMutation.isPending}
+                  />
+                </div>
+                <div className="flex items-center gap-3 pt-1">
+                  {decision.source && decision.source !== "unknown" && (
+                    <Badge className={`text-[10px] px-1.5 py-0 ${
+                      decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :
+                      decision.source === "interview" ? "bg-cyan-500/15 text-cyan-300 border-cyan-400/30" :
+                      "bg-slate-500/15 text-slate-300 border-slate-400/30"
+                    }`}>
+                      {decision.source === "claude_logs" ? "claude-log" : decision.source}
+                    </Badge>
+                  )}
+                  <ConfidenceBadge confidence={decision.confidence} className="text-[10px] px-1.5 py-0" showPercentOnly />
+                </div>
+              </div>
             </div>
 
-            <div className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-              <h4 className="text-sm font-medium text-green-400 mb-2 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400" aria-hidden="true" />
-                Rationale
+            {/* Your Input */}
+            <div className={`p-4 rounded-lg border ${
+              decision.human_rationale
+                ? "bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border-emerald-500/20"
+                : "bg-gradient-to-r from-amber-500/5 to-orange-500/5 border-amber-500/20 border-dashed"
+            }`}>
+              <h4 className={`text-sm font-medium mb-3 flex items-center gap-2 ${
+                decision.human_rationale ? "text-emerald-400" : "text-amber-400"
+              }`}>
+                <UserCircle className="h-4 w-4" aria-hidden="true" />
+                Your Input
               </h4>
-              <p className="text-sm text-slate-300 leading-relaxed">{decision.rationale}</p>
+              <div className="space-y-3">
+                <div>
+                  <span className="text-xs text-slate-500 uppercase tracking-wider">
+                    Your Decision <span className="normal-case text-slate-600">(leave empty to agree with agent)</span>
+                  </span>
+                  <EditableField
+                    value={decision.human_decision}
+                    onSave={(v) => handleFieldSave("human_decision", v)}
+                    placeholder="Same as agent's choice"
+                    textClassName="text-sm font-medium text-foreground"
+                    className="mt-0.5"
+                    isSaving={updateMutation.isPending}
+                  />
+                </div>
+                <div>
+                  <span className="text-xs text-slate-500 uppercase tracking-wider">Your Rationale</span>
+                  <EditableField
+                    value={decision.human_rationale}
+                    onSave={(v) => handleFieldSave("human_rationale", v)}
+                    multiline
+                    placeholder="Add your rationale to mark as reviewed..."
+                    textClassName="text-sm text-muted-foreground leading-relaxed"
+                    className="mt-0.5"
+                    isSaving={updateMutation.isPending}
+                  />
+                </div>
+              </div>
             </div>
 
             <div>
@@ -257,19 +489,10 @@ function DecisionDetailDialog({
               </div>
             </div>
 
-            <div className="flex items-center gap-4 text-xs text-slate-500 pt-4 border-t border-white/[0.06]">
+            <div className="flex items-center gap-4 text-xs text-muted-foreground pt-4 border-t border-border">
               <span>
                 Created {new Date(decision.created_at).toLocaleDateString()}
               </span>
-              {decision.source && decision.source !== "unknown" && (
-                <Badge className={`text-[10px] px-1.5 py-0 ${
-                  decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :
-                  decision.source === "interview" ? "bg-cyan-500/15 text-cyan-300 border-cyan-400/30" :
-                  "bg-slate-500/15 text-slate-300 border-slate-400/30"
-                }`}>
-                  {decision.source === "claude_logs" ? "claude-log" : decision.source}
-                </Badge>
-              )}
               {decision.project_name && (
                 <Badge className="text-[10px] px-1.5 py-0 bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-400/30">
                   {decision.project_name}
@@ -277,7 +500,7 @@ function DecisionDetailDialog({
               )}
             </div>
           </div>
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   )
@@ -333,14 +556,14 @@ function AddDecisionDialog({
     },
   })
 
-  const inputClass = "bg-white/[0.05] border-white/[0.1] text-slate-200 placeholder:text-slate-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
+  const inputClass = "bg-muted/50 border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-primary/20"
   const textareaClass = "w-full min-h-[80px] rounded-md border bg-white/[0.05] border-white/[0.1] text-slate-200 placeholder:text-slate-500 px-3 py-2 text-sm focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none"
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900/95 border-white/10 backdrop-blur-xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-background/95 border-border backdrop-blur-xl">
         <DialogHeader>
-          <DialogTitle className="text-slate-100 text-xl">Add Decision Manually</DialogTitle>
+          <DialogTitle className="text-foreground text-xl">Add Decision Manually</DialogTitle>
           <DialogDescription className="text-slate-400">
             Record a decision trace when AI extraction is unavailable
           </DialogDescription>
@@ -432,7 +655,7 @@ function AddDecisionDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100"
+            className="border-border text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             Cancel
           </Button>
@@ -481,14 +704,14 @@ function DecisionCard({
       <Card
         role="listitem"
         tabIndex={0}
-        className={`bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.01] transition-all duration-300 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 ${getConfidenceBorderAccent(decision.confidence)}`}
+        className={`bg-card border-border hover:bg-accent hover:border-primary/30 hover:shadow-md hover:scale-[1.01] transition-all duration-300 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${getConfidenceBorderAccent(decision.confidence)}`}
         onClick={onClick}
         onKeyDown={onKeyDown}
         aria-label={`Decision: ${decision.trigger}`}
       >
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-3">
-            <CardTitle className="text-base text-slate-200 group-hover:text-cyan-300 transition-colors leading-tight">
+            <CardTitle className="text-base text-foreground group-hover:text-primary transition-colors leading-tight">
               {decision.trigger}
             </CardTitle>
             <Badge className={`shrink-0 ` + getConfidenceStyle(decision.confidence)}>
@@ -499,11 +722,11 @@ function DecisionCard({
             <Tooltip>
               <TooltipTrigger asChild>
                 <CardDescription className="text-slate-400 line-clamp-2 mt-1 cursor-help">
-                  {decision.decision}
+                  {decision.agent_decision}
                 </CardDescription>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-lg">
-                <p>{decision.decision}</p>
+                <p>{decision.agent_decision}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -531,6 +754,9 @@ function DecisionCard({
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
+              <Badge className={`text-[10px] px-1.5 py-0 ${getReviewStatus(decision).className}`}>
+                {getReviewStatus(decision).label}
+              </Badge>
               {decision.source && decision.source !== "unknown" && (
                 <Badge className={`text-[10px] px-1.5 py-0 ${
                   decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :
@@ -571,7 +797,7 @@ function VirtualDecisionList({
   const virtualizer = useVirtualizer({
     count: decisions.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 140, // Estimated card height including margin
+    estimateSize: () => 200, // Estimated card height including margin + badges
     overscan: 5, // Render 5 extra items above/below viewport
   })
 
@@ -735,7 +961,7 @@ function DecisionsPageContent() {
     // Text search filter
     const matchesSearch = searchQuery === "" ||
       d.trigger.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.decision.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      d.agent_decision.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.entities.some((e) =>
         e.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
@@ -775,10 +1001,10 @@ function DecisionsPageContent() {
     <AppShell>
       <div className="h-full flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/[0.06] bg-slate-900/80 backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-500">
+        <div className="px-6 py-4 border-b border-border bg-background/80 backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-100">Decisions</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">Decisions</h1>
               <p className="text-sm text-slate-400">
                 Browse and search captured decision traces
                 {decisions?.length ? (
@@ -793,6 +1019,12 @@ function DecisionsPageContent() {
                 <Link href="/decisions/timeline" className="flex items-center gap-1">
                   <Calendar className="h-4 w-4" />
                   Timeline
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" asChild className="text-amber-400 hover:text-amber-300 hover:bg-amber-500/10">
+                <Link href="/decisions/review" className="flex items-center gap-1">
+                  <UserCircle className="h-4 w-4" />
+                  Review
                 </Link>
               </Button>
               <Button
@@ -831,12 +1063,12 @@ function DecisionsPageContent() {
                 placeholder="Search decisions, entities..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-white/[0.05] border-white/[0.1] text-slate-200 placeholder:text-slate-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
+                className="pl-10 bg-muted/50 border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-primary/20"
                 aria-label="Search decisions"
               />
             </div>
             {/* Date range quick filters (Product-QW-2) */}
-            <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg bg-muted/50 border border-border">
               <Calendar className="h-4 w-4 text-slate-500" aria-hidden="true" />
               <DateRangeFilter value={dateRangeFilter} onChange={handleDateRangeChange} />
             </div>
@@ -844,7 +1076,7 @@ function DecisionsPageContent() {
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
-                  className="border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 relative"
+                  className="border-border text-muted-foreground hover:bg-accent hover:text-foreground relative"
                   aria-label="Filter decisions"
                 >
                   <Filter className="h-4 w-4 mr-2" aria-hidden="true" />
@@ -857,7 +1089,7 @@ function DecisionsPageContent() {
                   <ChevronDown className="h-4 w-4 ml-2" aria-hidden="true" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-72 bg-slate-900/95 border-white/10 backdrop-blur-xl" align="end">
+              <PopoverContent className="w-72 bg-background/95 border-border backdrop-blur-xl" align="end">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium text-slate-200">Filters</h4>
@@ -972,7 +1204,7 @@ function DecisionsPageContent() {
           />
         ) : (
           // Regular scrolling for small lists (preserves animations)
-          <ScrollArea className="flex-1 bg-slate-900/30">
+          <ScrollArea className="flex-1 bg-background/30">
             <div className="p-6 space-y-4">
               <div role="list" aria-label="Decision list">
                 {filteredDecisions.map((decision, index) => (
@@ -980,7 +1212,7 @@ function DecisionsPageContent() {
                     key={decision.id}
                     role="listitem"
                     tabIndex={0}
-                    className={`bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.01] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 mb-4 ${getConfidenceBorderAccent(decision.confidence)}`}
+                    className={`bg-card border-border hover:bg-accent hover:border-primary/30 hover:shadow-md hover:scale-[1.01] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background mb-4 ${getConfidenceBorderAccent(decision.confidence)}`}
                     style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
                     onClick={() => handleCardClick(decision)}
                     onKeyDown={(e) => handleCardKeyDown(e, decision)}
@@ -988,7 +1220,7 @@ function DecisionsPageContent() {
                   >
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between gap-3">
-                        <CardTitle className="text-base text-slate-200 group-hover:text-cyan-300 transition-colors leading-tight">
+                        <CardTitle className="text-base text-foreground group-hover:text-primary transition-colors leading-tight">
                           {decision.trigger}
                         </CardTitle>
                         <Badge className={`shrink-0 ` + getConfidenceStyle(decision.confidence)}>
@@ -999,11 +1231,11 @@ function DecisionsPageContent() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <CardDescription className="text-slate-400 line-clamp-2 mt-1 cursor-help">
-                              {decision.decision}
+                              {decision.agent_decision}
                             </CardDescription>
                           </TooltipTrigger>
                           <TooltipContent side="bottom" className="max-w-lg">
-                            <p>{decision.decision}</p>
+                            <p>{decision.agent_decision}</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -1031,6 +1263,9 @@ function DecisionsPageContent() {
                         </div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
+                          <Badge className={`text-[10px] px-1.5 py-0 ${getReviewStatus(decision).className}`}>
+                            {getReviewStatus(decision).label}
+                          </Badge>
                           {decision.source && decision.source !== "unknown" && (
                             <Badge className={`text-[10px] px-1.5 py-0 ${
                               decision.source === "claude_logs" ? "bg-violet-500/15 text-violet-300 border-violet-400/30" :

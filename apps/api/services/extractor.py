@@ -1187,8 +1187,8 @@ class DecisionExtractor:
             "trigger": decision.trigger,
             "context": decision.context,
             "options": decision.options,
-            "decision": decision.decision,
-            "rationale": decision.rationale,
+            "decision": decision.agent_decision,
+            "rationale": decision.agent_rationale,
         }
 
         try:
@@ -1212,8 +1212,8 @@ class DecisionExtractor:
                         trigger: $trigger,
                         context: $context,
                         options: $options,
-                        decision: $decision,
-                        rationale: $rationale,
+                        agent_decision: $agent_decision,
+                        agent_rationale: $agent_rationale,
                         confidence: $confidence,
                         created_at: $created_at,
                         source: $source,
@@ -1229,8 +1229,8 @@ class DecisionExtractor:
                     trigger=decision.trigger,
                     context=decision.context,
                     options=decision.options,
-                    decision=decision.decision,
-                    rationale=decision.rationale,
+                    agent_decision=decision.agent_decision,
+                    agent_rationale=decision.agent_rationale,
                     confidence=decision.confidence,
                     created_at=created_at,
                     source=decision_source,
@@ -1251,8 +1251,8 @@ class DecisionExtractor:
                         trigger: $trigger,
                         context: $context,
                         options: $options,
-                        decision: $decision,
-                        rationale: $rationale,
+                        agent_decision: $agent_decision,
+                        agent_rationale: $agent_rationale,
                         confidence: $confidence,
                         created_at: $created_at,
                         source: $source,
@@ -1267,8 +1267,8 @@ class DecisionExtractor:
                     trigger=decision.trigger,
                     context=decision.context,
                     options=decision.options,
-                    decision=decision.decision,
-                    rationale=decision.rationale,
+                    agent_decision=decision.agent_decision,
+                    agent_rationale=decision.agent_rationale,
                     confidence=decision.confidence,
                     created_at=created_at,
                     source=decision_source,
@@ -1284,7 +1284,7 @@ class DecisionExtractor:
             logger.info(f"Created decision {decision_id} for user {user_id}")
 
             # Extract entities with enhanced prompt
-            full_text = f"{decision.trigger} {decision.context} {decision.decision} {decision.rationale}"
+            full_text = f"{decision.trigger} {decision.context} {decision.agent_decision} {decision.agent_rationale}"
             entities_data = await self.extract_entities(full_text)
             logger.debug(
                 "Entities data extracted from text",
