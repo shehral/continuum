@@ -108,11 +108,11 @@ async def get_dashboard_stats(
 
                     decision = Decision(
                         id=d["id"],
-                        trigger=d.get("trigger", ""),
-                        context=d.get("context", ""),
+                        trigger=d.get("trigger") or "(untitled)",
+                        context=d.get("context") or "(no context)",
                         options=d.get("options", []),
-                        agent_decision=d.get("agent_decision", d.get("decision", "")),
-                        agent_rationale=d.get("agent_rationale", d.get("rationale", "")),
+                        agent_decision=d.get("agent_decision") or d.get("decision") or "(not recorded)",
+                        agent_rationale=d.get("agent_rationale") or d.get("rationale") or "(not recorded)",
                         human_decision=d.get("human_decision"),
                         human_rationale=d.get("human_rationale"),
                         confidence=d.get("confidence", 0.0),
