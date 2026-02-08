@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+import Link from "next/link"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Upload, Lightbulb } from "lucide-react"
+import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Upload, Lightbulb, Download } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -755,6 +756,17 @@ function DecisionsPageContent() {
   // Determine if filters are active (for empty state)
   const hasActiveFilters = sourceFilter !== "all" || confidenceFilter > 0 || dateRangeFilter !== "all"
 
+  const handleExportJson = useCallback(() => {
+    if (!filteredDecisions?.length) return
+    const blob = new Blob([JSON.stringify(filteredDecisions, null, 2)], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `continuum-decisions-${new Date().toISOString().split("T")[0]}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [filteredDecisions])
+
   // Determine if we should use virtual scrolling (P1-3)
   // Use virtual scrolling when we have more than 20 items for performance
   const useVirtualScrolling = (filteredDecisions?.length ?? 0) > 20
@@ -776,21 +788,39 @@ function DecisionsPageContent() {
                 ) : null}
               </p>
             </div>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={() => setShowAddDialog(true)}
-                    className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)] hover:scale-105 transition-all"
-                    aria-label="Add new decision"
-                  >
-                    <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
-                    Add Decision
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Manually add a decision trace</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" asChild className="text-slate-400 hover:text-slate-200">
+                <Link href="/decisions/timeline" className="flex items-center gap-1">
+                  <Calendar className="h-4 w-4" />
+                  Timeline
+                </Link>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleExportJson}
+                disabled={!filteredDecisions?.length}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <Download className="h-4 w-4 mr-1" />
+                Export
+              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={() => setShowAddDialog(true)}
+                      className="bg-gradient-to-r from-cyan-500 to-teal-400 text-slate-900 font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)] hover:scale-105 transition-all"
+                      aria-label="Add new decision"
+                    >
+                      <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
+                      Add Decision
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Manually add a decision trace</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
 
           {/* Search and filters */}

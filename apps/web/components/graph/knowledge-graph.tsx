@@ -467,6 +467,12 @@ function KnowledgeGraphInner({
   const [projectsExpanded, setProjectsExpanded] = useState(true)
   const [entityTypesExpanded, setEntityTypesExpanded] = useState(true)
   const [relationshipsExpanded, setRelationshipsExpanded] = useState(true)
+  // Pathfinding state
+  const [pathfindingMode, setPathfindingMode] = useState(false)
+  const [pathStart, setPathStart] = useState<string | null>(null)
+  const [pathEnd, setPathEnd] = useState<string | null>(null)
+  const [pathNodeIds, setPathNodeIds] = useState<Set<string>>(new Set())
+  const [pathEdgeIds, setPathEdgeIds] = useState<Set<string>>(new Set())
   // P1-3: Related decisions state
   const [relatedDecisions, setRelatedDecisions] = useState<SimilarDecision[]>([])
   const [relatedLoading, setRelatedLoading] = useState(false)
@@ -574,7 +580,85 @@ function KnowledgeGraphInner({
   }, [data])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+
+  // BFS shortest path between two nodes
+  const findShortestPath = useCallback((startId: string, endId: string) => {
+    if (!adjacencyMap.size) return
+    const queue: string[][] = [[startId]]
+    const visited = new Set<string>([startId])
+
+    while (queue.length > 0) {
+      const path = queue.shift()!
+      const current = path[path.length - 1]
+
+      if (current === endId) {
+        const nodeIds = new Set(path)
+        const edgeIds = new Set<string>()
+        for (let i = 0; i < path.length - 1; i++) {
+          data?.edges.forEach((e: { id: string; source: string; target: string }) => {
+            if ((e.source === path[i] && e.target === path[i + 1]) ||
+                (e.source === path[i + 1] && e.target === path[i])) {
+              edgeIds.add(e.id)
+            }
+          })
+        }
+        setPathNodeIds(nodeIds)
+        setPathEdgeIds(edgeIds)
+        setNodes(nds => nds.map(n => ({
+          ...n,
+          style: { ...n.style, opacity: nodeIds.has(n.id) ? 1 : 0.15 },
+        })))
+        setEdges(eds => eds.map(e => ({
+          ...e,
+          style: {
+            ...e.style,
+            opacity: edgeIds.has(e.id) ? 1 : 0.08,
+            strokeWidth: edgeIds.has(e.id) ? 3 : 1,
+            stroke: edgeIds.has(e.id) ? "#a78bfa" : undefined,
+          },
+          animated: edgeIds.has(e.id),
+        })))
+        return
+      }
+
+      const neighbors = adjacencyMap.get(current)
+      if (neighbors) {
+        for (const neighbor of neighbors) {
+          if (!visited.has(neighbor)) {
+            visited.add(neighbor)
+            queue.push([...path, neighbor])
+          }
+        }
+      }
+    }
+    setPathNodeIds(new Set())
+    setPathEdgeIds(new Set())
+  }, [adjacencyMap, data?.edges, setNodes, setEdges])
+
+  const handlePathfindingClick = useCallback((nodeId: string) => {
+    if (!pathfindingMode) return
+    if (!pathStart) {
+      setPathStart(nodeId)
+    } else if (!pathEnd && nodeId !== pathStart) {
+      setPathEnd(nodeId)
+      findShortestPath(pathStart, nodeId)
+    }
+  }, [pathfindingMode, pathStart, pathEnd, findShortestPath])
+
+  const clearPathfinding = useCallback(() => {
+    setPathfindingMode(false)
+    setPathStart(null)
+    setPathEnd(null)
+    setPathNodeIds(new Set())
+    setPathEdgeIds(new Set())
+    setNodes(nds => nds.map(n => ({ ...n, style: { ...n.style, opacity: 1 } })))
+    setEdges(eds => eds.map(e => ({
+      ...e,
+      style: { ...e.style, opacity: 1, strokeWidth: 1, stroke: undefined },
+      animated: false,
+    })))
+  }, [setNodes, setEdges])
 
   // Update nodes when layout changes or initialNodes recalculates
   useEffect(() => {
@@ -810,11 +894,15 @@ function KnowledgeGraphInner({
   // Memoized event handlers (P1-4)
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      if (pathfindingMode) {
+        handlePathfindingClick(node.id)
+        return
+      }
       setSelectedNode(node)
       setFocusedNodeId(node.id)
       onNodeClick?.(node)
     },
-    [onNodeClick]
+    [onNodeClick, pathfindingMode, handlePathfindingClick]
   )
 
   const closeDetailPanel = useCallback(() => setSelectedNode(null), [])
@@ -1005,7 +1093,37 @@ function KnowledgeGraphInner({
                 {graphSearchIndex + 1}/{graphSearchMatchIds.length}
               </span>
             )}
+            <Button
+              variant={pathfindingMode ? "default" : "ghost"}
+              size="sm"
+              onClick={() => {
+                if (pathfindingMode) {
+                  clearPathfinding()
+                } else {
+                  setPathfindingMode(true)
+                  setSelectedNode(null)
+                }
+              }}
+              className={`h-8 text-xs ${pathfindingMode ? "bg-violet-600 hover:bg-violet-700 text-white" : "text-slate-400 hover:text-slate-200 bg-slate-800/80"}`}
+            >
+              <Link2 className="h-3.5 w-3.5 mr-1" />
+              Path
+            </Button>
           </div>
+          {pathfindingMode && (
+            <div className="mt-2 text-[10px] text-center bg-slate-800/90 border border-violet-500/30 rounded-lg px-3 py-1.5 text-slate-300">
+              {!pathStart
+                ? "Click a start node"
+                : !pathEnd
+                ? "Click an end node"
+                : `Path: ${pathNodeIds.size} nodes, ${pathEdgeIds.size} edges`}
+              {(pathStart || pathEnd) && (
+                <button onClick={clearPathfinding} className="ml-2 text-violet-400 hover:text-violet-300 underline">
+                  Reset
+                </button>
+              )}
+            </div>
+          )}
         </Panel>
 
         {/* Left Side Panels - Stacked vertically */}
