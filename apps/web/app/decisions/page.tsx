@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Upload, Lightbulb, Download, Bot, UserCircle, MessageSquarePlus } from "lucide-react"
+import { Search, Filter, ChevronDown, Plus, Loader2, FileText, Trash2, X, Calendar, Info, Upload, Lightbulb, Download, Bot, UserCircle, MessageSquarePlus, Pencil, Check } from "lucide-react"
 
 import { AppShell } from "@/components/layout/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -166,6 +166,125 @@ function DateRangeFilter({
   )
 }
 
+// Inline editable field — shows text by default, pencil on hover, input on click
+function EditableField({
+  value,
+  onSave,
+  multiline = false,
+  placeholder = "Click to add...",
+  className = "",
+  textClassName = "",
+  isSaving = false,
+}: {
+  value: string | null | undefined
+  onSave: (value: string) => void
+  multiline?: boolean
+  placeholder?: string
+  className?: string
+  textClassName?: string
+  isSaving?: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value ?? "")
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+      // Move cursor to end
+      const len = inputRef.current.value.length
+      inputRef.current.setSelectionRange(len, len)
+    }
+  }, [editing])
+
+  // Sync draft when external value changes
+  useEffect(() => {
+    if (!editing) setDraft(value ?? "")
+  }, [value, editing])
+
+  const handleSave = useCallback(() => {
+    const trimmed = draft.trim()
+    if (trimmed && trimmed !== (value ?? "")) {
+      onSave(trimmed)
+    }
+    setEditing(false)
+  }, [draft, value, onSave])
+
+  const handleCancel = useCallback(() => {
+    setDraft(value ?? "")
+    setEditing(false)
+  }, [value])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault()
+      handleCancel()
+    }
+    if (e.key === "Enter" && !multiline) {
+      e.preventDefault()
+      handleSave()
+    }
+    if (e.key === "Enter" && multiline && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      handleSave()
+    }
+  }, [handleSave, handleCancel, multiline])
+
+  if (editing) {
+    const inputClass = "w-full rounded-md border bg-white/[0.05] border-cyan-500/40 text-slate-200 px-2 py-1.5 text-sm focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none"
+
+    return (
+      <div className={`relative ${className}`}>
+        {multiline ? (
+          <textarea
+            ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={handleKeyDown}
+            className={`${inputClass} min-h-[60px] resize-y`}
+            placeholder={placeholder}
+          />
+        ) : (
+          <input
+            ref={inputRef as React.RefObject<HTMLInputElement>}
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={handleKeyDown}
+            className={inputClass}
+            placeholder={placeholder}
+          />
+        )}
+        <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500">
+          <span>{multiline ? "Ctrl+Enter to save" : "Enter to save"}</span>
+          <span>· Esc to cancel</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={`group/edit relative cursor-pointer rounded px-1 -mx-1 hover:bg-white/[0.04] transition-colors ${className}`}
+      onClick={() => setEditing(true)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter") setEditing(true) }}
+      aria-label={value ? `Edit: ${value}` : placeholder}
+    >
+      {value ? (
+        <span className={textClassName}>{value}</span>
+      ) : (
+        <span className="text-sm text-slate-500 italic">{placeholder}</span>
+      )}
+      <Pencil className="h-3 w-3 text-slate-500 opacity-0 group-hover/edit:opacity-100 transition-opacity absolute top-1 right-1" aria-hidden="true" />
+      {isSaving && <Loader2 className="h-3 w-3 text-cyan-400 animate-spin absolute top-1 right-1" aria-hidden="true" />}
+    </div>
+  )
+}
+
 function DecisionDetailDialog({
   decision,
   open,
@@ -177,6 +296,22 @@ function DecisionDetailDialog({
   onOpenChange: (open: boolean) => void
   onDelete: (decision: Decision) => void
 }) {
+  const queryClient = useQueryClient()
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof api.updateDecision>[1] }) =>
+      api.updateDecision(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["decisions"] })
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
+    },
+  })
+
+  const handleFieldSave = useCallback((field: string, value: string) => {
+    if (!decision) return
+    updateMutation.mutate({ id: decision.id, data: { [field]: value } })
+  }, [decision, updateMutation])
+
   if (!decision) return null
 
   return (
@@ -184,7 +319,14 @@ function DecisionDetailDialog({
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col bg-slate-900/95 border-white/10 backdrop-blur-xl">
         <DialogHeader>
           <div className="flex items-start justify-between gap-4 pr-8">
-            <DialogTitle className="text-slate-100 text-xl">{decision.trigger}</DialogTitle>
+            <DialogTitle className="text-slate-100 text-xl">
+              <EditableField
+                value={decision.trigger}
+                onSave={(v) => handleFieldSave("trigger", v)}
+                textClassName="text-slate-100 text-xl font-semibold"
+                isSaving={updateMutation.isPending}
+              />
+            </DialogTitle>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -218,7 +360,13 @@ function DecisionDetailDialog({
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" aria-hidden="true" />
                 Context
               </h4>
-              <p className="text-sm text-slate-300 leading-relaxed">{decision.context}</p>
+              <EditableField
+                value={decision.context}
+                onSave={(v) => handleFieldSave("context", v)}
+                multiline
+                textClassName="text-sm text-slate-300 leading-relaxed"
+                isSaving={updateMutation.isPending}
+              />
             </div>
 
             <div className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
@@ -245,11 +393,24 @@ function DecisionDetailDialog({
               <div className="space-y-3">
                 <div>
                   <span className="text-xs text-slate-500 uppercase tracking-wider">Decision</span>
-                  <p className="text-sm font-medium text-slate-200 mt-0.5">{decision.agent_decision}</p>
+                  <EditableField
+                    value={decision.agent_decision}
+                    onSave={(v) => handleFieldSave("agent_decision", v)}
+                    textClassName="text-sm font-medium text-slate-200"
+                    className="mt-0.5"
+                    isSaving={updateMutation.isPending}
+                  />
                 </div>
                 <div>
                   <span className="text-xs text-slate-500 uppercase tracking-wider">Rationale</span>
-                  <p className="text-sm text-slate-300 leading-relaxed mt-0.5">{decision.agent_rationale}</p>
+                  <EditableField
+                    value={decision.agent_rationale}
+                    onSave={(v) => handleFieldSave("agent_rationale", v)}
+                    multiline
+                    textClassName="text-sm text-slate-300 leading-relaxed"
+                    className="mt-0.5"
+                    isSaving={updateMutation.isPending}
+                  />
                 </div>
                 <div className="flex items-center gap-3 pt-1">
                   {decision.source && decision.source !== "unknown" && (
@@ -278,31 +439,33 @@ function DecisionDetailDialog({
                 <UserCircle className="h-4 w-4" aria-hidden="true" />
                 Your Input
               </h4>
-              {decision.human_rationale || decision.human_decision ? (
-                <div className="space-y-3">
-                  {decision.human_decision && (
-                    <div>
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">Your Decision</span>
-                      <p className="text-sm font-medium text-slate-200 mt-0.5">{decision.human_decision}</p>
-                    </div>
-                  )}
-                  {!decision.human_decision && (
-                    <p className="text-xs text-emerald-400/70 italic">Agrees with agent&apos;s choice</p>
-                  )}
-                  {decision.human_rationale && (
-                    <div>
-                      <span className="text-xs text-slate-500 uppercase tracking-wider">Your Rationale</span>
-                      <p className="text-sm text-slate-300 leading-relaxed mt-0.5">{decision.human_rationale}</p>
-                    </div>
-                  )}
+              <div className="space-y-3">
+                <div>
+                  <span className="text-xs text-slate-500 uppercase tracking-wider">
+                    Your Decision <span className="normal-case text-slate-600">(leave empty to agree with agent)</span>
+                  </span>
+                  <EditableField
+                    value={decision.human_decision}
+                    onSave={(v) => handleFieldSave("human_decision", v)}
+                    placeholder="Same as agent's choice"
+                    textClassName="text-sm font-medium text-slate-200"
+                    className="mt-0.5"
+                    isSaving={updateMutation.isPending}
+                  />
                 </div>
-              ) : (
-                <div className="text-center py-3">
-                  <MessageSquarePlus className="h-6 w-6 text-amber-400/50 mx-auto mb-2" aria-hidden="true" />
-                  <p className="text-sm text-amber-300/70">Add your rationale to mark as reviewed</p>
-                  <p className="text-xs text-slate-500 mt-1">Click to edit fields above, or use the review queue</p>
+                <div>
+                  <span className="text-xs text-slate-500 uppercase tracking-wider">Your Rationale</span>
+                  <EditableField
+                    value={decision.human_rationale}
+                    onSave={(v) => handleFieldSave("human_rationale", v)}
+                    multiline
+                    placeholder="Add your rationale to mark as reviewed..."
+                    textClassName="text-sm text-slate-300 leading-relaxed"
+                    className="mt-0.5"
+                    isSaving={updateMutation.isPending}
+                  />
                 </div>
-              )}
+              </div>
             </div>
 
             <div>
