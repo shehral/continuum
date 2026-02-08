@@ -316,14 +316,14 @@ function DecisionDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col bg-slate-900/95 border-white/10 backdrop-blur-xl">
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col bg-background/95 border-border backdrop-blur-xl">
         <DialogHeader>
           <div className="flex items-start justify-between gap-4 pr-8">
-            <DialogTitle className="text-slate-100 text-xl">
+            <DialogTitle className="text-foreground text-xl">
               <EditableField
                 value={decision.trigger}
                 onSave={(v) => handleFieldSave("trigger", v)}
-                textClassName="text-slate-100 text-xl font-semibold"
+                textClassName="text-foreground text-xl font-semibold"
                 isSaving={updateMutation.isPending}
               />
             </DialogTitle>
@@ -353,9 +353,9 @@ function DecisionDetailDialog({
             </Badge>
           </div>
         </DialogHeader>
-        <ScrollArea className="flex-1 min-h-0 pr-4">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-4">
           <div className="space-y-5">
-            <div className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <div className="p-4 rounded-lg bg-muted/50 border border-border">
               <h4 className="text-sm font-medium text-cyan-400 mb-2 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" aria-hidden="true" />
                 Context
@@ -364,12 +364,12 @@ function DecisionDetailDialog({
                 value={decision.context}
                 onSave={(v) => handleFieldSave("context", v)}
                 multiline
-                textClassName="text-sm text-slate-300 leading-relaxed"
+                textClassName="text-sm text-muted-foreground leading-relaxed"
                 isSaving={updateMutation.isPending}
               />
             </div>
 
-            <div className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <div className="p-4 rounded-lg bg-muted/50 border border-border">
               <h4 className="text-sm font-medium text-purple-400 mb-2 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-purple-400" aria-hidden="true" />
                 Options Considered
@@ -396,7 +396,7 @@ function DecisionDetailDialog({
                   <EditableField
                     value={decision.agent_decision}
                     onSave={(v) => handleFieldSave("agent_decision", v)}
-                    textClassName="text-sm font-medium text-slate-200"
+                    textClassName="text-sm font-medium text-foreground"
                     className="mt-0.5"
                     isSaving={updateMutation.isPending}
                   />
@@ -407,7 +407,7 @@ function DecisionDetailDialog({
                     value={decision.agent_rationale}
                     onSave={(v) => handleFieldSave("agent_rationale", v)}
                     multiline
-                    textClassName="text-sm text-slate-300 leading-relaxed"
+                    textClassName="text-sm text-muted-foreground leading-relaxed"
                     className="mt-0.5"
                     isSaving={updateMutation.isPending}
                   />
@@ -448,7 +448,7 @@ function DecisionDetailDialog({
                     value={decision.human_decision}
                     onSave={(v) => handleFieldSave("human_decision", v)}
                     placeholder="Same as agent's choice"
-                    textClassName="text-sm font-medium text-slate-200"
+                    textClassName="text-sm font-medium text-foreground"
                     className="mt-0.5"
                     isSaving={updateMutation.isPending}
                   />
@@ -460,7 +460,7 @@ function DecisionDetailDialog({
                     onSave={(v) => handleFieldSave("human_rationale", v)}
                     multiline
                     placeholder="Add your rationale to mark as reviewed..."
-                    textClassName="text-sm text-slate-300 leading-relaxed"
+                    textClassName="text-sm text-muted-foreground leading-relaxed"
                     className="mt-0.5"
                     isSaving={updateMutation.isPending}
                   />
@@ -489,7 +489,7 @@ function DecisionDetailDialog({
               </div>
             </div>
 
-            <div className="flex items-center gap-4 text-xs text-slate-500 pt-4 border-t border-white/[0.06]">
+            <div className="flex items-center gap-4 text-xs text-muted-foreground pt-4 border-t border-border">
               <span>
                 Created {new Date(decision.created_at).toLocaleDateString()}
               </span>
@@ -500,7 +500,7 @@ function DecisionDetailDialog({
               )}
             </div>
           </div>
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   )
@@ -556,14 +556,14 @@ function AddDecisionDialog({
     },
   })
 
-  const inputClass = "bg-white/[0.05] border-white/[0.1] text-slate-200 placeholder:text-slate-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
+  const inputClass = "bg-muted/50 border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-primary/20"
   const textareaClass = "w-full min-h-[80px] rounded-md border bg-white/[0.05] border-white/[0.1] text-slate-200 placeholder:text-slate-500 px-3 py-2 text-sm focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 focus:outline-none"
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900/95 border-white/10 backdrop-blur-xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-background/95 border-border backdrop-blur-xl">
         <DialogHeader>
-          <DialogTitle className="text-slate-100 text-xl">Add Decision Manually</DialogTitle>
+          <DialogTitle className="text-foreground text-xl">Add Decision Manually</DialogTitle>
           <DialogDescription className="text-slate-400">
             Record a decision trace when AI extraction is unavailable
           </DialogDescription>
@@ -655,7 +655,7 @@ function AddDecisionDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100"
+            className="border-border text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             Cancel
           </Button>
@@ -704,14 +704,14 @@ function DecisionCard({
       <Card
         role="listitem"
         tabIndex={0}
-        className={`bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.01] transition-all duration-300 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 ${getConfidenceBorderAccent(decision.confidence)}`}
+        className={`bg-card border-border hover:bg-accent hover:border-primary/30 hover:shadow-md hover:scale-[1.01] transition-all duration-300 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${getConfidenceBorderAccent(decision.confidence)}`}
         onClick={onClick}
         onKeyDown={onKeyDown}
         aria-label={`Decision: ${decision.trigger}`}
       >
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-3">
-            <CardTitle className="text-base text-slate-200 group-hover:text-cyan-300 transition-colors leading-tight">
+            <CardTitle className="text-base text-foreground group-hover:text-primary transition-colors leading-tight">
               {decision.trigger}
             </CardTitle>
             <Badge className={`shrink-0 ` + getConfidenceStyle(decision.confidence)}>
@@ -797,7 +797,7 @@ function VirtualDecisionList({
   const virtualizer = useVirtualizer({
     count: decisions.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 140, // Estimated card height including margin
+    estimateSize: () => 200, // Estimated card height including margin + badges
     overscan: 5, // Render 5 extra items above/below viewport
   })
 
@@ -1001,10 +1001,10 @@ function DecisionsPageContent() {
     <AppShell>
       <div className="h-full flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/[0.06] bg-slate-900/80 backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-500">
+        <div className="px-6 py-4 border-b border-border bg-background/80 backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-100">Decisions</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">Decisions</h1>
               <p className="text-sm text-slate-400">
                 Browse and search captured decision traces
                 {decisions?.length ? (
@@ -1063,12 +1063,12 @@ function DecisionsPageContent() {
                 placeholder="Search decisions, entities..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-white/[0.05] border-white/[0.1] text-slate-200 placeholder:text-slate-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
+                className="pl-10 bg-muted/50 border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-primary/20"
                 aria-label="Search decisions"
               />
             </div>
             {/* Date range quick filters (Product-QW-2) */}
-            <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg bg-muted/50 border border-border">
               <Calendar className="h-4 w-4 text-slate-500" aria-hidden="true" />
               <DateRangeFilter value={dateRangeFilter} onChange={handleDateRangeChange} />
             </div>
@@ -1076,7 +1076,7 @@ function DecisionsPageContent() {
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
-                  className="border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 relative"
+                  className="border-border text-muted-foreground hover:bg-accent hover:text-foreground relative"
                   aria-label="Filter decisions"
                 >
                   <Filter className="h-4 w-4 mr-2" aria-hidden="true" />
@@ -1089,7 +1089,7 @@ function DecisionsPageContent() {
                   <ChevronDown className="h-4 w-4 ml-2" aria-hidden="true" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-72 bg-slate-900/95 border-white/10 backdrop-blur-xl" align="end">
+              <PopoverContent className="w-72 bg-background/95 border-border backdrop-blur-xl" align="end">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium text-slate-200">Filters</h4>
@@ -1204,7 +1204,7 @@ function DecisionsPageContent() {
           />
         ) : (
           // Regular scrolling for small lists (preserves animations)
-          <ScrollArea className="flex-1 bg-slate-900/30">
+          <ScrollArea className="flex-1 bg-background/30">
             <div className="p-6 space-y-4">
               <div role="list" aria-label="Decision list">
                 {filteredDecisions.map((decision, index) => (
@@ -1212,7 +1212,7 @@ function DecisionsPageContent() {
                     key={decision.id}
                     role="listitem"
                     tabIndex={0}
-                    className={`bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-cyan-500/30 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] hover:scale-[1.01] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 mb-4 ${getConfidenceBorderAccent(decision.confidence)}`}
+                    className={`bg-card border-border hover:bg-accent hover:border-primary/30 hover:shadow-md hover:scale-[1.01] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background mb-4 ${getConfidenceBorderAccent(decision.confidence)}`}
                     style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
                     onClick={() => handleCardClick(decision)}
                     onKeyDown={(e) => handleCardKeyDown(e, decision)}
@@ -1220,7 +1220,7 @@ function DecisionsPageContent() {
                   >
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between gap-3">
-                        <CardTitle className="text-base text-slate-200 group-hover:text-cyan-300 transition-colors leading-tight">
+                        <CardTitle className="text-base text-foreground group-hover:text-primary transition-colors leading-tight">
                           {decision.trigger}
                         </CardTitle>
                         <Badge className={`shrink-0 ` + getConfidenceStyle(decision.confidence)}>
