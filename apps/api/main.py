@@ -37,6 +37,7 @@ from models.errors import (
     create_validation_error_response,
 )
 from routers import (
+    agent,
     capture,
     dashboard,
     decisions,
@@ -516,6 +517,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Routers
 # =============================================================================
 
+app.include_router(agent.router, prefix="/api/agent", tags=["Agent Context"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(decisions.router, prefix="/api/decisions", tags=["Decisions"])
 app.include_router(graph.router, prefix="/api/graph", tags=["Graph"])

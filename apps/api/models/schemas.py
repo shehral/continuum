@@ -2,7 +2,7 @@
 
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -407,3 +407,149 @@ class NeighborsResponse(BaseModel):
     source_node_id: str
     neighbors: list[NeighborNode]
     total_count: int = Field(..., ge=0, description="Total number of neighbors")
+
+
+# =============================================================================
+# Agent Context API schemas
+# =============================================================================
+
+
+class AgentContextRequest(BaseModel):
+    """Request for focused context query from the knowledge graph."""
+
+    query: str = Field(..., min_length=1, max_length=2000, description="Natural language query")
+    max_decisions: int = Field(10, ge=1, le=50, description="Max decisions to return")
+    max_tokens: int = Field(4000, ge=500, le=16000, description="Approx token budget for response")
+    include_evolution: bool = Field(True, description="Include SUPERSEDES/CONTRADICTS chains")
+    include_entities: bool = Field(True, description="Include related entities")
+    format: Literal["json", "markdown"] = Field("json", description="Response format")
+    project_filter: Optional[str] = Field(None, max_length=200, description="Filter by project")
+
+
+class AgentDecisionSummary(BaseModel):
+    """Compact decision representation for agent consumption."""
+
+    id: str
+    trigger: str
+    decision: str
+    rationale: str
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    created_at: Optional[str] = None
+    source: Optional[str] = None
+    relevance_score: float = Field(0.0, ge=0.0, le=1.0, description="How relevant to the query")
+    is_current: bool = Field(True, description="False if superseded by another decision")
+    entities: list[str] = Field(default_factory=list)
+
+
+class AgentEntitySummary(BaseModel):
+    """Compact entity representation for agent consumption."""
+
+    name: str
+    type: str
+    decision_count: int = Field(0, ge=0)
+    related_entities: list[str] = Field(default_factory=list)
+
+
+class EvolutionChain(BaseModel):
+    """A chain of decisions showing how a topic evolved."""
+
+    chain_type: Literal["supersedes", "contradicts"]
+    decisions: list[AgentDecisionSummary]
+    reasoning: Optional[str] = None
+
+
+class AgentContextResponse(BaseModel):
+    """Focused context package for agent consumption."""
+
+    query: str
+    decisions: list[AgentDecisionSummary]
+    entities: list[AgentEntitySummary] = Field(default_factory=list)
+    evolution_chains: list[EvolutionChain] = Field(default_factory=list)
+    contradictions: list[dict] = Field(default_factory=list, description="Unresolved contradictions")
+    total_decisions_searched: int = 0
+    markdown: Optional[str] = Field(None, description="Markdown rendering if format=markdown")
+
+
+class AgentEntityContextResponse(BaseModel):
+    """Everything about a specific entity for agent consumption."""
+
+    name: str
+    type: str
+    aliases: list[str] = Field(default_factory=list)
+    decisions: list[AgentDecisionSummary]
+    related_entities: list[AgentEntitySummary] = Field(default_factory=list)
+    timeline: list[dict] = Field(default_factory=list, description="Chronological decision history")
+    current_status: Optional[str] = Field(None, description="Whether actively used or superseded")
+
+
+class AgentCheckRequest(BaseModel):
+    """Request to check prior art before making a decision."""
+
+    proposed_decision: str = Field(..., min_length=1, max_length=5000)
+    context: str = Field("", max_length=10000)
+    entities: list[str] = Field(default_factory=list, max_length=20)
+    threshold: float = Field(0.5, ge=0.0, le=1.0, description="Similarity threshold")
+
+
+class AbandonedPattern(BaseModel):
+    """A decision that was tried and superseded."""
+
+    original_decision: AgentDecisionSummary
+    superseded_by: AgentDecisionSummary
+    reasoning: Optional[str] = None
+
+
+class AgentCheckResponse(BaseModel):
+    """Prior art check results."""
+
+    proposed_decision: str
+    similar_decisions: list[AgentDecisionSummary]
+    abandoned_patterns: list[AbandonedPattern] = Field(default_factory=list)
+    contradictions: list[AgentDecisionSummary] = Field(default_factory=list)
+    recommendation: Literal["proceed", "review_similar", "resolve_contradiction"]
+    recommendation_reason: str
+
+
+class AgentRememberRequest(BaseModel):
+    """Request to record an agent-made decision."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    trigger: str = Field(..., min_length=1, max_length=5000)
+    context: str = Field(..., min_length=1, max_length=10000)
+    options: list[str] = Field(..., min_length=1, max_length=50)
+    decision: str = Field(..., min_length=1, max_length=5000)
+    rationale: str = Field(..., min_length=1, max_length=10000)
+    confidence: float = Field(0.8, ge=0.0, le=1.0)
+    entities: list[str] = Field(default_factory=list, max_length=30, description="Known entity names")
+    agent_name: str = Field("unknown-agent", max_length=100)
+    project_name: Optional[str] = Field(None, max_length=200)
+
+    @field_validator("options")
+    @classmethod
+    def validate_options(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("At least one option is required")
+        return [opt.strip() for opt in v if opt and len(opt) <= 1000]
+
+
+class AgentRememberResponse(BaseModel):
+    """Response after recording an agent decision."""
+
+    decision_id: str
+    entities_extracted: list[str]
+    similar_existing: list[AgentDecisionSummary] = Field(default_factory=list)
+    potential_supersedes: list[str] = Field(default_factory=list, description="IDs of possibly superseded decisions")
+    potential_contradicts: list[str] = Field(default_factory=list, description="IDs of possibly contradicting decisions")
+
+
+class AgentSummaryResponse(BaseModel):
+    """High-level architectural overview for agent bootstrapping."""
+
+    total_decisions: int = 0
+    total_entities: int = 0
+    top_technologies: list[AgentEntitySummary] = Field(default_factory=list)
+    top_decisions: list[AgentDecisionSummary] = Field(default_factory=list)
+    unresolved_contradictions: list[dict] = Field(default_factory=list)
+    knowledge_gaps: list[dict] = Field(default_factory=list, description="Areas with few decisions")
+    project_name: Optional[str] = None

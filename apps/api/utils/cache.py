@@ -28,6 +28,10 @@ CACHE_PREFIXES = {
     "dashboard_stats": "cache:dashboard:stats",
     "graph_stats": "cache:graph:stats",
     "graph_sources": "cache:graph:sources",
+    "graph_projects": "cache:graph:projects",
+    "agent_summary": "cache:agent:summary",
+    "agent_context": "cache:agent:context",
+    "agent_entity": "cache:agent:entity",
 }
 
 # Default TTLs in seconds
@@ -35,6 +39,10 @@ DEFAULT_TTLS = {
     "dashboard_stats": 30,  # 30 seconds - changes frequently with new decisions
     "graph_stats": 30,  # 30 seconds - similar to dashboard
     "graph_sources": 60,  # 60 seconds - changes less frequently
+    "graph_projects": 60,  # 60 seconds - changes less frequently
+    "agent_summary": 120,  # 2 minutes - high-level overview changes slowly
+    "agent_context": 30,  # 30 seconds - query-specific cache
+    "agent_entity": 60,  # 60 seconds - entity info changes slowly
 }
 
 
