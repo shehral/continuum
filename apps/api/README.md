@@ -83,7 +83,7 @@ apps/api/
 │   ├── llm.py             # NVIDIA NIM LLM client
 │   ├── embeddings.py      # NVIDIA NV-EmbedQA client
 │   ├── extractor.py       # Decision extraction (CoT prompts)
-│   ├── entity_resolver.py # Entity deduplication (5-stage)
+│   ├── entity_resolver.py # Entity deduplication (7-stage)
 │   ├── validator.py       # Graph validation
 │   └── decision_analyzer.py # Relationship detection
 ├── models/                # Data models
@@ -147,7 +147,7 @@ vector = await embeddings.embed_text("Your text here")
 
 ### Entity Resolution (`services/entity_resolver.py`)
 
-5-stage pipeline for entity deduplication:
+7-stage pipeline for entity deduplication:
 
 1. **Exact match** - Case-insensitive name lookup
 2. **Canonical lookup** - Map aliases (postgres → PostgreSQL)

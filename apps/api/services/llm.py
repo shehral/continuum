@@ -1,5 +1,6 @@
-"""LLM client for NVIDIA NIM API with per-user rate limiting, retry logic, request size validation, and model fallback.
+"""LLM client with per-user rate limiting, retry logic, request size validation, and model fallback.
 
+Supports multiple LLM providers (NVIDIA NIM, Amazon Bedrock) via the provider abstraction layer.
 SEC-009: Implements per-user rate limiting instead of global rate limiting.
 ML-QW-2: Model fallback support - if primary model fails, automatically fall back to secondary model.
 """
@@ -11,9 +12,10 @@ import time
 from typing import AsyncIterator
 
 import redis.asyncio as redis
-from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from config import get_settings
+from services.llm_providers import get_llm_provider
 from utils.logging import get_logger
 from utils.prompt_sanitizer import InjectionRiskLevel, sanitize_prompt
 
@@ -200,7 +202,9 @@ class RateLimiter:
 
 
 class LLMClient:
-    """Client for NVIDIA NIM Llama API with per-user rate limiting, retry logic, size validation, and model fallback.
+    """LLM client with per-user rate limiting, retry logic, size validation, and model fallback.
+
+    Supports NVIDIA NIM and Amazon Bedrock providers via the provider abstraction layer.
 
     Features:
     - Per-user token bucket rate limiting via Redis (SEC-009)
@@ -214,14 +218,12 @@ class LLMClient:
 
     def __init__(self):
         self.settings = get_settings()
-        self.client = AsyncOpenAI(
-            base_url="https://integrate.api.nvidia.com/v1",
-            api_key=self.settings.get_nvidia_api_key(),
-        )
-        self.model = self.settings.nvidia_model
+        self.provider = get_llm_provider()
+        self.model = self.provider.model_name
         # ML-QW-2: Fallback model configuration
         self.fallback_model = self.settings.llm_fallback_model
         self.fallback_enabled = self.settings.llm_fallback_enabled
+        self._fallback_provider = None
         self._redis: redis.Redis | None = None
         # Cache rate limiters by user_id to avoid recreating
         self._rate_limiters: dict[str, RateLimiter] = {}
@@ -254,6 +256,20 @@ class LLMClient:
             )
 
         return self._rate_limiters[key]
+
+    def _get_fallback_provider(self):
+        """Get or create the fallback LLM provider (ML-QW-2).
+
+        Fallback is only available for the NVIDIA provider (uses a different model
+        on the same API). Bedrock handles retries at the AWS level.
+        """
+        if not self.fallback_enabled or not self.fallback_model:
+            return None
+        if self._fallback_provider is None and self.settings.llm_provider == "nvidia":
+            from services.llm_providers.nvidia import NvidiaLLMProvider
+
+            self._fallback_provider = NvidiaLLMProvider(model=self.fallback_model)
+        return self._fallback_provider
 
     def _estimate_tokens(self, text: str) -> int:
         """Estimate token count for a piece of text.
@@ -447,9 +463,23 @@ class LLMClient:
         ):
             return True
 
-        # API status errors with specific codes are retryable
+        # API status errors with specific codes are retryable (NVIDIA/OpenAI)
         if isinstance(error, APIStatusError):
             return error.status_code in RETRYABLE_STATUS_CODES
+
+        # Bedrock/boto3 errors
+        try:
+            from botocore.exceptions import ClientError
+
+            if isinstance(error, ClientError):
+                code = error.response.get("Error", {}).get("Code", "")
+                return code in {
+                    "ThrottlingException",
+                    "ServiceUnavailableException",
+                    "InternalServerException",
+                }
+        except ImportError:
+            pass
 
         return False
 
@@ -460,7 +490,7 @@ class LLMClient:
         Uses structured logging format for easy parsing by log aggregators.
 
         Args:
-            usage: The usage object from the API response
+            usage: The usage dict (from providers) or object from the API response
             model: The model name/ID used for the request
             streaming: Whether this was a streaming request
         """
@@ -468,11 +498,19 @@ class LLMClient:
             logger.debug("Token usage not available in response")
             return
 
-        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
-        completion_tokens = getattr(usage, "completion_tokens", 0) or 0
-        total_tokens = (
-            getattr(usage, "total_tokens", 0) or prompt_tokens + completion_tokens
-        )
+        # Handle both dict (from providers) and object (legacy) formats
+        if isinstance(usage, dict):
+            prompt_tokens = usage.get("prompt_tokens", 0) or 0
+            completion_tokens = usage.get("completion_tokens", 0) or 0
+            total_tokens = (
+                usage.get("total_tokens", 0) or prompt_tokens + completion_tokens
+            )
+        else:
+            prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+            completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+            total_tokens = (
+                getattr(usage, "total_tokens", 0) or prompt_tokens + completion_tokens
+            )
 
         logger.info(
             "LLM token usage",
@@ -487,18 +525,18 @@ class LLMClient:
             },
         )
 
-    async def _generate_with_model(
+    async def _generate_with_provider(
         self,
-        model: str,
+        provider,
         messages: list[dict],
         temperature: float,
         max_tokens: int,
         max_retries: int,
     ) -> str:
-        """Internal method to generate completion with a specific model (ML-QW-2).
+        """Internal method to generate completion with a specific provider (ML-QW-2).
 
         Args:
-            model: The model to use for generation
+            provider: The LLM provider to use for generation
             messages: List of message dicts
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
@@ -510,25 +548,21 @@ class LLMClient:
         Raises:
             Exception: If max retries exceeded
         """
+        model = provider.model_name
         last_error: Exception | None = None
 
         for attempt in range(max_retries + 1):
             try:
-                response = await self.client.chat.completions.create(
-                    model=model,
+                text, usage = await provider.generate(
                     messages=messages,
                     temperature=temperature,
-                    top_p=0.95,
                     max_tokens=max_tokens,
-                    frequency_penalty=0,
-                    presence_penalty=0,
                 )
 
                 # Log token usage for cost monitoring (ML-QW-1)
-                self._log_token_usage(response.usage, model, streaming=False)
+                self._log_token_usage(usage, model, streaming=False)
 
-                content = response.choices[0].message.content or ""
-                return strip_thinking_tags(content)
+                return strip_thinking_tags(text)
 
             except Exception as e:
                 last_error = e
@@ -615,10 +649,10 @@ class LLMClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        # Try primary model first
+        # Try primary provider first
         try:
-            return await self._generate_with_model(
-                model=self.model,
+            return await self._generate_with_provider(
+                provider=self.provider,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -626,7 +660,8 @@ class LLMClient:
             )
         except Exception as primary_error:
             # ML-QW-2: Check if we should fall back to secondary model
-            if self._should_fallback(primary_error) and self.fallback_model:
+            fallback_provider = self._get_fallback_provider()
+            if self._should_fallback(primary_error) and fallback_provider:
                 logger.warning(
                     f"Primary model {self.model} failed, falling back to {self.fallback_model}",
                     extra={
@@ -636,8 +671,8 @@ class LLMClient:
                     },
                 )
                 try:
-                    return await self._generate_with_model(
-                        model=self.fallback_model,
+                    return await self._generate_with_provider(
+                        provider=fallback_provider,
                         messages=messages,
                         temperature=temperature,
                         max_tokens=max_tokens,
@@ -718,78 +753,59 @@ class LLMClient:
 
         for attempt in range(max_retries + 1):
             try:
-                stream = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=temperature,
-                    top_p=0.95,
-                    max_tokens=max_tokens,
-                    frequency_penalty=0,
-                    presence_penalty=0,
-                    stream=True,
-                    stream_options={
-                        "include_usage": True
-                    },  # Request usage in stream (ML-QW-1)
-                )
-
                 # Buffer for thinking tag stripping in streaming mode
                 buffer = ""
                 in_thinking_block = False
-                stream_usage = None  # Track usage from final chunk (ML-QW-1)
 
-                async for chunk in stream:
-                    # Capture usage from the final chunk (ML-QW-1)
-                    if hasattr(chunk, "usage") and chunk.usage is not None:
-                        stream_usage = chunk.usage
-                    if chunk.choices and chunk.choices[0].delta.content is not None:
-                        content = chunk.choices[0].delta.content
-                        buffer += content
+                async for content in self.provider.generate_stream(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                ):
+                    buffer += content
 
-                        # Handle thinking tags in streaming
-                        while True:
-                            if not in_thinking_block:
-                                # Look for start of thinking block
-                                think_start = buffer.find("<think>")
-                                if think_start != -1:
-                                    # Yield content before the tag
-                                    if think_start > 0:
-                                        yield buffer[:think_start]
-                                    buffer = buffer[think_start + 7 :]  # Skip <think>
-                                    in_thinking_block = True
-                                else:
-                                    # Check if we might be at the start of a tag
-                                    if (
-                                        buffer.endswith("<")
-                                        or buffer.endswith("<t")
-                                        or buffer.endswith("<th")
-                                        or buffer.endswith("<thi")
-                                        or buffer.endswith("<thin")
-                                        or buffer.endswith("<think")
-                                    ):
-                                        # Keep partial tag in buffer
-                                        break
-                                    # Safe to yield everything
-                                    if buffer:
-                                        yield buffer
-                                        buffer = ""
-                                    break
+                    # Handle thinking tags in streaming
+                    while True:
+                        if not in_thinking_block:
+                            # Look for start of thinking block
+                            think_start = buffer.find("<think>")
+                            if think_start != -1:
+                                # Yield content before the tag
+                                if think_start > 0:
+                                    yield buffer[:think_start]
+                                buffer = buffer[think_start + 7 :]  # Skip <think>
+                                in_thinking_block = True
                             else:
-                                # Look for end of thinking block
-                                think_end = buffer.find("</think>")
-                                if think_end != -1:
-                                    # Discard thinking content
-                                    buffer = buffer[think_end + 8 :]  # Skip </think>
-                                    in_thinking_block = False
-                                else:
-                                    # Still inside thinking block, keep buffering
+                                # Check if we might be at the start of a tag
+                                if (
+                                    buffer.endswith("<")
+                                    or buffer.endswith("<t")
+                                    or buffer.endswith("<th")
+                                    or buffer.endswith("<thi")
+                                    or buffer.endswith("<thin")
+                                    or buffer.endswith("<think")
+                                ):
+                                    # Keep partial tag in buffer
                                     break
+                                # Safe to yield everything
+                                if buffer:
+                                    yield buffer
+                                    buffer = ""
+                                break
+                        else:
+                            # Look for end of thinking block
+                            think_end = buffer.find("</think>")
+                            if think_end != -1:
+                                # Discard thinking content
+                                buffer = buffer[think_end + 8 :]  # Skip </think>
+                                in_thinking_block = False
+                            else:
+                                # Still inside thinking block, keep buffering
+                                break
 
                 # Yield any remaining content (not in thinking block)
                 if buffer and not in_thinking_block:
                     yield buffer
-
-                # Log token usage for streaming response (ML-QW-1)
-                self._log_token_usage(stream_usage, self.model, streaming=True)
 
                 return  # Success, exit retry loop
 

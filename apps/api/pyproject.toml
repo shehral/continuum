@@ -30,6 +30,10 @@ dependencies = [
     "cryptography>=42.0.0",
     # SEC-013: Starlette pinned for security (dependency of FastAPI)
     "starlette>=0.52.1",
+    # Hackathon: Amazon Bedrock (Claude) provider
+    "boto3>=1.35.0",
+    # Hackathon: Datadog LLM Observability
+    "ddtrace>=2.0.0",
 ]
 
 [project.optional-dependencies]

@@ -31,9 +31,21 @@ class Settings(BaseSettings):
     neo4j_password: SecretStr = SecretStr("")  # SEC-007: Use SecretStr for passwords
     redis_url: str = ""  # e.g., redis://localhost:6379
 
+    # Provider selection
+    llm_provider: str = "nvidia"  # "nvidia" or "bedrock"
+    embedding_provider: str = "nvidia"  # "nvidia" or "bedrock" (keep nvidia to avoid re-indexing)
+
     # AI Provider (NVIDIA NIM) - SEC-007: Use SecretStr for API keys
     nvidia_api_key: SecretStr = SecretStr("")
     nvidia_model: str = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+
+    # Amazon Bedrock settings (used when llm_provider="bedrock")
+    bedrock_model_id: str = "anthropic.claude-sonnet-4-20250514"
+    bedrock_embedding_model_id: str = "amazon.titan-embed-text-v2:0"
+    aws_region: str = "us-west-2"
+
+    # Datadog observability
+    dd_trace_enabled: bool = False
 
     # Embedding Model (NVIDIA NV-EmbedQA) - SEC-007: Use SecretStr for API keys
     nvidia_embedding_api_key: SecretStr = SecretStr("")
