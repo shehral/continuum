@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { GitBranch, Sparkles, MessageSquare, Scan, Network } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { HeroGraph } from "@/components/landing/hero-graph"
+import { HeroConductor } from "@/components/landing/hero-conductor"
 import { PulsingNetwork } from "@/components/landing/pulsing-network"
 import { ConversationExtract } from "@/components/landing/conversation-extract"
 import { FileScan } from "@/components/landing/file-scan"
@@ -354,7 +354,8 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero */}
-      <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-16">
+      <section className="relative min-h-screen flex flex-col items-center px-6 pt-16 overflow-hidden">
+        {/* Nebula background blobs */}
         {mounted && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
             <div className="absolute top-1/4 left-[16%] w-72 h-72 bg-violet-500/12 rounded-full blur-3xl animate-float" />
@@ -363,7 +364,15 @@ export default function LandingPage() {
           </div>
         )}
 
-        <div className="relative z-10 max-w-4xl mx-auto text-center animate-in fade-in slide-in-from-bottom-8 duration-1000">
+        {/* Conductor SVG - full bleed background */}
+        {mounted && (
+          <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+            <HeroConductor />
+          </div>
+        )}
+
+        {/* Text overlay - positioned in upper portion */}
+        <div className="relative z-10 max-w-4xl mx-auto text-center pt-16 sm:pt-24 animate-in fade-in slide-in-from-bottom-8 duration-1000">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/[0.03] border border-white/[0.08] backdrop-blur-sm mb-8">
             <Sparkles className="w-3.5 h-3.5 text-violet-400" />
             <span className="text-xs font-medium text-slate-300">
@@ -376,27 +385,10 @@ export default function LandingPage() {
             <span className="gradient-text">Remembered.</span>
           </h1>
 
-          <p className="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-12 leading-relaxed">
+          <p className="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
             Continuum captures the engineering decisions hidden in your AI coding
             sessions and transforms them into a searchable knowledge graph.
           </p>
-
-          <div className="relative mx-auto max-w-5xl">
-            <div
-              className="absolute -inset-4 bg-gradient-to-r from-violet-500/20 via-fuchsia-500/10 to-orange-500/20 rounded-3xl blur-2xl opacity-60"
-              aria-hidden="true"
-            />
-            <div className="relative rounded-2xl border border-white/[0.08] overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.5)] bg-[hsl(250,20%,4%)] p-4 md:p-8">
-              <HeroGraph />
-            </div>
-          </div>
-        </div>
-
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 animate-pulse-glow">
-          <span className="text-xs text-slate-500">Scroll to explore</span>
-          <div className="w-5 h-8 rounded-full border border-white/20 flex items-start justify-center p-1">
-            <div className="w-1 h-2 rounded-full bg-violet-400 animate-slide-in-down" />
-          </div>
         </div>
       </section>
 
