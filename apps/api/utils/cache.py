@@ -131,7 +131,15 @@ async def set_cached(
         ttl = DEFAULT_TTLS.get(prefix, 60)
 
     try:
-        await redis_client.setex(cache_key, ttl, json.dumps(value))
+        # Custom JSON encoder to handle datetime objects
+        def json_serializer(obj):
+            """JSON serializer for objects not serializable by default json code"""
+            from datetime import datetime, date
+            if isinstance(obj, (datetime, date)):
+                return obj.isoformat()
+            raise TypeError(f"Type {type(obj)} not serializable")
+        
+        await redis_client.setex(cache_key, ttl, json.dumps(value, default=json_serializer))
         logger.debug(f"Cache set: {cache_key} (TTL: {ttl}s)")
         return True
     except Exception as e:

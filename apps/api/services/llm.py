@@ -23,9 +23,35 @@ logger = get_logger(__name__)
 
 
 def strip_thinking_tags(text: str) -> str:
-    """Remove <think>...</think> tags from model output."""
-    # Remove thinking blocks
-    text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
+    """Remove <think>...</think> tags from model output.
+
+    Handles various formats:
+    - <think>...</think>  (Nemotron/DeepSeek style)
+    - <think attr>...</think>  (any attributes)
+    - <thinking>...</thinking>
+    - Unclosed tags (removes from opening tag to true end-of-string)
+    """
+    if not text:
+        return text
+
+    # Remove properly closed thinking blocks.
+    # r"<think\b[^>]*>" matches <think>, <think >, <think mode="fast">, etc.
+    patterns = [
+        r"<think\b[^>]*>.*?</think>\s*",
+        r"<thinking\b[^>]*>.*?</thinking>\s*",
+    ]
+    for pattern in patterns:
+        text = re.sub(pattern, "", text, flags=re.DOTALL | re.IGNORECASE)
+
+    # Handle unclosed tags — consume everything from the opening tag to the
+    # true end of the string.  Use \Z (not $) so re.DOTALL doesn't stop at \n.
+    unclosed_patterns = [
+        r"<think\b[^>]*>.*\Z",
+        r"<thinking\b[^>]*>.*\Z",
+    ]
+    for pattern in unclosed_patterns:
+        text = re.sub(pattern, "", text, flags=re.DOTALL | re.IGNORECASE)
+
     return text.strip()
 
 

@@ -29,11 +29,36 @@ router = APIRouter()
 ALLOWED_UPDATE_FIELDS = frozenset({
     "trigger", "context", "options", "agent_decision", "agent_rationale",
     "human_decision", "human_rationale",
+    "verbatim_quote", "verbatim_start_char", "verbatim_end_char", "turn_index",
 })
 
 
 def _decision_from_record(d, entities) -> Decision:
     """Build a Decision from a Neo4j node dict and entity list."""
+    # Extract verbatim fields (support both new structured format and legacy)
+    verbatim_quote = None
+    verbatim_start_char = None
+    verbatim_end_char = None
+    
+    # Check for verbatim_decision (primary) or verbatim_trigger
+    if d.get("verbatim_decision"):
+        verbatim_quote = d.get("verbatim_decision")
+    elif d.get("verbatim_trigger"):
+        verbatim_quote = d.get("verbatim_trigger")
+    
+    # Extract text span from decision_span (JSON string or dict)
+    decision_span = d.get("decision_span")
+    if decision_span:
+        if isinstance(decision_span, str):
+            import json
+            try:
+                decision_span = json.loads(decision_span)
+            except:
+                pass
+        if isinstance(decision_span, dict):
+            verbatim_start_char = decision_span.get("start_char")
+            verbatim_end_char = decision_span.get("end_char")
+    
     return Decision(
         id=d["id"],
         trigger=d.get("trigger") or "(untitled)",
@@ -52,6 +77,10 @@ def _decision_from_record(d, entities) -> Decision:
         ],
         source=d.get("source", "unknown"),
         project_name=d.get("project_name"),
+        verbatim_quote=verbatim_quote,
+        verbatim_start_char=verbatim_start_char,
+        verbatim_end_char=verbatim_end_char,
+        turn_index=d.get("turn_index"),
     )
 
 
@@ -89,7 +118,7 @@ async def get_decisions(
                 ORDER BY d.created_at DESC
                 SKIP $offset
                 LIMIT $limit
-                RETURN d, entities
+                RETURN d, entities, d.verbatim_decision, d.verbatim_trigger, d.decision_span, d.turn_index
                 """,
                 user_id=user_id,
                 offset=offset,
@@ -150,7 +179,7 @@ async def get_needs_review(
                 ORDER BY d.confidence DESC
                 SKIP $offset
                 LIMIT $limit
-                RETURN d, entities
+                RETURN d, entities, d.verbatim_decision, d.verbatim_trigger, d.decision_span, d.turn_index
                 """,
                 user_id=user_id,
                 offset=offset,
@@ -236,7 +265,7 @@ async def get_decision(
             WHERE d.user_id = $user_id OR d.user_id IS NULL
             OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
             WITH d, collect(e) as entities
-            RETURN d, entities
+            RETURN d, entities, d.verbatim_decision, d.verbatim_trigger, d.decision_span, d.turn_index
             """,
             id=decision_id,
             user_id=user_id,
@@ -306,7 +335,17 @@ async def update_decision(
                 raise HTTPException(
                     status_code=400, detail=f"Field '{field}' cannot be updated"
                 )
-            set_parts.append(f"d.{field} = ${field}")
+            # Map alias fields to Neo4j property names
+            neo4j_field = field
+            if field == "agent_decision":
+                neo4j_field = "agent_decision"
+            elif field == "agent_rationale":
+                neo4j_field = "agent_rationale"
+            elif field == "verbatim_quote":
+                # Store verbatim_quote in verbatim_decision for consistency
+                neo4j_field = "verbatim_decision"
+            
+            set_parts.append(f"d.{neo4j_field} = ${field}")
             params[field] = value
 
         set_clause = ", ".join(set_parts)
@@ -327,7 +366,7 @@ async def update_decision(
             MATCH (d:DecisionTrace {id: $id})
             OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
             WITH d, collect(e) as entities
-            RETURN d, entities
+            RETURN d, entities, d.verbatim_decision, d.verbatim_trigger, d.decision_span, d.turn_index
             """,
             id=decision_id,
         )

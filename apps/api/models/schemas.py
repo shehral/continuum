@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime
+from enum import Enum
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -21,6 +22,9 @@ VALID_RELATIONSHIP_TYPES = frozenset(
         "SUPERSEDES",
         "INFLUENCED_BY",
         "CONTRADICTS",
+        # Temporal relationships (RQ1.3: Temporal reasoning)
+        "FOLLOWS",  # Decision B follows Decision A (happens after in conversation)
+        "PRECEDES",  # Decision A precedes Decision B (happens before in conversation)
         # Entity -> Entity
         "IS_A",
         "PART_OF",
@@ -32,8 +36,57 @@ VALID_RELATIONSHIP_TYPES = frozenset(
         "PREVENTS",
         "REQUIRES",
         "REFINES",
+        # Codebase connectivity (Part 4.1, 4.2, 4.3)
+        "AFFECTS",          # Decision -> CodeEntity
+        "IMPLEMENTED_BY",   # Decision -> CommitNode
+        "TOUCHES",          # CommitNode -> CodeEntity
+        "REJECTED_BY",      # CandidateDecision -> DecisionTrace
+        "ALTERNATIVE_TO",   # CandidateDecision -> CandidateDecision (already in set)
     }
 )
+
+
+# ---------------------------------------------------------------------------
+# Decision scope taxonomy (Part 4.7)
+# ---------------------------------------------------------------------------
+
+class DecisionScope(str, Enum):
+    """Hierarchical scope of a decision, determining its expected half-life.
+
+    Used for:
+    - Graph visual layering (strategic at top, operational at bottom)
+    - Staleness thresholds (SCOPE_STALENESS_DAYS)
+    - Timeline breakdown by scope
+    """
+    STRATEGIC = "strategic"         # Monolith vs microservices — years half-life
+    ARCHITECTURAL = "architectural" # Which framework, DB schema — months
+    LIBRARY = "library"             # Which npm/pip package — weeks/months
+    CONFIG = "config"               # Timeout values, rate limits — days/weeks
+    OPERATIONAL = "operational"     # Deployment config, env vars — hours/days
+
+
+# Staleness threshold (days) per scope level
+SCOPE_STALENESS_DAYS: dict[str, int] = {
+    DecisionScope.STRATEGIC: 730,       # 2 years
+    DecisionScope.ARCHITECTURAL: 180,   # 6 months
+    DecisionScope.LIBRARY: 90,          # 3 months
+    DecisionScope.CONFIG: 30,           # 1 month
+    DecisionScope.OPERATIONAL: 14,      # 2 weeks
+}
+
+
+# Rationale provenance — who/what provided the rationale
+class RationaleAuthor(str, Enum):
+    """Source of the rationale field.
+
+    Tracks fidelity:
+    - thinking  = extracted from Claude's thinking block (highest fidelity)
+    - user      = verbatim from user role message
+    - assistant = inferred from assistant response text (lowest fidelity)
+    """
+    THINKING = "thinking"
+    USER = "user"
+    ASSISTANT = "assistant"
 
 
 def validate_uuid(value: str, field_name: str = "id") -> str:
@@ -63,6 +116,15 @@ class DecisionSource:
     INTERVIEW = "interview"  # Captured via AI-guided interview
     MANUAL = "manual"  # Manually entered by user
     UNKNOWN = "unknown"  # Legacy or untagged decisions
+
+
+# Verbatim grounding (CogCanvas-inspired) - stores exact text quotes with offsets
+class TextSpan(BaseModel):
+    """Represents a verbatim text span from the original conversation."""
+    text: str = Field(..., description="Exact verbatim text from conversation")
+    start_char: int = Field(..., ge=0, description="Character offset start in conversation")
+    end_char: int = Field(..., ge=0, description="Character offset end in conversation")
+    turn_index: int = Field(..., ge=0, description="Which conversation turn (0-indexed)")
 
 
 # Decision schemas
@@ -105,11 +167,76 @@ class Decision(DecisionBase):
     source: str = DecisionSource.UNKNOWN  # Where this decision came from
     project_name: Optional[str] = None  # Project this decision belongs to
 
+    # Verbatim grounding fields (CogCanvas-inspired, RQ1 enhancement)
+    verbatim_quote: Optional[str] = Field(None, description="Exact verbatim quote from conversation")
+    verbatim_start_char: Optional[int] = Field(None, ge=0, description="Character offset start")
+    verbatim_end_char: Optional[int] = Field(None, ge=0, description="Character offset end")
+    turn_index: Optional[int] = Field(None, ge=0, description="Conversation turn index")
+
+    # Scope taxonomy (Part 4.7)
+    scope: Optional[DecisionScope] = Field(
+        None,
+        description="Hierarchical scope level that determines half-life and graph layering",
+    )
+
+    # Rationale provenance (Part 2c)
+    raw_rationale: Optional[str] = Field(
+        None,
+        max_length=50000,
+        description="Raw thinking block text used as rationale source (highest fidelity)",
+    )
+    rationale_author: Optional[RationaleAuthor] = Field(
+        None,
+        description="Who/what provided the rationale: thinking block, user, or assistant",
+    )
+
+    # Decision freshness (Part 7)
+    assumptions: list[str] = Field(
+        default_factory=list,
+        description="Explicit assumptions this decision relies on",
+    )
+    last_reviewed_at: Optional[datetime] = Field(
+        None,
+        description="When this decision was last explicitly reviewed by a developer",
+    )
+
 
 class DecisionCreate(DecisionBase):
     confidence: float = Field(0.8, ge=0.0, le=1.0)
     source: str = DecisionSource.UNKNOWN
     project_name: Optional[str] = Field(None, max_length=200)
+
+    # Verbatim grounding fields (CogCanvas-inspired, RQ1 enhancement)
+    verbatim_trigger: Optional[str] = Field(None, description="Exact verbatim quote for trigger")
+    verbatim_decision: Optional[str] = Field(None, description="Exact verbatim quote for decision")
+    verbatim_rationale: Optional[str] = Field(None, description="Exact verbatim quote for rationale")
+    trigger_span: Optional[TextSpan] = Field(None, description="Text span for trigger in conversation")
+    decision_span: Optional[TextSpan] = Field(None, description="Text span for decision in conversation")
+    rationale_span: Optional[TextSpan] = Field(None, description="Text span for rationale in conversation")
+    turn_index: Optional[int] = Field(None, ge=0, description="Conversation turn index where decision was made")
+
+    # Scope taxonomy (Part 4.7)
+    scope: Optional[DecisionScope] = Field(
+        None,
+        description="Hierarchical scope level — extracted by LLM, determines half-life",
+    )
+
+    # Rationale provenance (Part 2c)
+    raw_rationale: Optional[str] = Field(
+        None,
+        max_length=50000,
+        description="Raw thinking block text from which rationale was extracted",
+    )
+    rationale_author: Optional[RationaleAuthor] = Field(
+        None,
+        description="Who provided the rationale: thinking, user, or assistant",
+    )
+
+    # Decision freshness (Part 7)
+    assumptions: list[str] = Field(
+        default_factory=list,
+        description="Explicit assumptions this decision relies on (extracted by LLM)",
+    )
 
 
 class DecisionUpdate(BaseModel):
@@ -132,6 +259,20 @@ class DecisionUpdate(BaseModel):
     )
     human_decision: Optional[str] = Field(None, max_length=5000)
     human_rationale: Optional[str] = Field(None, max_length=10000)
+    
+    # Verbatim grounding fields (optional updates)
+    verbatim_quote: Optional[str] = Field(None, max_length=10000)
+    verbatim_start_char: Optional[int] = Field(None, ge=0)
+    verbatim_end_char: Optional[int] = Field(None, ge=0)
+    turn_index: Optional[int] = Field(None, ge=0)
+
+    # Scope + freshness updates
+    scope: Optional[DecisionScope] = None
+    assumptions: Optional[list[str]] = Field(None, description="Updated assumptions list")
+    last_reviewed_at: Optional[datetime] = Field(
+        None,
+        description="Set to now() when developer explicitly reviews this decision",
+    )
 
     @field_validator("options")
     @classmethod
@@ -187,6 +328,12 @@ class RelationshipType:
     PART_OF = "PART_OF"
     RELATED_TO = "RELATED_TO"
     DEPENDS_ON = "DEPENDS_ON"
+
+    # Codebase connectivity (Part 4.1 / 4.2 / 4.3)
+    AFFECTS = "AFFECTS"             # Decision/CommitNode -> CodeEntity
+    IMPLEMENTED_BY = "IMPLEMENTED_BY"  # Decision -> CommitNode
+    TOUCHES = "TOUCHES"             # CommitNode -> CodeEntity
+    REJECTED_BY = "REJECTED_BY"     # CandidateDecision -> DecisionTrace
 
 
 # Semantic search schemas
@@ -325,6 +472,7 @@ class HybridSearchRequest(BaseModel):
     Hybrid search combines:
     - Lexical search (fulltext index) - good for exact matches and keywords
     - Semantic search (vector similarity) - good for meaning and concepts
+    - Graph expansion (optional) - expands via relationships for better recall
 
     Final score = alpha * lexical_score + (1 - alpha) * semantic_score
     """
@@ -345,6 +493,9 @@ class HybridSearchRequest(BaseModel):
     )
     search_decisions: bool = Field(True, description="Search decision nodes")
     search_entities: bool = Field(True, description="Search entity nodes")
+    graph_depth: int = Field(
+        0, ge=0, le=2, description="Graph expansion depth (0=none, 1=1-hop, 2=2-hop)"
+    )
 
 
 class HybridSearchResult(BaseModel):

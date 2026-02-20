@@ -180,6 +180,10 @@ Return ONLY valid JSON, no markdown or explanation."""
         stats = {"supersedes_created": 0, "contradicts_created": 0}
 
         for rel in analysis_results.get("supersedes", []):
+            # Part 14 (graphiti bi-temporal): Add valid_at / invalid_at timestamps.
+            # - valid_at: when the superseding decision became valid (its created_at)
+            # - invalid_at: when the older decision stopped being valid (same moment)
+            # This enables point-in-time graph queries ("what was the architecture on X?")
             await self.session.run(
                 """
                 MATCH (newer:DecisionTrace {id: $from_id})
@@ -187,12 +191,28 @@ Return ONLY valid JSON, no markdown or explanation."""
                 MERGE (newer)-[r:SUPERSEDES]->(older)
                 SET r.confidence = $confidence,
                     r.reasoning = $reasoning,
-                    r.analyzed_at = datetime()
+                    r.analyzed_at = datetime(),
+                    r.valid_at = COALESCE(newer.created_at, toString(datetime())),
+                    r.invalid_at = null
+                WITH older, r
+                SET older.expired_at = COALESCE(newer.created_at, toString(datetime()))
                 """,
                 from_id=rel["from_id"],
                 to_id=rel["to_id"],
                 confidence=rel["confidence"],
                 reasoning=rel.get("reasoning", ""),
+            )
+            # Also mark all INVOLVES edges from the superseded decision as invalid
+            # (graphiti pattern: entity-entity relationships gain temporal bounds)
+            await self.session.run(
+                """
+                MATCH (older:DecisionTrace {id: $to_id})-[inv:INVOLVES]->(e:Entity)
+                WHERE inv.invalid_at IS NULL
+                MATCH (newer:DecisionTrace {id: $from_id})
+                SET inv.invalid_at = COALESCE(newer.created_at, toString(datetime()))
+                """,
+                from_id=rel["from_id"],
+                to_id=rel["to_id"],
             )
             stats["supersedes_created"] += 1
 

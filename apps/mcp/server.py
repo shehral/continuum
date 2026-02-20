@@ -31,7 +31,8 @@ mcp = FastMCP(
     instructions=(
         "Continuum knowledge graph tools. Use continuum_summary at session start, "
         "continuum_search before coding, continuum_check before deciding, "
-        "and continuum_remember after making architectural decisions."
+        "continuum_remember after making architectural decisions, "
+        "and continuum_explain to understand why a file or feature is the way it is."
     ),
 )
 
@@ -94,17 +95,46 @@ async def continuum_summary(project: str = "") -> str:
     """Get high-level architectural overview for bootstrapping session context.
 
     Returns top technologies, recent decisions, unresolved contradictions,
-    and knowledge gaps. Call this at the start of a session to understand
-    the project's architectural landscape.
+    knowledge gaps, dormant alternatives, stale decisions, and scope breakdown.
+    Call this at the start of a session to understand the project's
+    architectural landscape and spot decisions that need review.
 
     Args:
         project: Optional project name to filter by.
     """
-    params = {}
+    params: dict = {}
     if project:
         params["project"] = project
 
+    # Fetch core summary
     data = await _api_request("GET", "/api/agent/summary", params=params or None)
+
+    # Enrich with dormant alternatives (top 3)
+    try:
+        dormant_params: dict = {"min_days_dormant": 14, "limit": 3}
+        if project:
+            dormant_params["project"] = project
+        dormant = await _api_request(
+            "GET", "/api/analytics/dormant-alternatives", params=dormant_params
+        )
+        if dormant:
+            data["dormant_alternatives"] = dormant
+    except Exception:
+        pass
+
+    # Enrich with stale decisions (top 5)
+    try:
+        stale_params: dict = {"limit": 5}
+        if project:
+            stale_params["project"] = project
+        stale = await _api_request(
+            "GET", "/api/analytics/stale", params=stale_params
+        )
+        if stale:
+            data["stale_decisions"] = stale
+    except Exception:
+        pass
+
     return json.dumps(data, indent=2)
 
 
@@ -236,6 +266,120 @@ async def continuum_remember(
 
     data = await _api_request("POST", "/api/agent/remember", json_body=body)
     return json.dumps(data, indent=2)
+
+
+@mcp.tool()
+async def continuum_explain(
+    file_path: str = "",
+    entity_name: str = "",
+    decision_id: str = "",
+    project: str = "",
+) -> str:
+    """Explain WHY a file, entity, or decision is the way it is.
+
+    Provides decision provenance: which decisions led to this design,
+    what alternatives were rejected, what assumptions underlie it, and
+    whether any of those assumptions have been invalidated.
+
+    Call this when you open a file and want to understand its design history
+    before making changes to it.
+
+    Args:
+        file_path:   Relative file path to explain (e.g. "apps/api/services/extractor.py").
+        entity_name: Technology or concept to explain (e.g. "Neo4j", "FastAPI").
+        decision_id: Specific decision UUID to get deep provenance for.
+        project:     Optional project filter.
+
+    Provide exactly one of file_path, entity_name, or decision_id.
+    """
+    if not any([file_path, entity_name, decision_id]):
+        return json.dumps({
+            "error": "Provide one of: file_path, entity_name, or decision_id"
+        })
+
+    explanation: dict = {
+        "query": file_path or entity_name or decision_id,
+        "type": "file" if file_path else ("entity" if entity_name else "decision"),
+        "decisions": [],
+        "rejected_alternatives": [],
+        "assumptions": [],
+        "invalidated_assumptions": [],
+        "stale": False,
+    }
+
+    params: dict = {}
+    if project:
+        params["project"] = project
+
+    # 1. Find relevant decisions
+    if file_path:
+        # Look up decisions that AFFECT this file
+        try:
+            encoded = quote(file_path, safe="")
+            resp = await _api_request(
+                "GET",
+                f"/api/git/pr-context",
+                params={"files": file_path, **({"project": project} if project else {})},
+            )
+            explanation["decisions"] = resp.get("relevant_decisions", [])
+            explanation["stale_ids"] = resp.get("stale_decisions", [])
+        except Exception as e:
+            _log(f"continuum_explain file lookup error: {e}")
+
+    elif entity_name:
+        # Use existing entity context endpoint
+        try:
+            encoded = quote(entity_name, safe="")
+            resp = await _api_request("GET", f"/api/agent/context/{encoded}")
+            explanation["decisions"] = resp.get("decisions", [])
+            explanation["entity_info"] = resp.get("entity", {})
+        except Exception as e:
+            _log(f"continuum_explain entity lookup error: {e}")
+
+    elif decision_id:
+        # Direct decision lookup with provenance
+        try:
+            resp = await _api_request("GET", f"/api/decisions/{decision_id}")
+            explanation["decisions"] = [resp] if resp else []
+        except Exception as e:
+            _log(f"continuum_explain decision lookup error: {e}")
+
+    # 2. Enrich with dormant alternatives for the found decisions
+    if explanation["decisions"] and len(explanation["decisions"]) <= 5:
+        try:
+            dormant_params: dict = {"min_days_dormant": 1, "limit": 10}
+            if project:
+                dormant_params["project"] = project
+            dormant = await _api_request(
+                "GET", "/api/analytics/dormant-alternatives", params=dormant_params
+            )
+            # Filter to alternatives related to the found decisions
+            found_ids = {d.get("id") or d.get("rejected_by_decision_id") for d in explanation["decisions"]}
+            explanation["rejected_alternatives"] = [
+                d for d in (dormant or [])
+                if d.get("rejected_by_decision_id") in found_ids
+            ]
+        except Exception:
+            pass
+
+    # 3. Check for assumption violations
+    if explanation["decisions"]:
+        try:
+            violations_params: dict = {"limit": 10}
+            if project:
+                violations_params["project"] = project
+            violations = await _api_request(
+                "GET", "/api/analytics/assumption-violations", params=violations_params
+            )
+            found_ids2 = {d.get("id") for d in explanation["decisions"]}
+            explanation["invalidated_assumptions"] = [
+                v for v in (violations or [])
+                if v.get("decision_id") in found_ids2
+            ]
+        except Exception:
+            pass
+
+    return json.dumps(explanation, indent=2)
 
 
 if __name__ == "__main__":

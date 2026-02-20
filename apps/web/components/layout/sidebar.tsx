@@ -26,6 +26,8 @@ import {
   ChevronRight,
   Sparkles,
   Zap,
+  GitBranch,
+  Map,
 } from "lucide-react"
 
 const navigation = [
@@ -33,6 +35,8 @@ const navigation = [
   { name: "Add Knowledge", href: "/add", icon: Brain },
   { name: "Knowledge Graph", href: "/graph", icon: Network },
   { name: "Decisions", href: "/decisions", icon: ClipboardList },
+  { name: "Branch Explorer", href: "/branches", icon: GitBranch },
+  { name: "Coverage Map", href: "/coverage", icon: Map },
   { name: "Projects", href: "/projects", icon: Folder },
   { name: "Search", href: "/search", icon: Search },
 ]

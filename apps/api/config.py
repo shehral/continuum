@@ -38,6 +38,21 @@ class Settings(BaseSettings):
     # AI Provider (NVIDIA NIM) - SEC-007: Use SecretStr for API keys
     nvidia_api_key: SecretStr = SecretStr("")
     nvidia_model: str = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+    
+    # Model comparison settings (for RQ1.3 cross-model evaluation)
+    # Available NVIDIA models for comparison:
+    # - nvidia/llama-3.3-nemotron-super-49b-v1.5 (default)
+    # - qwen/qwen3-next-80b-a3b-instruct
+    # - qwen/qwen3-coder-480b-a35b-instruct
+    # - deepseek-ai/deepseek-v3.1
+    nvidia_models_for_comparison: list[str] = [
+        "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        "qwen/qwen3-next-80b-a3b-instruct",
+        "qwen/qwen3-coder-480b-a35b-instruct",
+        "deepseek-ai/deepseek-v3.1",
+    ]
+    # Enable model comparison mode (runs extraction on all models)
+    model_comparison_enabled: bool = False
 
     # Amazon Bedrock settings (used when llm_provider="bedrock")
     bedrock_model_id: str = "anthropic.claude-sonnet-4-20250514"
@@ -68,9 +83,22 @@ class Settings(BaseSettings):
     llm_max_retries: int = 3  # Maximum retry attempts for LLM calls
     llm_retry_base_delay: float = 1.0  # Base delay in seconds for exponential backoff
 
-    # LLM prompt size limits (ML-P1-3)
-    # Llama 3.3 Nemotron has 128k context
-    max_prompt_tokens: int = 70000  # Maximum input tokens (handles very large conversations)
+    # LLM prompt size limits (ML-P1-3) — model-aware (Part 13)
+    # Context limits per model (85% of actual limit to leave room for response)
+    _MODEL_CONTEXT_LIMITS: dict = {
+        "nvidia/llama-3.3-nemotron-super-49b-v1.5": 128000,
+        "nvidia/llama-3.1-nemotron-70b-instruct": 131072,
+        "qwen/qwen3-next-80b-a3b-instruct": 131072,
+        "qwen/qwen3-coder-480b-a35b-instruct": 131072,
+        "deepseek-ai/deepseek-v3.1": 131072,
+    }
+    max_prompt_tokens: int = 70000  # Default fallback; overridden by model-aware logic at runtime
+
+    @property
+    def effective_max_prompt_tokens(self) -> int:
+        """Model-aware max_prompt_tokens — 85% of actual model context limit."""
+        limit = self._MODEL_CONTEXT_LIMITS.get(self.nvidia_model, 82000)
+        return int(limit * 0.85)
     prompt_warning_threshold: float = 0.8  # Warn when prompt exceeds this % of max
 
     # LLM response cache settings (KG-P0-2)
@@ -83,6 +111,28 @@ class Settings(BaseSettings):
     # If primary model fails, fall back to a secondary model
     llm_fallback_model: str = "nvidia/llama-3.1-nemotron-70b-instruct"  # Fallback model
     llm_fallback_enabled: bool = True  # Enable/disable fallback behavior
+    
+    # Confidence calibration settings (RQ1.2 + Part 2e)
+    # Method: "composite" (data-driven, no ground truth), "temperature" (Temperature Scaling), "heuristic"
+    confidence_calibration_method: str = "composite"  # Default to composite (Part 2e)
+    confidence_calibration_temperature: float = 1.5  # Temperature parameter for temperature method
+    
+    # Verbatim grounding settings (CogCanvas-inspired)
+    verbatim_grounding_enabled: bool = True  # Store exact text quotes with offsets
+    verbatim_store_offsets: bool = True  # Store character offsets and turn indices
+    
+    # Temporal reasoning settings
+    temporal_reasoning_enabled: bool = True  # Track turn indices and temporal relationships
+    temporal_edge_types: list[str] = ["FOLLOWS", "PRECEDES", "SUPERSEDES"]  # Temporal relationship types
+    
+    # BGE reranking settings (CogCanvas)
+    bge_reranking_enabled: bool = True  # Enable BGE reranking for search results
+    bge_reranker_model: str = "BAAI/bge-reranker-v2-m3"  # BGE reranker model
+    bge_reranking_top_k: int = 20  # Rerank top-K candidates before returning
+    
+    # Evaluation settings (RQ1)
+    evaluation_metrics_enabled: bool = True  # Enable evaluation metrics collection
+    evaluation_ground_truth_path: str = ""  # Path to ground truth dataset (optional)
 
     # Entity cache settings (SD-011)
     entity_cache_ttl: int = 300  # 5 minutes in seconds
@@ -114,6 +164,23 @@ class Settings(BaseSettings):
 
     # Paths
     claude_logs_path: str = "~/.claude/projects"
+
+    # Repository path for codebase connectivity (Part 3b / 4.1 / 4.6)
+    # Set this to the root of the project being tracked.
+    # If empty, file entity grounding and git integration are gracefully skipped.
+    repo_path: str = ""
+
+    # Git integration settings (Part 4.2 / 4.6)
+    git_commit_link_window_hours: int = 2       # Look N hours after session for commits
+    git_commit_link_score_threshold: float = 0.3  # Min file-overlap score to create IMPLEMENTED_BY
+    git_stale_file_threshold_days: int = 90     # Files not modified in N days are "stale"
+    episode_gap_minutes: float = 10.0           # Minutes between messages to split episodes
+
+    # Datadog integration (Part 12) — opt-in, disabled by default
+    datadog_api_key: SecretStr = SecretStr("")
+    datadog_app_key: SecretStr = SecretStr("")
+    datadog_site: str = "datadoghq.com"
+    datadog_integration_enabled: bool = False
 
     # Auth - SEC-007: Use SecretStr for secret key
     secret_key: SecretStr = SecretStr("")
@@ -171,6 +238,14 @@ class Settings(BaseSettings):
     def get_neo4j_password(self) -> str:
         """Safely get Neo4j password value."""
         return self.neo4j_password.get_secret_value()
+
+    def get_datadog_api_key(self) -> str:
+        """Safely get Datadog API key value."""
+        return self.datadog_api_key.get_secret_value()
+
+    def get_datadog_app_key(self) -> str:
+        """Safely get Datadog application key value."""
+        return self.datadog_app_key.get_secret_value()
 
 
 @lru_cache

@@ -467,6 +467,10 @@ function KnowledgeGraphInner({
   const [projectsExpanded, setProjectsExpanded] = useState(true)
   const [entityTypesExpanded, setEntityTypesExpanded] = useState(true)
   const [relationshipsExpanded, setRelationshipsExpanded] = useState(true)
+  // Part 4.7: Scope layer filter — null means "show all scopes"
+  const [scopeFilter, setScopeFilter] = useState<string | null>(null)
+  const [showScopePanel, setShowScopePanel] = useState(true)
+  const [scopeExpanded, setScopeExpanded] = useState(true)
   // Pathfinding state
   const [pathfindingMode, setPathfindingMode] = useState(false)
   const [pathStart, setPathStart] = useState<string | null>(null)
@@ -677,6 +681,31 @@ function KnowledgeGraphInner({
       }))
     )
   }, [focusedNodeId, setNodes])
+
+  // Part 4.7: Apply scope layer filter — dim nodes that don't match the active scope
+  useEffect(() => {
+    if (!scopeFilter) {
+      // Clear scope dimming — restore all nodes
+      setNodes((prevNodes) =>
+        prevNodes.map((node) => ({
+          ...node,
+          data: { ...node.data, isDimmed: false },
+        }))
+      )
+      return
+    }
+    setNodes((prevNodes) =>
+      prevNodes.map((node) => {
+        if (node.type !== "decision") {
+          // Entity nodes: dim if no decision at this scope is connected
+          return { ...node, data: { ...node.data, isDimmed: true } }
+        }
+        const nodeScope = (node.data as { decision?: { scope?: string } }).decision?.scope
+        const matches = !nodeScope || nodeScope === scopeFilter
+        return { ...node, data: { ...node.data, isDimmed: !matches } }
+      })
+    )
+  }, [scopeFilter, setNodes])
 
   // P1-3: Fetch related decisions when a decision node is selected
   useEffect(() => {
@@ -1209,6 +1238,75 @@ function KnowledgeGraphInner({
                     )
                   })}
                 </CardContent>}
+              </Card>
+            )}
+
+            {/* Part 4.7: Scope Layer Toggle Panel */}
+            {showScopePanel && (
+              <Card className="w-48 bg-slate-800/90 backdrop-blur-xl border-white/10 shrink-0">
+                <CardHeader className="py-2 px-3 flex flex-row items-center justify-between cursor-pointer" onClick={() => setScopeExpanded(!scopeExpanded)}>
+                  <CardTitle className="text-xs text-slate-200 flex items-center gap-2">
+                    <Layers className="h-3.5 w-3.5" aria-hidden="true" /> Scope Layer
+                  </CardTitle>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                      aria-label={scopeExpanded ? "Collapse" : "Expand"}
+                      onClick={(e) => { e.stopPropagation(); setScopeExpanded(!scopeExpanded) }}
+                    >
+                      {scopeExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => { e.stopPropagation(); setShowScopePanel(false); setScopeFilter(null) }}
+                      className="h-5 w-5 text-slate-400 hover:text-slate-200"
+                      aria-label="Close scope filter"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </CardHeader>
+                {scopeExpanded && (
+                  <CardContent className="py-1.5 px-3 space-y-1">
+                    <p className="text-[9px] text-slate-500 mb-1">Filter by decision half-life</p>
+                    {/* All scopes */}
+                    <button
+                      onClick={() => setScopeFilter(null)}
+                      aria-pressed={scopeFilter === null}
+                      className={`w-full flex items-center gap-2 px-2 py-1 rounded-md transition-colors text-[11px] ${
+                        !scopeFilter ? "bg-white/10 border border-white/20" : "hover:bg-white/5"
+                      }`}
+                    >
+                      <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+                      <span className="text-slate-300 flex-1 text-left">All scopes</span>
+                    </button>
+                    {/* Individual scope levels — ordered by half-life (strategic at top) */}
+                    {[
+                      { scope: "strategic",     color: "#ef4444", label: "Strategic",     halfLife: "2yr" },
+                      { scope: "architectural", color: "#f97316", label: "Architectural",  halfLife: "6mo" },
+                      { scope: "library",       color: "#eab308", label: "Library",        halfLife: "3mo" },
+                      { scope: "config",        color: "#22c55e", label: "Config",         halfLife: "1mo" },
+                      { scope: "operational",   color: "#3b82f6", label: "Operational",    halfLife: "2wk" },
+                    ].map(({ scope, color, label, halfLife }) => (
+                      <button
+                        key={scope}
+                        onClick={() => setScopeFilter(scopeFilter === scope ? null : scope)}
+                        aria-pressed={scopeFilter === scope}
+                        aria-label={`Show only ${label} decisions`}
+                        className={`w-full flex items-center gap-2 px-2 py-1 rounded-md transition-colors text-[11px] ${
+                          scopeFilter === scope ? "bg-white/10 border border-white/20" : "hover:bg-white/5"
+                        }`}
+                      >
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                        <span className="text-slate-300 flex-1 text-left">{label}</span>
+                        <span className="text-slate-500 text-[9px]">{halfLife}</span>
+                      </button>
+                    ))}
+                  </CardContent>
+                )}
               </Card>
             )}
 

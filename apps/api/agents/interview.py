@@ -647,50 +647,60 @@ Based on the stage guidance above, respond naturally as the interview assistant.
         user_message: str,
         history: list[dict],
     ) -> str:
-        """Generate a pre-written response for fast interaction.
+        """Generate a context-aware fallback response for fast-mode or LLM-unavailable state.
 
-        Used in fast_mode or when LLM is unavailable.
+        Improved version (Part 13): references the user's last message to provide
+        conversational continuity instead of generic stage-script strings.
 
         Args:
-            user_message: The user's message
+            user_message: The user's most recent message
             history: Previous conversation history
 
         Returns:
-            Pre-written response appropriate for the current stage
+            Context-aware response appropriate for the current stage
         """
         self.state = self._determine_next_state(history)
 
+        # Extract key noun phrases from the user's message to reference back
+        # Simple extraction: first meaningful 6 words of user message
+        user_words = user_message.strip().split()
+        topic_hint = " ".join(user_words[:6]) if user_words else ""
+        topic_suffix = f' — "{topic_hint}"' if topic_hint else ""
+
         responses = {
             InterviewState.TRIGGER: (
-                "Great, that's a good start! Can you tell me more about the context? "
-                "What was the situation you were in, and what constraints or requirements did you have?"
+                f"Thanks for sharing{topic_suffix}. "
+                "To capture this properly: what was the underlying problem or need that "
+                "prompted this decision? Was there a specific event, deadline, or pain point?"
             ),
             InterviewState.CONTEXT: (
-                "I understand the situation better now. What alternatives or options "
-                "did you consider before making this decision?"
+                "That helps set the scene. "
+                "What constraints were you working within at the time — "
+                "team size, existing tech stack, timeline, or budget considerations?"
             ),
             InterviewState.OPTIONS: (
-                "Those are interesting alternatives. What did you ultimately decide to do? "
-                "What was your final choice?"
+                "Understood. What alternatives did you actually evaluate? "
+                "Even if you quickly ruled some out, it's valuable to capture them "
+                "as rejected paths. What other approaches came up?"
             ),
             InterviewState.DECISION: (
-                "Got it. Why did you choose this approach over the other options? "
-                "What factors influenced your decision?"
+                "Good. And what was the final decision — "
+                "the specific choice you made from those options?"
             ),
             InterviewState.RATIONALE: (
-                "Excellent! I have all the key information now. "
-                "Let me save this decision trace to your knowledge graph."
+                "Almost done. Why did you choose this over the alternatives? "
+                "What were the 1–3 key reasons or trade-offs that tipped the balance?"
             ),
             InterviewState.SUMMARIZING: (
-                "This decision has been captured! You can view it in the Knowledge Graph "
-                "or start documenting another decision."
+                "I have everything I need. Saving this decision to your knowledge graph now. "
+                "You can view it in the Timeline or Graph view, or capture another decision."
             ),
         }
 
         return responses.get(
             self.state,
-            "Thanks for sharing! What decision would you like to document? "
-            "Tell me what triggered this decision or what problem you were trying to solve.",
+            "Thanks for sharing! What decision would you like to document today? "
+            "Start by telling me what problem you were trying to solve.",
         )
 
     async def stream_response(

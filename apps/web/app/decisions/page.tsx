@@ -700,18 +700,24 @@ function DecisionCard({
   onClick,
   onKeyDown,
   style,
+  isSelected = false,
 }: {
   decision: Decision
   onClick: () => void
   onKeyDown: (e: React.KeyboardEvent) => void
   style?: React.CSSProperties
+  isSelected?: boolean
 }) {
   return (
     <div style={style} className="pb-4">
       <Card
         role="listitem"
         tabIndex={0}
-        className={`bg-card border-border hover:bg-accent hover:border-primary/30 hover:shadow-md hover:scale-[1.01] transition-all duration-300 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${getConfidenceBorderAccent(decision.confidence)}`}
+        className={`bg-card border-border transition-all duration-300 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${getConfidenceBorderAccent(decision.confidence)} ${
+          isSelected 
+            ? "bg-slate-800/30 border-slate-700/40" 
+            : "hover:bg-slate-800/20 hover:border-slate-700/30 hover:shadow-md hover:scale-[1.01]"
+        }`}
         onClick={onClick}
         onKeyDown={onKeyDown}
         aria-label={`Decision: ${decision.trigger}`}
@@ -794,10 +800,12 @@ function VirtualDecisionList({
   decisions,
   onCardClick,
   onCardKeyDown,
+  selectedDecisionId,
 }: {
   decisions: Decision[]
   onCardClick: (decision: Decision) => void
   onCardKeyDown: (e: React.KeyboardEvent, decision: Decision) => void
+  selectedDecisionId?: string | null
 }) {
   const parentRef = useRef<HTMLDivElement>(null)
 
@@ -831,6 +839,7 @@ function VirtualDecisionList({
               decision={decision}
               onClick={() => onCardClick(decision)}
               onKeyDown={(e) => onCardKeyDown(e, decision)}
+              isSelected={selectedDecisionId === decision.id}
               style={{
                 position: "absolute",
                 top: 0,
@@ -931,6 +940,17 @@ function DecisionsPageContent() {
     queryFn: () => api.getDecisions(),
     staleTime: 2 * 60 * 1000, // 2 minutes
   })
+
+  // Set selected decision from URL id parameter
+  useEffect(() => {
+    const idParam = searchParams.get("id")
+    if (idParam && decisions) {
+      const decision = decisions.find((d) => d.id === idParam)
+      if (decision) {
+        setSelectedDecision(decision)
+      }
+    }
+  }, [searchParams, decisions])
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteDecision(id),
@@ -1205,6 +1225,7 @@ function DecisionsPageContent() {
             decisions={filteredDecisions}
             onCardClick={handleCardClick}
             onCardKeyDown={handleCardKeyDown}
+            selectedDecisionId={selectedDecision?.id}
           />
         ) : (
           // Regular scrolling for small lists (preserves animations)
@@ -1216,7 +1237,11 @@ function DecisionsPageContent() {
                     key={decision.id}
                     role="listitem"
                     tabIndex={0}
-                    className={`bg-card border-border hover:bg-accent hover:border-primary/30 hover:shadow-md hover:scale-[1.01] transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background mb-4 ${getConfidenceBorderAccent(decision.confidence)}`}
+                    className={`bg-card border-border transition-all duration-300 cursor-pointer group animate-in fade-in slide-in-from-bottom-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background mb-4 ${getConfidenceBorderAccent(decision.confidence)} ${
+                      selectedDecision?.id === decision.id 
+                        ? "bg-slate-800/30 border-slate-700/40" 
+                        : "hover:bg-slate-800/20 hover:border-slate-700/30 hover:shadow-md hover:scale-[1.01]"
+                    }`}
                     style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
                     onClick={() => handleCardClick(decision)}
                     onKeyDown={(e) => handleCardKeyDown(e, decision)}

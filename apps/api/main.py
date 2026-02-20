@@ -38,13 +38,16 @@ from models.errors import (
 )
 from routers import (
     agent,
+    analytics,
     capture,
     dashboard,
     decisions,
     entities,
     export,
+    git,
     graph,
     ingest,
+    notifications,
     projects,
     search,
     users,
@@ -518,16 +521,23 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # =============================================================================
 
 app.include_router(agent.router, prefix="/api/agent", tags=["Agent Context"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(decisions.router, prefix="/api/decisions", tags=["Decisions"])
 app.include_router(graph.router, prefix="/api/graph", tags=["Graph"])
 app.include_router(capture.router, prefix="/api/capture", tags=["Capture"])
+app.include_router(git.router, prefix="/api/git", tags=["Git"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["Ingest"])
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(entities.router, prefix="/api/entities", tags=["Entities"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
+app.include_router(
+    notifications.router,
+    prefix="/api/notifications",
+    tags=["Notifications"],
+)
 
 
 # =============================================================================

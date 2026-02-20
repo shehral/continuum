@@ -17,6 +17,7 @@ from config import get_settings
 from db.postgres import get_db
 from db.redis import get_redis
 from models.schemas import IngestionResult, IngestionStatus
+from routers.auth import get_current_user_id
 from services.extractor import DecisionExtractor
 from services.file_watcher import get_file_watcher
 from services.parser import ClaudeLogParser
@@ -300,6 +301,7 @@ async def run_import_job(
     job_id: str,
     file_paths: list[str],
     target_project: Optional[str] = None,
+    user_id: str = "anonymous",
 ) -> None:
     """Background task to run the import with progress tracking."""
     from pathlib import Path
@@ -414,8 +416,8 @@ async def run_import_job(
             completed_at=datetime.now(UTC).isoformat(),
         )
 
-        # Invalidate caches
-        await invalidate_user_caches("anonymous")
+        # Invalidate caches for the authenticated user who triggered this import
+        await invalidate_user_caches(user_id)
         logger.info(f"Import job {job_id} completed: {processed_files} files, {decisions_extracted} decisions")
 
     except Exception as e:
@@ -440,6 +442,7 @@ async def trigger_ingestion(
     exclude: Optional[str] = Query(
         None, description="Comma-separated list of projects to exclude"
     ),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Trigger ingestion of Claude Code logs with optional filtering.
 
@@ -501,7 +504,7 @@ async def trigger_ingestion(
         })
         await redis.expire(IMPORT_JOB_KEY, 3600)
 
-    background_tasks.add_task(run_import_job, job_id, file_paths, None)
+    background_tasks.add_task(run_import_job, job_id, file_paths, None, user_id)
 
     return {
         "status": "started",
@@ -514,6 +517,7 @@ async def trigger_ingestion(
 async def import_selected_files(
     request: ImportSelectedRequest,
     background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user_id),
 ):
     """Import only selected files with optional target project assignment.
 
@@ -580,7 +584,7 @@ async def import_selected_files(
         })
         await redis.expire(IMPORT_JOB_KEY, 3600)
 
-    background_tasks.add_task(run_import_job, job_id, valid_paths, request.target_project)
+    background_tasks.add_task(run_import_job, job_id, valid_paths, request.target_project, user_id)
 
     return {
         "status": "started",

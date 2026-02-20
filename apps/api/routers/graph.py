@@ -994,7 +994,8 @@ async def get_node_details(
                    collect(DISTINCT e.name) as entities,
                    collect(DISTINCT superseded.id) as supersedes,
                    collect(DISTINCT conflicting.id) as conflicts_with,
-                   d.embedding IS NOT NULL AS has_embedding
+                   d.embedding IS NOT NULL AS has_embedding,
+                   d.verbatim_decision, d.verbatim_trigger, d.decision_span, d.turn_index
             """,
             id=node_id,
             user_id=user_id,
@@ -1007,6 +1008,22 @@ async def get_node_details(
             supersedes = [s for s in record["supersedes"] if s]
             conflicts_with = [c for c in record["conflicts_with"] if c]
             has_embedding = record["has_embedding"]
+            # Extract verbatim fields
+            verbatim_quote = d.get("verbatim_decision") or d.get("verbatim_trigger")
+            decision_span = d.get("decision_span")
+            verbatim_start_char = None
+            verbatim_end_char = None
+            if decision_span:
+                if isinstance(decision_span, str):
+                    import json
+                    try:
+                        decision_span = json.loads(decision_span)
+                    except:
+                        pass
+                if isinstance(decision_span, dict):
+                    verbatim_start_char = decision_span.get("start_char")
+                    verbatim_end_char = decision_span.get("end_char")
+            
             return GraphNode(
                 id=d["id"],
                 type="decision",
@@ -1023,6 +1040,10 @@ async def get_node_details(
                     "entities": entities,
                     "supersedes": supersedes,
                     "conflicts_with": conflicts_with,
+                    "verbatim_quote": verbatim_quote,
+                    "verbatim_start_char": verbatim_start_char,
+                    "verbatim_end_char": verbatim_end_char,
+                    "turn_index": d.get("turn_index"),
                 },
             )
 
@@ -1216,6 +1237,7 @@ async def hybrid_search(
     async with session:
         # Collect lexical results
         lexical_results = {}  # id -> (score, type, data, matched_fields)
+        expanded_node_ids = set()  # Track nodes found via graph expansion
 
         if request.search_decisions:
             try:
@@ -1312,6 +1334,54 @@ async def hybrid_search(
             except (ClientError, DatabaseError) as e:
                 logger.debug(f"Entity fulltext search failed: {e}")
 
+        # RQ3.6.1: Graph-augmented expansion (if graph_depth > 0)
+        if request.graph_depth > 0 and lexical_results:
+            # Expand via 1-hop relationships (MENTIONS, RELATES_TO, INVOLVES)
+            initial_node_ids = list(lexical_results.keys())
+            
+            for node_id in initial_node_ids[: request.top_k * 2]:  # Limit expansion candidates
+                try:
+                    # Find connected nodes via relationships
+                    expansion_result = await session.run(
+                        """
+                        MATCH (n)
+                        WHERE n.id = $node_id AND (n.user_id = $user_id OR n.user_id IS NULL)
+                        MATCH (n)-[r:INVOLVES|MENTIONS|RELATES_TO|FOLLOWS|PRECEDES*1..$depth]-(connected)
+                        WHERE (connected.user_id = $user_id OR connected.user_id IS NULL)
+                          AND connected.id <> $node_id
+                        RETURN DISTINCT connected.id AS connected_id,
+                               connected.trigger AS trigger,
+                               connected.decision AS decision,
+                               connected.context AS context,
+                               connected.rationale AS rationale,
+                               labels(connected)[0] AS node_type
+                        LIMIT 10
+                        """,
+                        node_id=node_id,
+                        user_id=user_id,
+                        depth=request.graph_depth,
+                    )
+                    
+                    async for r in expansion_result:
+                        connected_id = r["connected_id"]
+                        if connected_id not in lexical_results and connected_id not in expanded_node_ids:
+                            expanded_node_ids.add(connected_id)
+                            # Add expanded nodes with lower initial score (will be reranked)
+                            lexical_results[connected_id] = {
+                                "score": lexical_results.get(node_id, {}).get("score", 0.0) * 0.7,  # Penalty for expansion
+                                "type": r["node_type"] or "decision",
+                                "label": (r["trigger"] or r["decision"] or "Node")[:50],
+                                "data": {
+                                    "trigger": r["trigger"] or "",
+                                    "decision": r["decision"] or "",
+                                    "context": r["context"] or "",
+                                    "rationale": r["rationale"] or "",
+                                },
+                                "matched_fields": ["graph_expansion"],
+                            }
+                except Exception as e:
+                    logger.debug(f"Graph expansion failed for node {node_id}: {e}")
+        
         # Collect semantic results
         semantic_results = {}  # id -> score
 
@@ -1486,6 +1556,58 @@ async def hybrid_search(
 
         # Sort by combined score and limit
         results.sort(key=lambda x: x.combined_score, reverse=True)
+        
+        # RQ1.2: Apply BGE reranking if enabled (CogCanvas method, +7.7pp improvement)
+        from config import get_settings
+        from services.reranker import get_reranker
+        
+        settings = get_settings()
+        if settings.bge_reranking_enabled and len(results) > 0:
+            try:
+                reranker = get_reranker()
+                # Prepare candidates with text for reranking (top candidates only)
+                candidates_with_text = []
+                top_candidates = results[: min(len(results), settings.bge_reranking_top_k)]
+                
+                for r in top_candidates:
+                    # Build text representation for reranking
+                    text_parts = []
+                    if r.data.get("trigger"):
+                        text_parts.append(f"Trigger: {r.data['trigger']}")
+                    if r.data.get("decision"):
+                        text_parts.append(f"Decision: {r.data['decision']}")
+                    if r.data.get("rationale"):
+                        text_parts.append(f"Rationale: {r.data['rationale']}")
+                    if r.data.get("context"):
+                        text_parts.append(f"Context: {r.data['context']}")
+                    candidate_text = " ".join(text_parts)
+                    
+                    if candidate_text:  # Only add if we have text
+                        candidates_with_text.append((r.id, candidate_text, r.combined_score))
+                
+                if candidates_with_text:
+                    # Rerank candidates
+                    reranked = await reranker.rerank_with_texts(
+                        query=request.query,
+                        candidates=candidates_with_text,
+                        top_k=request.top_k,
+                    )
+                    
+                    # Create map of reranked scores
+                    reranked_scores = {cid: score for cid, score in reranked}
+                    
+                    # Update results with reranked scores
+                    for r in results:
+                        if r.id in reranked_scores:
+                            # Use reranked score as new combined_score
+                            r.combined_score = reranked_scores[r.id]
+                    
+                    # Re-sort by reranked scores
+                    results.sort(key=lambda x: x.combined_score, reverse=True)
+                    logger.debug(f"BGE reranking applied to {len(reranked)} results")
+            except Exception as e:
+                logger.warning(f"BGE reranking failed, using original scores: {e}")
+        
         return results[: request.top_k]
 
 

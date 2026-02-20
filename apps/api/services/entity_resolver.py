@@ -83,14 +83,38 @@ class EntityResolver:
 
         # Load configurable thresholds from settings (KG-P2-2)
         settings = get_settings()
-        # Convert 0-1 scale to 0-100 for rapidfuzz
-        self.fuzzy_threshold = int(settings.fuzzy_match_threshold * 100)
-        self.embedding_threshold = settings.embedding_similarity_threshold
+        # Convert 0-1 scale to 0-100 for rapidfuzz (global defaults)
+        self._global_fuzzy_threshold = int(settings.fuzzy_match_threshold * 100)
+        self._global_embedding_threshold = settings.embedding_similarity_threshold
+        # Backward-compat aliases (used in non-typed code paths)
+        self.fuzzy_threshold = self._global_fuzzy_threshold
+        self.embedding_threshold = self._global_embedding_threshold
+
+        # Part 3c: Load per-entity-type thresholds (higher precision for file entities,
+        # higher recall for concept entities).
+        try:
+            from services.code_resolver import TYPE_RESOLUTION_THRESHOLDS
+            self._type_thresholds = TYPE_RESOLUTION_THRESHOLDS
+        except ImportError:
+            self._type_thresholds = {}
 
         logger.debug(
             f"EntityResolver initialized: fuzzy_threshold={self.fuzzy_threshold}%, "
             f"embedding_threshold={self.embedding_threshold}"
         )
+
+    def _get_thresholds(self, entity_type: str) -> tuple[int, float]:
+        """Return (fuzzy_threshold_0_100, embedding_threshold_0_1) for entity_type.
+
+        Part 3c: Type-aware thresholds — file entities require high precision,
+        concept entities allow higher recall.
+        """
+        if entity_type in self._type_thresholds:
+            t = self._type_thresholds[entity_type]
+            fuzzy = int(t.get("fuzzy", self._global_fuzzy_threshold / 100) * 100)
+            embed = t.get("embedding", self._global_embedding_threshold)
+            return fuzzy, embed
+        return self._global_fuzzy_threshold, self._global_embedding_threshold
 
     async def resolve(self, name: str, entity_type: str) -> ResolvedEntity:
         """Resolve an entity name to an existing entity or create a new one.
@@ -173,9 +197,14 @@ class EntityResolver:
                 confidence=0.92,
             )
 
+        # Resolve per-type thresholds for stages 5 and 6 (Part 3c)
+        fuzzy_t, embed_t = self._get_thresholds(entity_type)
+
         # Stage 5: Fulltext prefix search + Fuzzy match
         # Use Neo4j fulltext index to get candidates, then apply fuzzy matching
-        fuzzy_result = await self._find_by_fuzzy_with_fulltext(normalized_name)
+        fuzzy_result = await self._find_by_fuzzy_with_fulltext(
+            normalized_name, fuzzy_threshold=fuzzy_t
+        )
         if fuzzy_result:
             # Cache the fuzzy match result (SD-011)
             await self.cache.set_by_exact_name(
@@ -196,7 +225,7 @@ class EntityResolver:
                 f"{entity_type}: {name}", input_type="passage"
             )
             similar = await self._find_by_embedding_similarity(
-                embedding, threshold=self.embedding_threshold
+                embedding, threshold=embed_t
             )
             if similar:
                 # Cache the embedding match result (SD-011)
@@ -331,7 +360,9 @@ class EntityResolver:
         return dict(record) if record else None
 
     async def _find_by_fuzzy_with_fulltext(
-        self, normalized_name: str
+        self,
+        normalized_name: str,
+        fuzzy_threshold: Optional[int] = None,
     ) -> Optional[dict]:
         """Find entity using fulltext index for candidates, then fuzzy match.
 
@@ -340,8 +371,17 @@ class EntityResolver:
         2. Apply fuzzy matching only to candidates
         3. Fall back to batched loading if fulltext fails
 
+        Args:
+            normalized_name: The normalised entity name to match.
+            fuzzy_threshold: rapidfuzz score threshold (0-100). When None,
+                uses the global default (``self.fuzzy_threshold``). Pass a
+                per-type value from ``_get_thresholds()`` for type-aware
+                precision/recall trade-offs (Part 3c).
+
         Returns dict with id, name, type, score or None.
         """
+        effective_threshold = fuzzy_threshold if fuzzy_threshold is not None else self.fuzzy_threshold
+
         # Try fulltext search first to get candidates
         try:
             # Search for entities with similar names using fulltext index
@@ -375,7 +415,7 @@ class EntityResolver:
 
             for entity in candidates:
                 score = fuzz.ratio(normalized_name, entity["name"].lower())
-                if score >= self.fuzzy_threshold and score > best_score:
+                if score >= effective_threshold and score > best_score:
                     best_score = score
                     best_match = entity
 
@@ -387,13 +427,28 @@ class EntityResolver:
         except (ClientError, DatabaseError) as e:
             # Fulltext index may not exist, fall back to batched loading
             logger.debug(f"Fulltext search failed (index may not exist): {e}")
-            return await self._find_by_fuzzy_batched(normalized_name)
+            return await self._find_by_fuzzy_batched(
+                normalized_name, fuzzy_threshold=effective_threshold
+            )
 
-    async def _find_by_fuzzy_batched(self, normalized_name: str) -> Optional[dict]:
+    async def _find_by_fuzzy_batched(
+        self,
+        normalized_name: str,
+        fuzzy_threshold: Optional[int] = None,
+    ) -> Optional[dict]:
         """Fallback: Find entity by fuzzy matching with batched loading.
 
         Loads entities in batches to prevent memory issues at scale.
+
+        Args:
+            normalized_name: The normalised entity name to match.
+            fuzzy_threshold: rapidfuzz score threshold (0-100). Defaults to
+                ``self.fuzzy_threshold`` (global setting) when not provided.
+                Pass a per-type value from ``_get_thresholds()`` for
+                type-aware precision/recall (Part 3c).
         """
+        effective_threshold = fuzzy_threshold if fuzzy_threshold is not None else self.fuzzy_threshold
+
         best_match = None
         best_score = 0
         offset = 0
@@ -419,7 +474,7 @@ class EntityResolver:
 
             for entity in batch:
                 score = fuzz.ratio(normalized_name, entity["name"].lower())
-                if score >= self.fuzzy_threshold and score > best_score:
+                if score >= effective_threshold and score > best_score:
                     best_score = score
                     best_match = entity
 
@@ -439,7 +494,7 @@ class EntityResolver:
             async for record in result:
                 entity = dict(record)
                 score = fuzz.ratio(normalized_name, entity["name"].lower())
-                if score >= self.fuzzy_threshold and score > best_score:
+                if score >= effective_threshold and score > best_score:
                     best_score = score
                     best_match = entity
 

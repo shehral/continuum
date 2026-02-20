@@ -14,6 +14,11 @@ export interface Decision {
   entities: Entity[]
   source?: "claude_logs" | "interview" | "manual" | "unknown"
   project_name?: string
+  // Verbatim grounding fields (CogCanvas-inspired, RQ1 enhancement)
+  verbatim_quote?: string | null
+  verbatim_start_char?: number | null
+  verbatim_end_char?: number | null
+  turn_index?: number | null
 }
 
 export interface Entity {
@@ -450,6 +455,71 @@ class ApiClient {
     return this.fetch(`/api/decisions/needs-review?limit=${limit}&offset=${offset}`)
   }
 
+  // Analytics — Timeline (Part 4.4)
+  async getTimeline(options?: {
+    project?: string
+    granularity?: "day" | "week" | "month"
+    monthsBack?: number
+  }): Promise<TimelineBucket[]> {
+    const params = new URLSearchParams()
+    if (options?.project) params.append("project", options.project)
+    if (options?.granularity) params.append("granularity", options.granularity)
+    if (options?.monthsBack) params.append("months_back", String(options.monthsBack))
+    return this.fetch<TimelineBucket[]>(`/api/analytics/timeline?${params}`)
+  }
+
+  // Analytics — Dormant alternatives (Part 4.5)
+  async getDormantAlternatives(options?: {
+    project?: string
+    minDaysDormant?: number
+    limit?: number
+  }): Promise<DormantAlternative[]> {
+    const params = new URLSearchParams()
+    if (options?.project) params.append("project", options.project)
+    if (options?.minDaysDormant) params.append("min_days_dormant", String(options.minDaysDormant))
+    if (options?.limit) params.append("limit", String(options.limit))
+    return this.fetch<DormantAlternative[]>(`/api/analytics/dormant-alternatives?${params}`)
+  }
+
+  // Analytics — Coverage map (Part 4.6)
+  async getCoverageMap(project?: string): Promise<CoverageStats> {
+    const params = new URLSearchParams()
+    if (project) params.append("project", project)
+    return this.fetch<CoverageStats>(`/api/analytics/coverage?${params}`)
+  }
+
+  // Analytics — Stale decisions (Part 7)
+  async getStaleDecisions(options?: {
+    project?: string
+    limit?: number
+  }): Promise<StaleDecision[]> {
+    const params = new URLSearchParams()
+    if (options?.project) params.append("project", options.project)
+    if (options?.limit) params.append("limit", String(options.limit))
+    return this.fetch<StaleDecision[]>(`/api/analytics/stale?${params}`)
+  }
+
+  async markDecisionReviewed(
+    decisionId: string,
+    notes?: string
+  ): Promise<{ status: string; decision_id: string; reviewed_at: string }> {
+    return this.fetch(`/api/analytics/decisions/${decisionId}/review`, {
+      method: "POST",
+      body: JSON.stringify({ notes: notes || null }),
+    })
+  }
+
+  // Analytics — Assumption violations (Part 11)
+  async getAssumptionViolations(options?: {
+    project?: string
+    limit?: number
+  }): Promise<AssumptionViolation[]> {
+    const params = new URLSearchParams()
+    if (options?.project) params.append("project", options.project)
+    if (options?.limit) params.append("limit", String(options.limit))
+    return this.fetch<AssumptionViolation[]>(`/api/analytics/assumption-violations?${params}`)
+  }
+
   async getSuggestedEntities(text: string): Promise<Entity[]> {
     return this.fetch<Entity[]>("/api/entities/suggest", {
       method: "POST",
@@ -510,3 +580,65 @@ export interface HybridSearchResult {
 }
 
 export type SearchMode = "hybrid" | "lexical" | "semantic"
+
+// Analytics types (Parts 4.4, 4.5, 4.6, 7, 11)
+
+export interface TimelineBucket {
+  period: string          // e.g. "2025-W03" or "2025-01"
+  count: number
+  by_scope: Record<string, number>   // scope → count
+  by_type: Record<string, number>    // decision_type → count
+  avg_confidence: number
+}
+
+export interface DormantAlternative {
+  candidate_id: string
+  text: string
+  rejected_at: string | null
+  rejected_by_decision_id: string
+  rejected_by_trigger: string
+  original_decision: string
+  days_dormant: number
+  reconsider_score: number
+}
+
+export interface CoverageFile {
+  file_path: string
+  language: string
+  decision_count: number
+  last_decision_at: string | null
+  days_since_decision: number | null
+  is_stale: boolean
+  staleness_days: number
+}
+
+export interface CoverageStats {
+  total_files: number
+  covered_files: number
+  stale_files: number
+  uncovered_files: number
+  knowledge_debt_score: number  // 0–1
+  files: CoverageFile[]
+}
+
+export interface StaleDecision {
+  id: string
+  trigger: string
+  decision: string
+  scope: string | null
+  confidence: number
+  created_at: string
+  last_reviewed_at: string | null
+  days_since_review: number
+  staleness_threshold_days: number
+  is_overdue: boolean
+}
+
+export interface AssumptionViolation {
+  decision_id: string
+  decision_trigger: string
+  assumption: string
+  invalidating_decision_id: string
+  invalidating_trigger: string
+  confidence: number
+}

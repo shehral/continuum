@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.postgres import Base
@@ -81,6 +81,24 @@ class ProcessedFile(Base):
     file_hash: Mapped[str] = mapped_column(String(64))
     processed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     decisions_extracted: Mapped[int] = mapped_column(default=0)
+
+
+class Notification(Base):
+    """In-app notification persisted to PostgreSQL.
+
+    Written by NotificationService._save() via SQLAlchemy.
+    Read by GET /api/notifications.
+    """
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    type: Mapped[str] = mapped_column(String(50))           # "contradiction", "stale", "dormant", etc.
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text)
+    payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Drill(Base):

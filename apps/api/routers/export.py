@@ -81,6 +81,10 @@ class ExportDecision(BaseModel):
     source: str
     created_at: str
     entities: list[dict]
+    verbatim_quote: Optional[str] = None
+    verbatim_start_char: Optional[int] = None
+    verbatim_end_char: Optional[int] = None
+    turn_index: Optional[int] = None
 
 
 class BulkExportResult(BaseModel):
@@ -248,7 +252,7 @@ async def bulk_export_decisions(
                 WITH d, collect(e) as entities
                 ORDER BY d.created_at DESC
                 LIMIT $limit
-                RETURN d, entities
+                RETURN d, entities, d.verbatim_decision, d.verbatim_trigger, d.decision_span, d.turn_index
             """
 
             params = {
@@ -265,6 +269,22 @@ async def bulk_export_decisions(
                 d = record["d"]
                 entities = record["entities"]
 
+                # Extract verbatim fields
+                verbatim_quote = d.get("verbatim_decision") or d.get("verbatim_trigger")
+                decision_span = d.get("decision_span")
+                verbatim_start_char = None
+                verbatim_end_char = None
+                if decision_span:
+                    if isinstance(decision_span, str):
+                        import json
+                        try:
+                            decision_span = json.loads(decision_span)
+                        except:
+                            pass
+                    if isinstance(decision_span, dict):
+                        verbatim_start_char = decision_span.get("start_char")
+                        verbatim_end_char = decision_span.get("end_char")
+                
                 export_decision = ExportDecision(
                     trigger=d.get("trigger", ""),
                     context=d.get("context", ""),
@@ -279,6 +299,10 @@ async def bulk_export_decisions(
                         for e in entities
                         if e
                     ],
+                    verbatim_quote=verbatim_quote,
+                    verbatim_start_char=verbatim_start_char,
+                    verbatim_end_char=verbatim_end_char,
+                    turn_index=d.get("turn_index"),
                 )
                 decisions.append(export_decision)
 
@@ -324,3 +348,72 @@ async def download_export(
             "Content-Type": "application/json",
         },
     )
+
+
+@router.post("/export/markdown")
+async def export_to_markdown(
+    conversation_id: str = Query(..., description="Conversation ID to export"),
+    project_name: str = Query("default", description="Project name for export"),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Export decisions and conversation to SpecStory-compatible markdown (Phase 4).
+    
+    RQ1 Enhancement: SpecStory integration for git-friendly decision traces.
+    """
+    from services.markdown_exporter import MarkdownExporter
+    from services.parser import Conversation
+    from db.neo4j import get_neo4j_session
+    from fastapi.responses import FileResponse
+    
+    exporter = MarkdownExporter()
+    session = await get_neo4j_session()
+    
+    async with session:
+        # Fetch decisions for this conversation
+        result = await session.run(
+            """
+            MATCH (d:DecisionTrace)
+            WHERE d.user_id = $user_id AND d.source = 'claude_logs'
+            OPTIONAL MATCH (d)-[:INVOLVES]->(e:Entity)
+            WITH d, collect(e.name) as entities
+            ORDER BY d.turn_index ASC, d.created_at ASC
+            RETURN d, entities
+            """,
+            user_id=user_id,
+        )
+        
+        decisions = []
+        async for record in result:
+            d = record["d"]
+            # Convert Neo4j node to Decision schema
+            from models.schemas import Decision
+            decision = Decision(
+                id=d.get("id"),
+                trigger=d.get("trigger", ""),
+                context=d.get("context", ""),
+                options=d.get("options", []),
+                agent_decision=d.get("agent_decision") or d.get("decision", ""),
+                agent_rationale=d.get("agent_rationale") or d.get("rationale", ""),
+                confidence=d.get("confidence", 0.5),
+                source=d.get("source", "unknown"),
+                created_at=d.get("created_at", datetime.now(UTC).isoformat()),
+                verbatim_quote=d.get("verbatim_decision") or d.get("verbatim_trigger"),
+                verbatim_start_char=d.get("decision_span", {}).get("start_char") if isinstance(d.get("decision_span"), dict) else None,
+                verbatim_end_char=d.get("decision_span", {}).get("end_char") if isinstance(d.get("decision_span"), dict) else None,
+                turn_index=d.get("turn_index"),
+            )
+            decisions.append(decision)
+        
+        # Export to markdown
+        file_path = await exporter.export_decisions_to_markdown(
+            decisions=decisions,
+            conversation_id=conversation_id,
+            project_name=project_name,
+            conversation_text="",  # Could fetch from conversation store if available
+        )
+        
+        return FileResponse(
+            path=str(file_path),
+            media_type="text/markdown",
+            filename=file_path.name,
+        )

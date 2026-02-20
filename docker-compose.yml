@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: ${POSTGRES_DB:-continuum}
     ports:
-      - "127.0.0.1:5432:5432"  # Bind to localhost only
+      - "127.0.0.1:5433:5432"  # Bind to localhost only (using 5433 to avoid conflict with existing PostgreSQL)
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -45,7 +45,7 @@ services:
     image: redis:7.4-alpine
     container_name: continuum-redis
     ports:
-      - "127.0.0.1:6379:6379"  # Bind to localhost only
+      - "127.0.0.1:6380:6379"  # Bind to localhost only (using 6380 to avoid conflict with existing Redis)
     volumes:
       - redis_data:/data
     healthcheck:
