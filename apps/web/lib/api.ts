@@ -510,3 +510,57 @@ export interface HybridSearchResult {
 }
 
 export type SearchMode = "hybrid" | "lexical" | "semantic"
+
+// ---------------------------------------------------------------------------
+// Chat Q&A types
+// ---------------------------------------------------------------------------
+
+export interface SourceDecision {
+  id: string
+  trigger: string
+  decision: string
+  rationale: string
+  confidence: number
+  is_current: boolean
+  entities: string[]
+}
+
+export interface MentionedEntity {
+  name: string
+  type: string
+  decision_count: number
+}
+
+export interface ChatMessage {
+  id: string
+  role: "user" | "assistant"
+  content: string
+  timestamp: string
+  source_decisions?: SourceDecision[]
+  mentioned_entities?: MentionedEntity[]
+}
+
+export interface ChatSession {
+  id: string
+  title: string | null
+  status: "active" | "archived"
+  project_filter: string | null
+  created_at: string
+  updated_at: string
+  messages: ChatMessage[]
+}
+
+export interface ChatSessionListItem {
+  id: string
+  title: string | null
+  status: string
+  created_at: string
+  updated_at: string
+  message_count: number
+  last_message_preview: string | null
+}
+
+export interface SuggestedQuestion {
+  question: string
+  category: "why" | "evolution" | "overview" | "comparison"
+}
