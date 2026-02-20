@@ -239,6 +239,17 @@ class DecisionCreate(DecisionBase):
     )
 
 
+class DecisionTrace(BaseModel):
+    """Structured output schema for Strands Agent decision synthesis."""
+
+    trigger: str
+    context: str
+    options: list[str]
+    decision: str
+    rationale: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
 class DecisionUpdate(BaseModel):
     """Schema for updating a decision.
 

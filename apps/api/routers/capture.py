@@ -18,7 +18,12 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agents.interview import InterviewAgent
+from config import get_settings
+
+if get_settings().use_strands_agent:
+    from agents.strands_interview import StrandsInterviewAgent as InterviewAgent
+else:
+    from agents.interview import InterviewAgent
 from db.postgres import get_db
 from models.postgres import CaptureMessage, CaptureSession, SessionStatus
 from models.schemas import (

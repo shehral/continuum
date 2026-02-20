@@ -51,6 +51,48 @@ def get_llm_provider() -> BaseLLMProvider:
         return NvidiaLLMProvider()
 
 
+def get_strands_model():
+    """Return a raw Strands Model instance for use with Strands Agent.
+
+    Unlike get_llm_provider() which returns a BaseLLMProvider adapter,
+    this returns the underlying Strands Model directly — required by
+    the Strands Agent class.
+    """
+    settings = get_settings()
+    provider_name = getattr(settings, "llm_provider", "nvidia")
+
+    if provider_name == "bedrock":
+        from strands.models import BedrockModel
+
+        return BedrockModel(
+            model_id=settings.bedrock_model_id,
+            region_name=settings.aws_region,
+        )
+
+    elif provider_name == "minimax":
+        from strands.models.openai import OpenAIModel
+
+        return OpenAIModel(
+            client_args={
+                "api_key": settings.get_minimax_api_key(),
+                "base_url": settings.minimax_base_url,
+            },
+            model_id=settings.minimax_model_id,
+        )
+
+    else:
+        # NVIDIA NIM via Strands OpenAIModel (OpenAI-compatible API)
+        from strands.models.openai import OpenAIModel
+
+        return OpenAIModel(
+            client_args={
+                "api_key": settings.get_nvidia_api_key(),
+                "base_url": "https://integrate.api.nvidia.com/v1",
+            },
+            model_id=settings.nvidia_model,
+        )
+
+
 def get_embedding_provider() -> BaseEmbeddingProvider:
     """Factory: return the configured embedding provider.
 
@@ -75,4 +117,5 @@ __all__ = [
     "BaseEmbeddingProvider",
     "get_llm_provider",
     "get_embedding_provider",
+    "get_strands_model",
 ]

@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     minimax_model_id: str = "MiniMax-M2.5"
     minimax_base_url: str = "https://api.minimax.io/v1"
 
+    # Strands Agent feature flag
+    use_strands_agent: bool = False
+
     # Datadog observability
     dd_trace_enabled: bool = False
 
