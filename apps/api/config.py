@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     redis_url: str = ""  # e.g., redis://localhost:6379
 
     # Provider selection
-    llm_provider: str = "nvidia"  # "nvidia" or "bedrock"
+    llm_provider: str = "nvidia"  # "nvidia", "bedrock", or "minimax"
     embedding_provider: str = "nvidia"  # "nvidia" or "bedrock" (keep nvidia to avoid re-indexing)
 
     # AI Provider (NVIDIA NIM) - SEC-007: Use SecretStr for API keys
@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     bedrock_model_id: str = "anthropic.claude-sonnet-4-20250514"
     bedrock_embedding_model_id: str = "amazon.titan-embed-text-v2:0"
     aws_region: str = "us-west-2"
+
+    # MiniMax settings (used when llm_provider="minimax")
+    minimax_api_key: SecretStr = SecretStr("")
+    minimax_model_id: str = "MiniMax-M2.5"
+    minimax_base_url: str = "https://api.minimax.io/v1"
 
     # Datadog observability
     dd_trace_enabled: bool = False
@@ -230,6 +235,10 @@ class Settings(BaseSettings):
     def get_nvidia_embedding_api_key(self) -> str:
         """Safely get NVIDIA embedding API key value."""
         return self.nvidia_embedding_api_key.get_secret_value()
+
+    def get_minimax_api_key(self) -> str:
+        """Safely get MiniMax API key value."""
+        return self.minimax_api_key.get_secret_value()
 
     def get_secret_key(self) -> str:
         """Safely get JWT secret key value."""

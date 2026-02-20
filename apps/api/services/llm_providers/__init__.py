@@ -1,8 +1,9 @@
 """LLM Provider abstraction layer.
 
-Supports multiple LLM backends:
-- NVIDIA NIM API (default, existing)
-- Amazon Bedrock (Claude via Converse API, for hackathon)
+Supports multiple LLM backends via Strands Agents SDK:
+- Amazon Bedrock (Claude via Strands BedrockModel)
+- MiniMax (via Strands OpenAIModel with custom base_url)
+- NVIDIA NIM API (legacy, direct AsyncOpenAI client)
 
 Usage:
     from services.llm_providers import get_llm_provider, get_embedding_provider
@@ -20,9 +21,30 @@ def get_llm_provider() -> BaseLLMProvider:
     provider_name = getattr(settings, "llm_provider", "nvidia")
 
     if provider_name == "bedrock":
-        from services.llm_providers.bedrock import BedrockLLMProvider
+        from strands.models import BedrockModel
 
-        return BedrockLLMProvider()
+        from services.llm_providers.strands_adapter import StrandsLLMProviderAdapter
+
+        model = BedrockModel(
+            model_id=settings.bedrock_model_id,
+            region_name=settings.aws_region,
+        )
+        return StrandsLLMProviderAdapter(model, settings.bedrock_model_id)
+
+    elif provider_name == "minimax":
+        from strands.models.openai import OpenAIModel
+
+        from services.llm_providers.strands_adapter import StrandsLLMProviderAdapter
+
+        model = OpenAIModel(
+            client_args={
+                "api_key": settings.get_minimax_api_key(),
+                "base_url": settings.minimax_base_url,
+            },
+            model_id=settings.minimax_model_id,
+        )
+        return StrandsLLMProviderAdapter(model, settings.minimax_model_id, use_params_dict=True)
+
     else:
         from services.llm_providers.nvidia import NvidiaLLMProvider
 
