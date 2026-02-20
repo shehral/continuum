@@ -18,6 +18,7 @@ import {
   ClipboardList,
   Search,
   Folder,
+  MessageCircle,
   Sun,
   Moon,
   Settings,
@@ -32,6 +33,7 @@ import {
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Ask Codebase", href: "/chat", icon: MessageCircle },
   { name: "Add Knowledge", href: "/add", icon: Brain },
   { name: "Knowledge Graph", href: "/graph", icon: Network },
   { name: "Decisions", href: "/decisions", icon: ClipboardList },
