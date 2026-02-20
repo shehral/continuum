@@ -58,7 +58,7 @@ export function ErrorState({
             asChild
             className="border-white/10 text-slate-300 hover:bg-white/[0.08]"
           >
-            <Link href="/">
+            <Link href="/dashboard">
               <Home className="h-4 w-4 mr-2" aria-hidden="true" />
               Go Home
             </Link>
