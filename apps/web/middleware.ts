@@ -1,18 +1,28 @@
 import { auth } from "./auth"
+import { NextResponse } from "next/server"
+import type { NextRequest } from "next/server"
 
-export default auth
+const publicPaths = ["/login", "/register"]
+
+export default async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // Landing page is public
+  if (pathname === "/") {
+    return NextResponse.next()
+  }
+
+  // Other public paths
+  if (publicPaths.some((path) => pathname.startsWith(path))) {
+    return NextResponse.next()
+  }
+
+  // Everything else requires auth
+  return (auth as any)(request)
+}
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api/auth (auth endpoints)
-     * - login (login page)
-     * - register (register page)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    "/((?!api/auth|login|register|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|media).*)",
   ],
 }
