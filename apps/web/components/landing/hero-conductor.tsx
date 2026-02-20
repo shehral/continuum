@@ -2,14 +2,15 @@
 
 import { useRef } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
+import { Sparkles } from "lucide-react";
 
 // ── Chat messages (human ↔ AI conversation on the laptop screen) ────
 
 const CHAT_MESSAGES = [
   { role: "human" as const, text: "I need to migrate from SQLite to PostgreSQL" },
-  { role: "ai" as const, text: "I'll set up PostgreSQL with async SQLAlchemy and add a Redis caching layer for frequently accessed queries." },
+  { role: "ai" as const, text: "I'll set up PostgreSQL with async SQLAlchemy and add a Redis caching layer for queries." },
   { role: "human" as const, text: "Why Redis over Memcached?" },
-  { role: "ai" as const, text: "Redis supports data structures we need for the entity resolution cache — sorted sets for similarity scores." },
+  { role: "ai" as const, text: "Redis supports sorted sets we need for the entity resolution cache." },
 ];
 
 // ── Graph nodes that the conversation transforms into ───────────────
@@ -19,18 +20,17 @@ interface GraphNode {
   kind: "decision" | "entity";
   label: string;
   entityType?: "technology" | "pattern";
-  /** Final position (relative to graph container center) */
   x: number;
   y: number;
 }
 
 const GRAPH_NODES: GraphNode[] = [
-  { id: 0, kind: "decision", label: "Use PostgreSQL", x: -180, y: -80 },
-  { id: 1, kind: "decision", label: "Add Redis Caching", x: 160, y: -60 },
-  { id: 2, kind: "entity", entityType: "technology", label: "PostgreSQL", x: -260, y: 40 },
-  { id: 3, kind: "entity", entityType: "technology", label: "Redis", x: 280, y: 50 },
-  { id: 4, kind: "entity", entityType: "technology", label: "SQLAlchemy", x: -60, y: 60 },
-  { id: 5, kind: "entity", entityType: "pattern", label: "Async Pattern", x: 60, y: -120 },
+  { id: 0, kind: "decision", label: "Use PostgreSQL", x: -200, y: -80 },
+  { id: 1, kind: "decision", label: "Add Redis Caching", x: 170, y: -60 },
+  { id: 2, kind: "entity", entityType: "technology", label: "PostgreSQL", x: -280, y: 50 },
+  { id: 3, kind: "entity", entityType: "technology", label: "Redis", x: 290, y: 50 },
+  { id: 4, kind: "entity", entityType: "technology", label: "SQLAlchemy", x: -60, y: 70 },
+  { id: 5, kind: "entity", entityType: "pattern", label: "Async Pattern", x: 60, y: -130 },
 ];
 
 interface GraphEdge {
@@ -52,32 +52,26 @@ const GRAPH_EDGES: GraphEdge[] = [
 
 function nodeColor(node: GraphNode): string {
   if (node.kind === "decision") return "rgba(139,92,246,0.9)";
-  switch (node.entityType) {
-    case "technology": return "rgba(251,146,60,0.9)";
-    case "pattern": return "rgba(236,72,153,0.9)";
-    default: return "rgba(139,92,246,0.9)";
-  }
+  return node.entityType === "technology"
+    ? "rgba(251,146,60,0.9)"
+    : "rgba(236,72,153,0.9)";
 }
 
 function nodeBg(node: GraphNode): string {
   if (node.kind === "decision") return "rgba(139,92,246,0.08)";
-  switch (node.entityType) {
-    case "technology": return "rgba(251,146,60,0.08)";
-    case "pattern": return "rgba(236,72,153,0.08)";
-    default: return "rgba(139,92,246,0.08)";
-  }
+  return node.entityType === "technology"
+    ? "rgba(251,146,60,0.08)"
+    : "rgba(236,72,153,0.08)";
 }
 
 function nodeBorder(node: GraphNode): string {
   if (node.kind === "decision") return "rgba(139,92,246,0.4)";
-  switch (node.entityType) {
-    case "technology": return "rgba(251,146,60,0.3)";
-    case "pattern": return "rgba(236,72,153,0.3)";
-    default: return "rgba(139,92,246,0.4)";
-  }
+  return node.entityType === "technology"
+    ? "rgba(251,146,60,0.3)"
+    : "rgba(236,72,153,0.3)";
 }
 
-// ── Sub-components (to use hooks inside .map) ───────────────────────
+// ── Sub-components (extract useTransform calls out of .map) ─────────
 
 function EdgeLabel({
   x,
@@ -90,7 +84,7 @@ function EdgeLabel({
   label: string;
   scrollYProgress: import("framer-motion").MotionValue<number>;
 }) {
-  const opacity = useTransform(scrollYProgress, [0.6, 0.75], [0, 0.5]);
+  const opacity = useTransform(scrollYProgress, [0.65, 0.8], [0, 0.5]);
   return (
     <motion.text
       x={x}
@@ -118,14 +112,15 @@ function GraphNodePill({
   const left = 350 + node.x;
   const top = 200 + node.y;
   const isDecision = node.kind === "decision";
+  const delay = index * 0.03;
   const nodeOpacity = useTransform(
     scrollYProgress,
-    [0.42 + index * 0.03, 0.52 + index * 0.03],
+    [0.42 + delay, 0.55 + delay],
     [0, 1]
   );
   const nodeScale = useTransform(
     scrollYProgress,
-    [0.42 + index * 0.03, 0.52 + index * 0.03],
+    [0.42 + delay, 0.55 + delay],
     [0.5, 1]
   );
 
@@ -142,7 +137,7 @@ function GraphNodePill({
       }}
     >
       <div
-        className={`px-3 py-1.5 rounded-full border text-[10px] font-medium ${
+        className={`px-3 py-1.5 rounded-full border text-[11px] font-medium ${
           isDecision ? "rounded-xl" : ""
         }`}
         style={{
@@ -162,42 +157,46 @@ function GraphNodePill({
 export function HeroConductor() {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Track scroll progress through the entire hero container (0 → 1)
+  // "end end" maps scrollYProgress 0→1 to exactly the range where
+  // the sticky viewport is pinned (container height − viewport height).
   const { scrollYProgress } = useScroll({
     target: containerRef,
-    offset: ["start start", "end start"],
+    offset: ["start start", "end end"],
   });
 
   // ── Scroll-mapped transforms ──────────────────────────────────
-  // 0.0 → 0.3: Developer + laptop with conversation visible
-  // 0.3 → 0.6: Conversation flows out of screen, transforms into graph
-  // 0.6 → 1.0: Graph fully formed, tagline appears
+  // 0.00 → 0.35  Developer + laptop with conversation VISIBLE
+  // 0.35 → 0.65  Conversation flows out, graph materializes
+  // 0.65 → 1.00  Graph settled, tagline appears
 
-  // Developer + laptop
-  const devOpacity = useTransform(scrollYProgress, [0, 0.15, 0.5, 0.7], [0, 1, 1, 0]);
-  const devY = useTransform(scrollYProgress, [0, 0.15], [60, 0]);
+  // Developer + laptop — VISIBLE FROM START (opacity 1 at scroll 0)
+  const devOpacity = useTransform(scrollYProgress, [0, 0.5, 0.7], [1, 1, 0]);
+  const devScale = useTransform(scrollYProgress, [0.4, 0.7], [1, 0.85]);
 
-  // Chat messages (staggered appearance, then flow upward)
-  const chatOpacity = useTransform(scrollYProgress, [0.05, 0.15, 0.35, 0.5], [0, 1, 1, 0]);
-  const chatY = useTransform(scrollYProgress, [0.35, 0.55], [0, -200]);
+  // Chat messages — VISIBLE FROM START, float up & fade mid-scroll
+  const chatOpacity = useTransform(scrollYProgress, [0, 0.3, 0.5], [1, 1, 0]);
+  const chatY = useTransform(scrollYProgress, [0.25, 0.55], [0, -140]);
 
-  // Laptop screen glow intensifies as conversation happens
-  const screenGlow = useTransform(scrollYProgress, [0.1, 0.25, 0.5], [0.3, 0.7, 0.2]);
+  // Laptop screen glow — starts visible
+  const screenGlow = useTransform(scrollYProgress, [0, 0.2, 0.55], [0.5, 0.7, 0.1]);
 
-  // Graph nodes (appear as chat disappears)
-  const graphOpacity = useTransform(scrollYProgress, [0.4, 0.55, 0.9, 1.0], [0, 1, 1, 0.8]);
-  const graphScale = useTransform(scrollYProgress, [0.4, 0.6], [0.6, 1]);
+  // Eyebrow badge — visible on load, fades with scroll
+  const badgeOpacity = useTransform(scrollYProgress, [0, 0.12, 0.25], [1, 1, 0]);
 
-  // Graph edges draw in
-  const edgeProgress = useTransform(scrollYProgress, [0.5, 0.7], [0, 1]);
+  // Light trails (laptop → graph area) — bridging transition
+  const trailOpacity = useTransform(scrollYProgress, [0.25, 0.35, 0.6, 0.72], [0, 0.7, 0.7, 0]);
+  const trailLength = useTransform(scrollYProgress, [0.25, 0.6], [0, 1]);
 
-  // Tagline
-  const taglineOpacity = useTransform(scrollYProgress, [0.65, 0.8], [0, 1]);
-  const taglineY = useTransform(scrollYProgress, [0.65, 0.8], [30, 0]);
+  // Graph nodes — appear as chat fades
+  const graphOpacity = useTransform(scrollYProgress, [0.4, 0.58, 1.0], [0, 1, 1]);
+  const graphScale = useTransform(scrollYProgress, [0.4, 0.62], [0.7, 1]);
 
-  // Light trails (from laptop to graph)
-  const trailOpacity = useTransform(scrollYProgress, [0.35, 0.45, 0.65, 0.75], [0, 0.8, 0.8, 0]);
-  const trailLength = useTransform(scrollYProgress, [0.35, 0.6], [0, 1]);
+  // Graph edges — draw in after nodes appear
+  const edgeProgress = useTransform(scrollYProgress, [0.52, 0.72], [0, 1]);
+
+  // Tagline — appears last
+  const taglineOpacity = useTransform(scrollYProgress, [0.72, 0.88], [0, 1]);
+  const taglineY = useTransform(scrollYProgress, [0.72, 0.88], [30, 0]);
 
   return (
     <div
@@ -205,7 +204,7 @@ export function HeroConductor() {
       className="relative"
       style={{ height: "250vh" }}
     >
-      {/* Sticky viewport — stays fixed while user scrolls through the 250vh container */}
+      {/* Sticky viewport — stays fixed while user scrolls through 250vh container */}
       <div className="sticky top-0 h-screen w-full overflow-hidden flex items-center justify-center">
         {/* Background */}
         <div className="absolute inset-0 bg-[hsl(250,20%,6%)]" />
@@ -217,96 +216,140 @@ export function HeroConductor() {
           <div className="absolute top-1/2 right-[16%] w-56 h-56 bg-orange-500/[0.04] rounded-full blur-3xl animate-float [animation-delay:-3s]" />
         </div>
 
-        {/* ── Developer at laptop ──────────────────────────────── */}
+        {/* ── Eyebrow badge — visible on load ──────────────────── */}
         <motion.div
-          className="absolute bottom-[8%] left-1/2 -translate-x-1/2"
-          style={{ opacity: devOpacity, y: devY }}
+          className="absolute top-[12%] left-1/2 -translate-x-1/2 text-center z-10"
+          style={{ opacity: badgeOpacity }}
         >
-          {/* Developer silhouette — clean SVG from behind */}
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-violet-500/20 bg-violet-500/5 text-sm text-violet-300">
+            <Sparkles className="w-4 h-4" />
+            Knowledge Graph for AI Decisions
+          </div>
+        </motion.div>
+
+        {/* ── Developer at laptop — visible from start ─────────── */}
+        <motion.div
+          className="absolute bottom-[8%] left-1/2"
+          style={{ opacity: devOpacity, scale: devScale, x: "-50%" }}
+        >
+          {/* Aura glow behind developer */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2 w-[500px] h-[400px] rounded-full bg-violet-500/[0.07] blur-3xl pointer-events-none"
+            style={{ bottom: "20px" }}
+            aria-hidden="true"
+          />
+
+          {/* Developer silhouette SVG */}
           <svg
-            width="340"
-            height="300"
-            viewBox="0 0 340 300"
+            width="440"
+            height="360"
+            viewBox="0 0 440 360"
             fill="none"
-            className="mx-auto"
+            className="relative mx-auto"
             aria-hidden="true"
           >
-            {/* Back of head */}
-            <ellipse cx="170" cy="60" rx="30" ry="34" fill="rgba(20,15,40,0.9)" stroke="rgba(139,92,246,0.15)" strokeWidth="1" />
+            {/* Radial aura behind the figure */}
+            <defs>
+              <radialGradient id="dev-aura" cx="50%" cy="45%" r="50%">
+                <stop offset="0%" stopColor="rgba(139,92,246,0.12)" />
+                <stop offset="100%" stopColor="rgba(139,92,246,0)" />
+              </radialGradient>
+            </defs>
+            <ellipse cx="220" cy="170" rx="200" ry="170" fill="url(#dev-aura)" />
+
+            {/* Head */}
+            <ellipse
+              cx="220" cy="75" rx="34" ry="38"
+              fill="rgba(45,38,80,0.95)"
+              stroke="rgba(139,92,246,0.35)"
+              strokeWidth="1.2"
+            />
             {/* Hair detail */}
-            <path d="M 145 50 Q 158 35 170 32 Q 182 35 195 50" fill="none" stroke="rgba(139,92,246,0.2)" strokeWidth="1.5" strokeLinecap="round" />
+            <path
+              d="M 190 62 Q 205 44 220 40 Q 235 44 250 62"
+              fill="none" stroke="rgba(139,92,246,0.4)" strokeWidth="1.5" strokeLinecap="round"
+            />
             {/* Neck */}
-            <rect x="161" y="92" width="18" height="14" fill="rgba(20,15,40,0.9)" />
+            <rect x="210" y="111" width="20" height="16" fill="rgba(45,38,80,0.95)" />
             {/* Shoulders + torso */}
             <path
-              d="M 100 120 Q 130 106 161 106 L 179 106 Q 210 106 240 120 L 240 210 Q 238 230 230 240 L 110 240 Q 102 230 100 210 Z"
-              fill="rgba(20,15,40,0.9)"
-              stroke="rgba(139,92,246,0.1)"
+              d="M 140 135 Q 175 120 210 120 L 230 120 Q 265 120 300 135 L 300 260 Q 298 275 290 280 L 150 280 Q 142 275 140 260 Z"
+              fill="rgba(45,38,80,0.95)"
+              stroke="rgba(139,92,246,0.25)"
               strokeWidth="1"
             />
-            {/* Left arm resting on desk */}
+            {/* Jacket collar */}
             <path
-              d="M 100 120 Q 80 135 70 160 Q 62 180 65 195"
-              fill="none"
-              stroke="rgba(20,15,40,0.9)"
-              strokeWidth="16"
-              strokeLinecap="round"
+              d="M 200 120 L 220 140 L 240 120"
+              fill="none" stroke="rgba(139,92,246,0.25)" strokeWidth="1"
+            />
+            {/* Shoulder highlight */}
+            <path
+              d="M 140 135 Q 175 126 210 123"
+              fill="none" stroke="rgba(139,92,246,0.18)" strokeWidth="0.8"
             />
             <path
-              d="M 100 120 Q 80 135 70 160 Q 62 180 65 195"
-              fill="none"
-              stroke="rgba(139,92,246,0.1)"
-              strokeWidth="1.2"
-              strokeLinecap="round"
+              d="M 300 135 Q 265 126 230 123"
+              fill="none" stroke="rgba(139,92,246,0.18)" strokeWidth="0.8"
             />
-            {/* Right arm resting on desk */}
+            {/* Left arm */}
             <path
-              d="M 240 120 Q 260 135 270 160 Q 278 180 275 195"
-              fill="none"
-              stroke="rgba(20,15,40,0.9)"
-              strokeWidth="16"
-              strokeLinecap="round"
+              d="M 140 135 Q 115 155 105 185 Q 98 210 100 240"
+              fill="none" stroke="rgba(45,38,80,0.95)" strokeWidth="18" strokeLinecap="round"
             />
             <path
-              d="M 240 120 Q 260 135 270 160 Q 278 180 275 195"
-              fill="none"
-              stroke="rgba(139,92,246,0.1)"
-              strokeWidth="1.2"
-              strokeLinecap="round"
+              d="M 140 135 Q 115 155 105 185 Q 98 210 100 240"
+              fill="none" stroke="rgba(139,92,246,0.25)" strokeWidth="1.2" strokeLinecap="round"
+            />
+            {/* Right arm */}
+            <path
+              d="M 300 135 Q 325 155 335 185 Q 342 210 340 240"
+              fill="none" stroke="rgba(45,38,80,0.95)" strokeWidth="18" strokeLinecap="round"
+            />
+            <path
+              d="M 300 135 Q 325 155 335 185 Q 342 210 340 240"
+              fill="none" stroke="rgba(139,92,246,0.25)" strokeWidth="1.2" strokeLinecap="round"
             />
             {/* Desk surface */}
-            <rect x="30" y="200" width="280" height="6" rx="2" fill="rgba(30,25,55,0.8)" stroke="rgba(139,92,246,0.08)" strokeWidth="1" />
+            <rect
+              x="50" y="248" width="340" height="5" rx="2"
+              fill="rgba(50,42,85,0.9)" stroke="rgba(139,92,246,0.15)" strokeWidth="1"
+            />
             {/* Laptop base on desk */}
-            <path d="M 90 200 L 80 196 L 260 196 L 250 200 Z" fill="rgba(30,25,55,0.9)" stroke="rgba(139,92,246,0.12)" strokeWidth="0.8" />
+            <path
+              d="M 120 248 L 110 243 L 330 243 L 320 248 Z"
+              fill="rgba(50,42,85,0.95)" stroke="rgba(139,92,246,0.2)" strokeWidth="0.8"
+            />
           </svg>
 
-          {/* Laptop screen — positioned overlapping the SVG */}
+          {/* Laptop screen — positioned over the silhouette */}
           <div
-            className="absolute left-1/2 -translate-x-1/2 w-[220px] h-[140px] rounded-md border border-violet-500/20 overflow-hidden"
-            style={{ bottom: "105px" }}
+            className="absolute left-1/2 -translate-x-1/2 w-[280px] h-[170px] rounded-lg border border-violet-500/30 overflow-hidden"
+            style={{ bottom: "115px" }}
           >
-            {/* Screen glow */}
+            {/* Screen glow layer */}
             <motion.div
-              className="absolute inset-0 bg-gradient-to-b from-violet-500/20 to-violet-900/10"
+              className="absolute inset-0 bg-gradient-to-b from-violet-500/25 to-violet-900/10"
               style={{ opacity: screenGlow }}
             />
-            <div className="absolute inset-0 bg-[hsl(250,20%,4%)]" />
+            {/* Dark screen bg */}
+            <div className="absolute inset-0 bg-[hsl(250,20%,5%)]" />
 
             {/* Chat conversation on screen */}
             <motion.div
-              className="relative z-10 p-2 flex flex-col gap-1.5 text-[7px] leading-tight"
+              className="relative z-10 p-3 flex flex-col gap-2 text-[9px] leading-snug"
               style={{ opacity: chatOpacity, y: chatY }}
             >
               {CHAT_MESSAGES.map((msg, i) => (
                 <div
                   key={i}
-                  className={`rounded px-1.5 py-1 max-w-[85%] ${
+                  className={`rounded-md px-2 py-1.5 max-w-[85%] ${
                     msg.role === "human"
-                      ? "self-end bg-violet-500/15 text-violet-200/80 border border-violet-500/20"
-                      : "self-start bg-white/[0.04] text-slate-300/70 border border-white/[0.06]"
+                      ? "self-end bg-violet-500/15 text-violet-200/90 border border-violet-500/25"
+                      : "self-start bg-white/[0.06] text-slate-300/80 border border-white/[0.08]"
                   }`}
                 >
-                  <span className="block text-[5px] font-medium mb-0.5 opacity-50">
+                  <span className="block text-[6px] font-semibold mb-0.5 opacity-60 uppercase tracking-wider">
                     {msg.role === "human" ? "You" : "Claude"}
                   </span>
                   {msg.text}
@@ -317,14 +360,19 @@ export function HeroConductor() {
         </motion.div>
 
         {/* ── Light trails (laptop → graph) ────────────────────── */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          viewBox="0 0 1000 800"
+          preserveAspectRatio="xMidYMid meet"
+          aria-hidden="true"
+        >
           <defs>
-            <linearGradient id="hc-trail-l" x1="40%" y1="80%" x2="20%" y2="30%" gradientUnits="objectBoundingBox">
+            <linearGradient id="hc-trail-l" x1="0.5" y1="0.75" x2="0.25" y2="0.3">
               <stop offset="0%" stopColor="rgba(139,92,246,0.6)" />
               <stop offset="50%" stopColor="rgba(236,72,153,0.3)" />
               <stop offset="100%" stopColor="rgba(251,146,60,0.1)" />
             </linearGradient>
-            <linearGradient id="hc-trail-r" x1="60%" y1="80%" x2="80%" y2="30%" gradientUnits="objectBoundingBox">
+            <linearGradient id="hc-trail-r" x1="0.5" y1="0.75" x2="0.75" y2="0.3">
               <stop offset="0%" stopColor="rgba(139,92,246,0.6)" />
               <stop offset="50%" stopColor="rgba(236,72,153,0.3)" />
               <stop offset="100%" stopColor="rgba(251,146,60,0.1)" />
@@ -332,7 +380,7 @@ export function HeroConductor() {
           </defs>
           {/* Left trail */}
           <motion.path
-            d="M 50% 70% Q 35% 55%, 30% 40%"
+            d="M 500 580 Q 380 440, 310 280"
             fill="none"
             stroke="url(#hc-trail-l)"
             strokeWidth="2.5"
@@ -345,7 +393,7 @@ export function HeroConductor() {
           />
           {/* Right trail */}
           <motion.path
-            d="M 50% 70% Q 65% 55%, 70% 40%"
+            d="M 500 580 Q 620 440, 690 280"
             fill="none"
             stroke="url(#hc-trail-r)"
             strokeWidth="2.5"
@@ -360,7 +408,7 @@ export function HeroConductor() {
 
         {/* ── Knowledge Graph (forms from conversation) ────────── */}
         <motion.div
-          className="absolute top-[15%] left-1/2 -translate-x-1/2 w-[700px] h-[400px]"
+          className="absolute top-[12%] left-1/2 -translate-x-1/2 w-[700px] h-[400px]"
           style={{ opacity: graphOpacity, scale: graphScale }}
         >
           {/* Edges (SVG lines between nodes) */}
@@ -368,7 +416,6 @@ export function HeroConductor() {
             {GRAPH_EDGES.map((edge, i) => {
               const sNode = GRAPH_NODES[edge.source];
               const tNode = GRAPH_NODES[edge.target];
-              // Node positions are relative to center of container (350, 200)
               const sx = 350 + sNode.x;
               const sy = 200 + sNode.y;
               const tx = 350 + tNode.x;
@@ -385,11 +432,8 @@ export function HeroConductor() {
                     strokeWidth={1}
                     strokeDasharray={edge.dashed ? "6 4" : "none"}
                     pathLength="1"
-                    style={{
-                      pathLength: edgeProgress,
-                    }}
+                    style={{ pathLength: edgeProgress }}
                   />
-                  {/* Edge label */}
                   <EdgeLabel
                     x={(sx + tx) / 2}
                     y={(sy + ty) / 2 - 6}
@@ -414,7 +458,7 @@ export function HeroConductor() {
 
         {/* ── Tagline (appears after graph) ────────────────────── */}
         <motion.div
-          className="absolute bottom-[20%] left-1/2 -translate-x-1/2 text-center"
+          className="absolute bottom-[18%] left-1/2 -translate-x-1/2 text-center"
           style={{ opacity: taglineOpacity, y: taglineY }}
         >
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight leading-tight">

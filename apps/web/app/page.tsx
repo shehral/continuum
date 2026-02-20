@@ -325,7 +325,7 @@ export default function LandingPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-[hsl(250,20%,6%)] text-white overflow-x-hidden">
+    <div className="min-h-screen bg-[hsl(250,20%,6%)] text-white overflow-x-clip">
       {/* Nebula background */}
       <div className="nebula-bg" aria-hidden="true" />
       {mounted && <AmbientParticles />}
