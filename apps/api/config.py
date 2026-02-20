@@ -61,6 +61,10 @@ class Settings(BaseSettings):
 
     # Datadog observability
     dd_trace_enabled: bool = False
+    datadog_api_key: SecretStr = SecretStr("")  # SEC-007: Use SecretStr for API keys
+    datadog_app_key: SecretStr = SecretStr("")  # Optional, for some Datadog APIs
+    datadog_site: str = "datadoghq.com"  # or "dtraining.datadoghq.com" for training
+    datadog_integration_enabled: bool = False  # Enable/disable Datadog log shipping
 
     # Embedding Model (NVIDIA NV-EmbedQA) - SEC-007: Use SecretStr for API keys
     nvidia_embedding_api_key: SecretStr = SecretStr("")

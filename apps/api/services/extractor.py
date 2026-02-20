@@ -1450,6 +1450,78 @@ Respond as JSON:
             if getattr(msg, "thinking", None)
         )
 
+        # Truncate conversation if it's too large for the prompt
+        # Estimate tokens: ~4 chars per token, plus prompt template overhead
+        settings = get_settings()
+        max_prompt_tokens = settings.effective_max_prompt_tokens
+        
+        # Estimate prompt template size (DECISION_EXTRACTION_PROMPT + thinking section)
+        prompt_template_size = len(DECISION_EXTRACTION_PROMPT) // 4  # rough token estimate
+        thinking_section_size = len(episode_thinking) // 4 if episode_thinking else 0
+        available_for_conversation = max_prompt_tokens - prompt_template_size - thinking_section_size - 1000  # safety margin
+        
+        # Estimate conversation tokens
+        conversation_tokens = len(conversation_text) // 4
+        
+        if conversation_tokens > available_for_conversation:
+            # Truncate: keep recent messages (most important for decisions)
+            # Strategy: keep last N messages that fit, prioritizing recent content
+            logger.warning(
+                f"Conversation too large ({conversation_tokens} tokens), truncating to fit "
+                f"within {available_for_conversation} tokens. Original length: {len(conversation_text)} chars"
+            )
+            
+            # Calculate target length (leave some margin)
+            target_chars = (available_for_conversation - 500) * 4  # chars, with margin
+            
+            if conversation.raw_messages:
+                # For structured text, truncate by keeping recent messages
+                # Keep messages from the end until we hit the limit
+                truncated_parts = []
+                current_length = 0
+                
+                # Process messages in reverse (most recent first)
+                for msg in reversed(conversation.raw_messages):
+                    header = f"[Turn {msg.turn_index} | {msg.role}]"
+                    sections: list[str] = [header]
+                    
+                    if msg.thinking:
+                        sections.append(f"<thinking>\n{msg.thinking}\n</thinking>")
+                    
+                    for tc in msg.tool_calls:
+                        params = tc.params_summary()
+                        tc_line = f"Tool: {tc.name}({params})" if params else f"Tool: {tc.name}()"
+                        if tc.result is not None:
+                            result_preview = tc.result[:500] + "…" if len(tc.result) > 500 else tc.result
+                            sections.append(f"{tc_line}\nResult: {result_preview}")
+                        else:
+                            sections.append(tc_line)
+                    
+                    if msg.content:
+                        sections.append(f"Response: {msg.content}")
+                    
+                    msg_text = "\n".join(sections)
+                    msg_length = len(msg_text)
+                    
+                    if current_length + msg_length > target_chars:
+                        # Add truncation notice
+                        truncated_parts.insert(0, f"[TRUNCATED: {len(conversation.raw_messages) - len(truncated_parts)} earlier messages removed to fit token limit]")
+                        break
+                    
+                    truncated_parts.insert(0, msg_text)
+                    current_length += msg_length + 2  # +2 for "\n\n"
+                
+                conversation_text = "\n\n".join(truncated_parts)
+            else:
+                # For flat text, simple truncation from the end
+                conversation_text = conversation_text[:target_chars]
+                conversation_text += "\n\n[TRUNCATED: Earlier conversation removed to fit token limit]"
+            
+            logger.info(
+                f"Truncated conversation to {len(conversation_text)} chars "
+                f"(estimated {len(conversation_text) // 4} tokens)"
+            )
+
         # ML-P2-2: Auto-detect decision type if not specified
         if decision_type is None:
             try:

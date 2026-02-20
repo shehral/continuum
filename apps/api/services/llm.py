@@ -16,6 +16,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from config import get_settings
 from services.llm_providers import get_llm_provider
+from services.datadog_logger import DatadogLLMLogger, LLMCallTimer
 from utils.logging import get_logger
 from utils.prompt_sanitizer import InjectionRiskLevel, sanitize_prompt
 
@@ -355,7 +356,9 @@ class LLMClient:
             PromptTooLargeError: If estimated tokens exceed the limit
         """
         if max_prompt_tokens is None:
-            max_prompt_tokens = self.settings.max_prompt_tokens
+            # Use effective_max_prompt_tokens (model-aware, 85% of context limit)
+            # instead of the hardcoded max_prompt_tokens default
+            max_prompt_tokens = self.settings.effective_max_prompt_tokens
 
         # Build messages to estimate
         messages = []
@@ -558,6 +561,8 @@ class LLMClient:
         temperature: float,
         max_tokens: int,
         max_retries: int,
+        user_id: str | None = None,
+        operation: str = "generate",
     ) -> str:
         """Internal method to generate completion with a specific provider (ML-QW-2).
 
@@ -567,6 +572,8 @@ class LLMClient:
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
             max_retries: Maximum retry attempts
+            user_id: User ID for tracking
+            operation: Operation type for logging
 
         Returns:
             The generated text with thinking tags stripped
@@ -579,19 +586,52 @@ class LLMClient:
 
         for attempt in range(max_retries + 1):
             try:
-                text, usage = await provider.generate(
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
+                # Time the LLM call
+                with LLMCallTimer() as timer:
+                    text, usage = await provider.generate(
+                        messages=messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
 
                 # Log token usage for cost monitoring (ML-QW-1)
                 self._log_token_usage(usage, model, streaming=False)
+
+                # Log to Datadog
+                print(f"[DEBUG] About to log to Datadog: {model}, {usage.get('total_tokens', 0)} tokens")
+                await DatadogLLMLogger.log_llm_call(
+                    model=model,
+                    prompt_tokens=usage.get("prompt_tokens", 0),
+                    completion_tokens=usage.get("completion_tokens", 0),
+                    total_tokens=usage.get("total_tokens", 0),
+                    latency_ms=timer.elapsed_ms,
+                    operation=operation,
+                    streaming=False,
+                    user_id=user_id,
+                    success=True,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
 
                 return strip_thinking_tags(text)
 
             except Exception as e:
                 last_error = e
+
+                # Log failure to Datadog
+                if attempt >= max_retries:
+                    await DatadogLLMLogger.log_llm_call(
+                        model=model,
+                        prompt_tokens=0,
+                        completion_tokens=0,
+                        total_tokens=0,
+                        latency_ms=0,
+                        operation=operation,
+                        streaming=False,
+                        user_id=user_id,
+                        success=False,
+                        error=f"{type(e).__name__}: {str(e)}",
+                    )
 
                 # Don't retry non-retryable errors
                 if not self._is_retryable_error(e):
@@ -683,6 +723,8 @@ class LLMClient:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 max_retries=max_retries,
+                user_id=user_id,
+                operation="generate",
             )
         except Exception as primary_error:
             # ML-QW-2: Check if we should fall back to secondary model
@@ -703,6 +745,8 @@ class LLMClient:
                         temperature=temperature,
                         max_tokens=max_tokens,
                         max_retries=max_retries,
+                        user_id=user_id,
+                        operation="generate_fallback",
                     )
                 except Exception as fallback_error:
                     logger.error(
