@@ -1,9 +1,15 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { GitBranch, Sparkles, MessageSquare, Scan, Network } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { HeroGraph } from "@/components/landing/hero-graph"
+import { PulsingNetwork } from "@/components/landing/pulsing-network"
+import { ConversationExtract } from "@/components/landing/conversation-extract"
+import { FileScan } from "@/components/landing/file-scan"
+import { ChatAnimation, ScanAnimation, MergeAnimation, GraphAnimation } from "@/components/landing/step-animations"
+import { AmbientParticles } from "@/components/landing/ambient-particles"
 
 // ─── Hooks ───────────────────────────────────────────────
 
@@ -67,6 +73,7 @@ function FeatureSection({
   imageAlt,
   glowColor,
   imagePosition,
+  animation,
 }: {
   title: string
   description: string
@@ -74,6 +81,7 @@ function FeatureSection({
   imageAlt: string
   glowColor: keyof typeof glowColors
   imagePosition: "left" | "right"
+  animation?: (isVisible: boolean) => React.ReactNode
 }) {
   const { ref, isVisible } = useScrollAnimation()
 
@@ -92,8 +100,15 @@ function FeatureSection({
         className={`absolute -inset-4 bg-gradient-to-br ${glowColors[glowColor]} rounded-3xl blur-2xl`}
         aria-hidden="true"
       />
-      <div className="relative rounded-2xl border border-white/[0.08] overflow-hidden shadow-[0_16px_48px_rgba(0,0,0,0.4)]">
-        <img src={imageSrc} alt={imageAlt} className="w-full h-auto" loading="lazy" />
+      <div className="relative space-y-4">
+        {animation && (
+          <div className="rounded-2xl border border-white/[0.08] overflow-hidden shadow-[0_16px_48px_rgba(0,0,0,0.4)] bg-[hsl(250,20%,4%)] p-4 md:p-6">
+            {animation(isVisible)}
+          </div>
+        )}
+        <div className="rounded-2xl border border-white/[0.08] overflow-hidden shadow-[0_16px_48px_rgba(0,0,0,0.4)]">
+          <img src={imageSrc} alt={imageAlt} className="w-full h-auto" loading="lazy" />
+        </div>
       </div>
     </div>
   )
@@ -153,6 +168,8 @@ const steps = [
   },
 ]
 
+const stepAnimationComponents = [ChatAnimation, ScanAnimation, MergeAnimation, GraphAnimation]
+
 function HowItWorks() {
   const { ref, isVisible } = useScrollAnimation()
 
@@ -186,7 +203,10 @@ function HowItWorks() {
               </span>
 
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/10 border border-violet-500/20 flex items-center justify-center mb-4">
-                <step.icon className="w-5 h-5 text-violet-400" />
+                {(() => {
+                  const StepAnim = stepAnimationComponents[i]
+                  return StepAnim ? <StepAnim isVisible={isVisible} /> : <step.icon className="w-5 h-5 text-violet-400" />
+                })()}
               </div>
 
               <h3 className="text-lg font-semibold mb-2">{step.title}</h3>
@@ -308,6 +328,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[hsl(250,20%,6%)] text-white overflow-x-hidden">
       {/* Nebula background */}
       <div className="nebula-bg" aria-hidden="true" />
+      {mounted && <AmbientParticles />}
 
       {/* Navigation */}
       <nav
@@ -365,17 +386,8 @@ export default function LandingPage() {
               className="absolute -inset-4 bg-gradient-to-r from-violet-500/20 via-fuchsia-500/10 to-orange-500/20 rounded-3xl blur-2xl opacity-60"
               aria-hidden="true"
             />
-            <div className="relative rounded-2xl border border-white/[0.08] overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.5)]">
-              <img
-                src="/media/dashboard-trace.gif"
-                alt="Continuum dashboard showing decision traces and analytics"
-                className="w-full h-auto"
-                loading="eager"
-              />
-              <div
-                className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-[hsl(250,20%,6%)] to-transparent"
-                aria-hidden="true"
-              />
+            <div className="relative rounded-2xl border border-white/[0.08] overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.5)] bg-[hsl(250,20%,4%)] p-4 md:p-8">
+              <HeroGraph />
             </div>
           </div>
         </div>
@@ -397,6 +409,7 @@ export default function LandingPage() {
           imageAlt="Interactive knowledge graph visualization showing decision and entity nodes"
           glowColor="violet"
           imagePosition="right"
+          animation={(visible) => <PulsingNetwork isVisible={visible} />}
         />
 
         <FeatureSection
@@ -406,6 +419,7 @@ export default function LandingPage() {
           imageAlt="AI-guided interview session capturing engineering decisions"
           glowColor="rose"
           imagePosition="left"
+          animation={(visible) => <ConversationExtract isVisible={visible} />}
         />
 
         <FeatureSection
@@ -415,6 +429,7 @@ export default function LandingPage() {
           imageAlt="Automated decision extraction from Claude Code conversation logs"
           glowColor="orange"
           imagePosition="right"
+          animation={(visible) => <FileScan isVisible={visible} />}
         />
       </section>
 
