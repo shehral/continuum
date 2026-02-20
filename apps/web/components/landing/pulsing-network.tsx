@@ -19,12 +19,12 @@ interface EdgeDef {
 }
 
 const NODES: NodeDef[] = [
-  { id: 1, label: "Use TypeScript",  type: "decision", subtype: "technology", x: 200, y: 60 },
-  { id: 2, label: "Add ESLint",      type: "decision", subtype: "technology", x: 100, y: 200 },
-  { id: 3, label: "TypeScript",      type: "entity",   subtype: "technology", x: 320, y: 140 },
-  { id: 4, label: "Code Quality",    type: "entity",   subtype: "concept",    x: 60,  y: 90 },
-  { id: 5, label: "DX Pattern",      type: "entity",   subtype: "pattern",    x: 280, y: 260 },
-  { id: 6, label: "Node.js",         type: "entity",   subtype: "technology", x: 180, y: 320 },
+  { id: 1, label: "Use Bedrock",     type: "decision", subtype: "technology", x: 200, y: 60 },
+  { id: 2, label: "Add Datadog",     type: "decision", subtype: "technology", x: 100, y: 200 },
+  { id: 3, label: "Neo4j",           type: "entity",   subtype: "technology", x: 320, y: 140 },
+  { id: 4, label: "Agent Memory",    type: "entity",   subtype: "concept",    x: 60,  y: 90 },
+  { id: 5, label: "Strands SDK",     type: "entity",   subtype: "pattern",    x: 280, y: 260 },
+  { id: 6, label: "Claude Sonnet",   type: "entity",   subtype: "technology", x: 180, y: 320 },
 ]
 
 const EDGES: EdgeDef[] = [
@@ -270,9 +270,11 @@ export function PulsingNetwork({ isVisible }: { isVisible: boolean }) {
                 textAnchor="middle"
                 dominantBaseline="central"
                 fontSize={10}
-                fill={isHighlighted ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.7)"}
+                className="text-foreground"
+                fill="currentColor"
+                opacity={isHighlighted ? 0.95 : 0.7}
                 style={{
-                  transition: skipAnimation ? "none" : "fill 0.3s ease",
+                  transition: skipAnimation ? "none" : "opacity 0.3s ease",
                   pointerEvents: "none",
                   fontFamily: "var(--font-sans), system-ui, sans-serif",
                 }}
@@ -324,9 +326,11 @@ export function PulsingNetwork({ isVisible }: { isVisible: boolean }) {
               textAnchor="middle"
               dominantBaseline="central"
               fontSize={10}
-              fill={isHighlighted ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.7)"}
+              className="text-foreground"
+              fill="currentColor"
+              opacity={isHighlighted ? 0.95 : 0.7}
               style={{
-                transition: skipAnimation ? "none" : "fill 0.3s ease",
+                transition: skipAnimation ? "none" : "opacity 0.3s ease",
                 pointerEvents: "none",
                 fontFamily: "var(--font-sans), system-ui, sans-serif",
               }}

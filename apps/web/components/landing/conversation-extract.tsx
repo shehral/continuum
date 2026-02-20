@@ -26,27 +26,27 @@ interface TraceField {
 const MESSAGES: ChatMessage[] = [
   {
     role: "human",
-    text: "We need to choose a database for user sessions",
+    text: "The agent needs to check prior decisions before acting",
     delay: 0,
   },
   {
     role: "ai",
-    text: "Redis would be ideal \u2014 it supports TTL expiration and handles high-throughput reads.",
+    text: "I'll add continuum_check as a Strands tool — Neo4j queries traced through Datadog.",
     delay: 1500,
   },
   {
     role: "human",
-    text: "Let\u2019s go with Redis. TTL is the deciding factor.",
+    text: "Ship it. Every LLM call should be observable.",
     delay: 3000,
   },
 ]
 
 const TRACE_FIELDS: TraceField[] = [
-  { label: "Trigger", value: "Need session storage solution", delay: 4000 },
-  { label: "Context", value: "High-throughput reads required", delay: 4800 },
-  { label: "Options", value: "Redis, Memcached, PostgreSQL", delay: 5600 },
-  { label: "Decision", value: "Redis", delay: 6400, highlight: true },
-  { label: "Rationale", value: "Native TTL expiration support", delay: 7200 },
+  { label: "Model", value: "Claude Sonnet via Bedrock", delay: 4000 },
+  { label: "Latency", value: "1.2s (p50)", delay: 4800 },
+  { label: "Tokens", value: "847 in / 234 out", delay: 5600 },
+  { label: "Confidence", value: "0.94", delay: 6400, highlight: true },
+  { label: "Cost", value: "$0.0043 per decision", delay: 7200 },
 ]
 
 const CARD_COMPLETE_DELAY = 8000

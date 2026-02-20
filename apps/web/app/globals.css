@@ -413,6 +413,10 @@ body {
   animation: nebula-drift 20s ease-in-out infinite alternate;
 }
 
+:root:not(.dark) .nebula-bg::before {
+  opacity: 0.3;
+}
+
 .nebula-bg::after {
   content: '';
   position: absolute;

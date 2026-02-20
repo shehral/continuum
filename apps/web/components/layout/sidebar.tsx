@@ -225,7 +225,7 @@ export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: S
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => signOut()}
+                onClick={() => signOut({ callbackUrl: '/' })}
                 className="flex-1 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 group"
                 aria-label="Sign out"
               >
@@ -299,7 +299,7 @@ export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: S
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => signOut()}
+                    onClick={() => signOut({ callbackUrl: '/' })}
                     className="w-full text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10"
                     aria-label="Sign out"
                   >

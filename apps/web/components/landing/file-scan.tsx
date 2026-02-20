@@ -12,23 +12,23 @@ interface DecisionCard {
 // ── Constants ──────────────────────────────────────────────────────
 
 const FILES = [
-  "session-001.jsonl",
-  "session-002.jsonl",
-  "session-003.jsonl",
+  "continuum_check.py",
+  "continuum_remember.py",
+  "continuum_search.py",
 ]
 
 const FILE_SCAN_TIMES = [1.0, 2.0, 3.0] // seconds after isVisible
 
 const DECISION_CARDS: DecisionCard[] = [
-  { label: "Use PostgreSQL", borderColor: "border-violet-500" },
-  { label: "Add caching", borderColor: "border-orange-500" },
-  { label: "Switch to TypeScript", borderColor: "border-violet-500" },
+  { label: "Query prior art", borderColor: "border-violet-500" },
+  { label: "Store decision", borderColor: "border-orange-500" },
+  { label: "Recall context", borderColor: "border-violet-500" },
 ]
 
 const COUNTER_STEPS = [
-  { time: 4.5, value: 3, suffix: "decisions" },
-  { time: 5.5, value: 7, suffix: "decisions" },
-  { time: 6.5, value: 12, suffix: "decisions extracted" },
+  { time: 4.5, value: 3, suffix: "tool calls" },
+  { time: 5.5, value: 7, suffix: "tool calls" },
+  { time: 6.5, value: 12, suffix: "tool calls traced" },
 ]
 
 // ── CSS Keyframes (injected once) ──────────────────────────────────
@@ -181,10 +181,10 @@ export function FileScan({ isVisible }: { isVisible: boolean }) {
         className="relative overflow-hidden min-h-[250px] max-w-[450px] mx-auto"
       >
         <div className="font-mono text-xs leading-relaxed p-4">
-          <span className="text-slate-400">~/.claude/projects/</span>
+          <span className="text-slate-400">strands-agent/tools/</span>
           <br />
           <span className="text-slate-400">
-            {"├── "}continuum/
+            {"├── "}mcp-servers/
           </span>
           <br />
           {FILES.map((file, i) => (
@@ -198,7 +198,7 @@ export function FileScan({ isVisible }: { isVisible: boolean }) {
           ))}
         </div>
         <div className="absolute bottom-3 right-3 text-xs text-slate-500">
-          12 decisions extracted
+          12 tool calls traced
         </div>
       </div>
     )
@@ -213,10 +213,10 @@ export function FileScan({ isVisible }: { isVisible: boolean }) {
     >
       {/* File tree */}
       <div className="font-mono text-xs leading-relaxed p-4 select-none">
-        <span className="text-slate-400">~/.claude/projects/</span>
+        <span className="text-slate-400">strands-agent/tools/</span>
         <br />
         <span className="text-slate-400">
-          {"├── "}continuum/
+          {"├── "}mcp-servers/
         </span>
         <br />
         {FILES.map((file, i) => {

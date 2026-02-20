@@ -52,7 +52,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-[hsl(250,20%,6%)]">
+    <div className="dark min-h-screen flex items-center justify-center relative overflow-hidden bg-[hsl(250,20%,6%)]">
       {/* Animated nebula background */}
       <div className="nebula-bg" aria-hidden="true" />
 
@@ -96,8 +96,8 @@ function LoginForm() {
           </p>
         </div>
 
-        {/* Glass card form */}
-        <div className="glass-card p-8">
+        {/* Login card — explicit dark styling to avoid light-mode glass-card override */}
+        <div className="relative p-8 bg-white/[0.03] backdrop-blur-2xl border border-white/[0.08] rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email field */}
             <div className="space-y-2">
