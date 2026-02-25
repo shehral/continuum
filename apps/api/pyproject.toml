@@ -3,7 +3,7 @@ name = "continuum-api"
 version = "0.1.0"
 description = "Continuum Knowledge Management API"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.6",
     "uvicorn[standard]>=0.34.0",
@@ -15,7 +15,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "pydantic>=2.10.4",
     "pydantic-settings>=2.7.1",
-    "google-generativeai>=0.10.0",
+    "google-generativeai>=0.8.0",
     "websockets>=14.1",
     "python-multipart>=0.0.20",
     "httpx>=0.28.1",

@@ -25,30 +25,7 @@ This project explores human-AI collaboration patterns in software engineering—
 
 ## Demo
 
-### Dashboard & Decision Traces
-View recent decisions, analytics, and explore individual decision traces with full context.
-
-![Dashboard and Decision Trace](media/dashboard-trace.gif)
-
-### Knowledge Graph (Sample Data)
-Explore the graph structure with sample decisions before importing your own data.
-
-![Graph Before Import](media/graph-before-import.gif)
-
-### Import from Claude Code Logs
-Automatically extract decisions from your Claude Code conversation history with progress tracking.
-
-![Import Claude Logs](media/import-logs.gif)
-
-### AI-Guided Interview Capture
-Document decisions through a guided conversation with an AI interviewer that extracts structured decision traces.
-
-![Capture Session](media/capture-session.gif)
-
-### Interactive Knowledge Graph
-Explore decisions and entities as an interactive graph with filtering, search, and relationship visualization.
-
-![Knowledge Graph](media/knowledge-graph.gif)
+[![Watch the demo](https://img.youtube.com/vi/P_yyWTt7Ah0/maxresdefault.jpg)](https://youtu.be/P_yyWTt7Ah0)
 
 ---
 
