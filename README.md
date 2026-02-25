@@ -31,13 +31,32 @@ This project explores human-AI collaboration patterns in software engineering—
 
 ## Features
 
-- **Passive Knowledge Capture**: Automatically extract decisions from Claude Code conversation logs
-- **AI-Guided Interviews**: NVIDIA Llama-powered interview agent guides knowledge capture
-- **Knowledge Graph**: Interactive visualization of decisions and their relationships
-- **Decision Traces**: Structured capture of trigger, context, options, decision, and rationale
-- **Entity Resolution**: 7-stage deduplication pipeline with configurable similarity thresholds
-- **Hybrid Search**: Combined lexical and semantic search with score fusion
-- **Graph Validation**: Detect circular dependencies, orphans, duplicates, and relationship issues
+### Knowledge Capture
+- **Passive Extraction**: Automatically extract decisions from Claude Code conversation logs with file watching for continuous monitoring
+- **AI-Guided Interviews**: 7-stage interview agent with stage-specific prompts (opening, trigger, context, options, decision, rationale, summary)
+- **Real-time Capture**: WebSocket streaming for live interview sessions
+- **Bulk Import/Export**: JSON import (up to 500 decisions), export with source filtering and timestamped downloads
+
+### Knowledge Graph
+- **Interactive Visualization**: React Flow graph with custom decision and entity node types, minimap, zoom controls, and keyboard navigation
+- **Entity Resolution**: 8-stage deduplication pipeline (cache, exact match, canonical lookup, alias search, fulltext prefix, fuzzy match, embedding similarity, create new) with ~530 canonical mappings
+- **Graph Analysis**: Batch relationship detection (SUPERSEDES, CONTRADICTS), circular dependency checks, orphan detection, entity deduplication
+- **Entity Evolution**: Timeline tracking and decision evolution chains across supersessions and contradictions
+
+### Search & Discovery
+- **Hybrid Search**: Combined lexical and semantic search with configurable score fusion
+- **Advanced Search UI**: Mode selector (hybrid/lexical/semantic), confidence slider, matched field highlights, keyboard shortcuts (Cmd+K)
+- **Graph Validation**: Detect circular dependencies, orphan entities, duplicates, and relationship issues
+
+### Agent Integration
+- **MCP Server**: 5 tools for AI agent access — `continuum_check` (prior art), `continuum_remember` (record decisions), `continuum_search` (hybrid query), `continuum_context` (entity details), `continuum_summary` (project overview)
+- **Multi-Provider LLM**: Pluggable provider system supporting NVIDIA NIM and Amazon Bedrock with runtime switching
+
+### Project Management
+- **Project Organization**: Group decisions by project with stats, reset, and deletion
+- **Decision Review Queue**: Confidence-ordered review with agree/disagree voting and human rationale
+- **Dashboard Analytics**: Stats cards, source breakdowns, and recent decision summaries
+- **Timeline View**: Chronological decision grouping by month/year
 
 ---
 
@@ -45,25 +64,24 @@ This project explores human-AI collaboration patterns in software engineering—
 
 | Layer | Technologies |
 |-------|--------------|
-| **Frontend** | Next.js 16, React 19, TailwindCSS 4, shadcn/ui |
-| **Backend** | FastAPI, SQLAlchemy (async), Pydantic, Python 3.14 |
+| **Frontend** | Next.js 16, React 19, TailwindCSS 4, shadcn/ui, Framer Motion |
+| **Backend** | FastAPI, SQLAlchemy (async), Pydantic, Python 3.12+ |
 | **Databases** | PostgreSQL 18, Neo4j 2025.01, Redis 7.4 |
-| **AI** | NVIDIA NIM API (Llama 3.3 Nemotron, NV-EmbedQA) |
-| **Auth** | Auth.js v5 (next-auth) |
+| **AI** | NVIDIA NIM API (Llama 3.3 Nemotron, NV-EmbedQA), Amazon Bedrock (Claude) |
+| **Auth** | Auth.js v5 (next-auth), JWT with per-user isolation |
 | **Infrastructure** | Docker, Kubernetes, GitHub Actions, Node.js 24 LTS |
 
 ---
 
 ## Project Status
 
-This project has achieved production-ready status (8.4/10) with:
-
-- ✅ JWT authentication with multi-tenant isolation
-- ✅ Kubernetes-ready with CI/CD pipelines
-- ✅ Prometheus metrics + Grafana dashboards
-- ✅ 838 tests including E2E workflows
-- ✅ Circuit breakers, retry logic, and saga transactions
-- ✅ 7-stage entity resolution with ~530 canonical mappings
+- ✅ JWT authentication with per-user data isolation
+- ✅ Kubernetes-ready with CI/CD pipelines (build, deploy, rollback, security scan)
+- ✅ 735+ tests including E2E workflows
+- ✅ Circuit breakers and retry logic for external service calls
+- ✅ 8-stage entity resolution with ~530 canonical mappings
+- ✅ Rate limiting with Redis token bucket (per-user)
+- ✅ GZip response compression and Redis query caching
 
 ---
 
@@ -88,6 +106,7 @@ This software is provided for academic review and research collaboration purpose
 
 This project uses:
 - [NVIDIA NIM API](https://developer.nvidia.com/) - Subject to NVIDIA Terms of Service
+- [Amazon Bedrock](https://aws.amazon.com/bedrock/) - Subject to AWS Terms of Service
 - [Claude Code](https://claude.ai/) conversation format from Anthropic
 
 ---
