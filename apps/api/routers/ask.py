@@ -51,19 +51,41 @@ async def ask(
         try:
             # Step 1: Retrieve context from the knowledge graph
             graph_rag = get_graph_rag_service()
-            subgraph, context_text = await graph_rag.retrieve_context(
+            subgraph, context_text, seed_ids = await graph_rag.retrieve_context(
                 query=q,
                 user_id=user_id,
                 top_k=top_k,
                 depth=depth,
             )
 
-            # Send context event with the retrieved subgraph
-            seed_ids = [n.get("id") for n in subgraph.get("nodes", []) if n.get("id")]
+            # Reshape nodes to match frontend AskSourceNode contract
+            seed_id_set = set(seed_ids)
+            shaped_nodes = []
+            for n in subgraph.get("nodes", []):
+                node_id = n.get("id", "")
+                label = n.get("label", "")
+                node_type = "decision" if label == "DecisionTrace" else "entity"
+                shaped_nodes.append({
+                    "id": node_id,
+                    "type": node_type,
+                    "is_seed": node_id in seed_id_set,
+                    "data": {
+                        "trigger": n.get("trigger"),
+                        "decision": n.get("decision"),
+                        "context": n.get("context"),
+                        "rationale": n.get("rationale"),
+                        "options": n.get("options"),
+                        "confidence": n.get("confidence"),
+                        "name": n.get("name"),
+                        "entity_type": n.get("type"),
+                    },
+                })
+
+            # Send context event with the reshaped subgraph
             yield _sse_event("context", {
-                "nodes": subgraph.get("nodes", []),
+                "nodes": shaped_nodes,
                 "edges": subgraph.get("edges", []),
-                "seed_ids": seed_ids,
+                "seed_ids": list(seed_id_set),
             })
 
             # Step 2: If no context, send a direct "no info" message

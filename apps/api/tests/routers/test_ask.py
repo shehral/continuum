@@ -40,6 +40,7 @@ class TestAskEndpoint:
         """Valid query should return text/event-stream content type."""
         mock_subgraph = {"nodes": [], "edges": []}
         mock_context_text = ""
+        mock_seed_ids = []
 
         with (
             patch(
@@ -53,7 +54,7 @@ class TestAskEndpoint:
         ):
             service = AsyncMock()
             service.retrieve_context = AsyncMock(
-                return_value=(mock_subgraph, mock_context_text)
+                return_value=(mock_subgraph, mock_context_text, mock_seed_ids)
             )
             mock_rag.return_value = service
 
@@ -65,10 +66,11 @@ class TestAskEndpoint:
     def test_valid_query_streams_context_event(self, client):
         """Valid query should stream a context event first."""
         mock_subgraph = {
-            "nodes": [{"id": "n1", "label": "Entity", "name": "PostgreSQL"}],
+            "nodes": [{"id": "n1", "label": "Entity", "name": "PostgreSQL", "type": "technology"}],
             "edges": [],
         }
         mock_context_text = ""
+        mock_seed_ids = ["n1"]
 
         with (
             patch("routers.ask.get_graph_rag_service") as mock_rag,
@@ -80,7 +82,7 @@ class TestAskEndpoint:
         ):
             service = AsyncMock()
             service.retrieve_context = AsyncMock(
-                return_value=(mock_subgraph, mock_context_text)
+                return_value=(mock_subgraph, mock_context_text, mock_seed_ids)
             )
             mock_rag.return_value = service
 
@@ -89,6 +91,10 @@ class TestAskEndpoint:
             body = response.text
             assert "event: context" in body
             assert "event: done" in body
+            # Verify reshaped node structure
+            assert '"type": "entity"' in body
+            assert '"is_seed": true' in body
+            assert '"entity_type": "technology"' in body
 
     def test_depth_out_of_range_returns_422(self, client):
         """Depth parameter outside [1, 3] should return 422."""

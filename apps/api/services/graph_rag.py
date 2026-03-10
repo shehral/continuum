@@ -411,7 +411,7 @@ class GraphRAGService:
         top_k: int = 5,
         depth: int = DEFAULT_HOP_DEPTH,
         session=None,
-    ) -> tuple[dict, str]:
+    ) -> tuple[dict, str, list[str]]:
         """Full RAG pipeline: retrieve -> expand -> serialize.
 
         Args:
@@ -422,7 +422,7 @@ class GraphRAGService:
             session: Optional Neo4j session.
 
         Returns:
-            Tuple of (subgraph_dict, context_string).
+            Tuple of (subgraph_dict, context_string, seed_ids).
         """
         close_session = False
         if session is None:
@@ -438,7 +438,7 @@ class GraphRAGService:
 
             if not seed_ids:
                 logger.info("No results from hybrid retrieval")
-                return {"nodes": [], "edges": []}, ""
+                return {"nodes": [], "edges": []}, "", []
 
             # Step 2: Subgraph expansion
             subgraph = await self.expand_subgraph(
@@ -448,7 +448,7 @@ class GraphRAGService:
             # Step 3: Serialize for LLM
             context_str = serialize_context(subgraph)
 
-            return subgraph, context_str
+            return subgraph, context_str, seed_ids
         finally:
             if close_session:
                 await session.close()

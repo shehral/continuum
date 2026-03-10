@@ -52,8 +52,8 @@ export function SourceCards({ sources }: SourceCardsProps) {
                 <div className="min-w-0">
                   <p className="text-xs font-medium truncate">
                     {node.type === "decision"
-                      ? node.data.trigger
-                      : node.data.name}
+                      ? (node.data.trigger || "Untitled decision")
+                      : (node.data.name || "Unnamed entity")}
                   </p>
                   <Badge
                     variant="outline"
