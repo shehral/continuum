@@ -3,6 +3,7 @@ from neo4j.exceptions import ClientError, DatabaseError, DriverError
 
 from db.neo4j import get_neo4j_session
 from models.schemas import SearchResult
+from services.graph_rag import get_graph_rag_service
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -20,6 +21,8 @@ class FullTextFallbackError(Exception):
 async def search(
     query: str = Query(..., min_length=2),
     type: str = Query(default=None, description="Filter by type: decision or entity"),
+    expand: bool = Query(default=False, description="Enable graph expansion on results"),
+    depth: int = Query(default=1, ge=1, le=3, description="Expansion depth (when expand=true)"),
 ):
     """Search decisions and entities using case-insensitive matching."""
     try:
@@ -154,6 +157,31 @@ async def search(
                                 },
                             )
                         )
+
+            # Graph expansion if requested
+            if expand and results:
+                try:
+                    rag_service = get_graph_rag_service()
+                    seed_ids = [r.id for r in results[:5]]
+                    subgraph = await rag_service.expand_subgraph(
+                        seed_ids=seed_ids,
+                        depth=depth,
+                    )
+                    # Add expanded nodes as additional results
+                    existing_ids = {r.id for r in results}
+                    for node in subgraph["nodes"]:
+                        if node["id"] not in existing_ids:
+                            results.append(
+                                SearchResult(
+                                    type=node["type"],
+                                    id=node["id"],
+                                    label=node["data"].get("name", node["data"].get("trigger", ""))[:100],
+                                    score=0.5,
+                                    data=node["data"],
+                                )
+                            )
+                except Exception as e:
+                    logger.warning(f"Graph expansion failed, returning base results: {e}")
 
             # Sort by score
             results.sort(key=lambda x: x.score, reverse=True)
