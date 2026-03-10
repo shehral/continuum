@@ -38,6 +38,7 @@ from models.errors import (
 )
 from routers import (
     agent,
+    ask,
     capture,
     dashboard,
     decisions,
@@ -112,6 +113,22 @@ async def check_redis_connection() -> bool:
         return False
 
 
+async def run_migrations() -> None:
+    """Run Alembic migrations programmatically to ensure schema is up to date."""
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+    alembic_cfg.set_main_option(
+        "script_location", os.path.join(os.path.dirname(__file__), "alembic")
+    )
+    alembic_cfg.set_main_option("sqlalchemy.url", get_settings().database_url)
+
+    # Run in a thread since alembic's command API is synchronous
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, command.upgrade, alembic_cfg, "head")
+
+
 async def init_databases() -> dict[str, bool]:
     """Initialize all database connections with error handling."""
     services_status = {"postgres": False, "neo4j": False, "redis": False}
@@ -123,6 +140,15 @@ async def init_databases() -> dict[str, bool]:
         logger.info("PostgreSQL connection established")
     except Exception as e:
         logger.error(f"Failed to connect to PostgreSQL: {e}")
+        raise
+
+    # Apply pending migrations
+    try:
+        await run_migrations()
+        logger.info("Database migrations applied")
+    except Exception as e:
+        logger.error(f"Failed to run migrations: {e}")
+        await close_postgres()
         raise
 
     # Initialize Neo4j
@@ -518,6 +544,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # =============================================================================
 
 app.include_router(agent.router, prefix="/api/agent", tags=["Agent Context"])
+app.include_router(ask.router, prefix="/api/ask", tags=["Ask (GraphRAG)"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(decisions.router, prefix="/api/decisions", tags=["Decisions"])
 app.include_router(graph.router, prefix="/api/graph", tags=["Graph"])
