@@ -266,7 +266,7 @@ class SearchResult(BaseModel):
     type: str  # decision, entity
     id: str
     label: str
-    score: float = Field(..., ge=0.0, le=1.0)
+    score: float = Field(..., ge=0.0)
     data: dict
 
 
