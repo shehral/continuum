@@ -157,16 +157,20 @@ class GraphRAGService:
         async for record in result:
             ids.append(record["id"])
 
-        # Search entities
+        # Search entities (scoped to user's decisions)
         result = await session.run(
             """
             CALL db.index.fulltext.queryNodes('entity_fulltext', $query)
             YIELD node, score
+            WHERE EXISTS {
+                MATCH (d:DecisionTrace)-[:INVOLVES]->(node)
+                WHERE d.user_id = $user_id OR d.user_id IS NULL
+            }
             RETURN node.id AS id
             ORDER BY score DESC
             LIMIT $limit
             """,
-            parameters={"query": query, "limit": limit},
+            parameters={"query": query, "user_id": user_id, "limit": limit},
         )
         async for record in result:
             if record["id"] not in ids:
@@ -209,15 +213,23 @@ class GraphRAGService:
         async for record in result:
             ids.append(record["id"])
 
-        # Search entities
+        # Search entities (scoped to user's decisions)
         result = await session.run(
             """
             CALL db.index.vector.queryNodes('entity_embedding', $top_k, $embedding)
             YIELD node, score
+            WHERE EXISTS {
+                MATCH (d:DecisionTrace)-[:INVOLVES]->(node)
+                WHERE d.user_id = $user_id OR d.user_id IS NULL
+            }
             RETURN node.id AS id
             ORDER BY score DESC
             """,
-            parameters={"embedding": embedding, "top_k": limit},
+            parameters={
+                "embedding": embedding,
+                "user_id": user_id,
+                "top_k": limit,
+            },
         )
         async for record in result:
             if record["id"] not in ids:
@@ -246,17 +258,42 @@ class GraphRAGService:
         Returns:
             Fused list of node IDs, best first.
         """
-        close_session = False
-        if session is None:
-            session = await get_neo4j_session()
-            close_session = True
+        if session is not None:
+            # Caller-provided session: use it directly (no concurrency)
+            try:
+                fulltext_ids = await self._fulltext_search(
+                    session, query, user_id, limit
+                )
+            except Exception as e:
+                logger.warning(f"Fulltext search failed: {e}")
+                fulltext_ids = []
 
+            try:
+                vector_ids = await self._vector_search(
+                    session, query, user_id, limit
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Vector search failed, falling back to fulltext-only: {e}"
+                )
+                vector_ids = []
+
+            fused = rrf_fuse(fulltext_ids, vector_ids)
+            logger.info(
+                f"Hybrid retrieve: {len(fulltext_ids)} fulltext, "
+                f"{len(vector_ids)} vector, {len(fused)} fused"
+            )
+            return fused
+
+        # No session provided: create two separate sessions for concurrent use
+        # (Neo4j AsyncSession is NOT safe for concurrent use)
+        session_ft = await get_neo4j_session()
+        session_vec = await get_neo4j_session()
         try:
-            # Run fulltext and vector searches concurrently
             try:
                 fulltext_ids, vector_ids = await asyncio.gather(
-                    self._fulltext_search(session, query, user_id, limit),
-                    self._vector_search(session, query, user_id, limit),
+                    self._fulltext_search(session_ft, query, user_id, limit),
+                    self._vector_search(session_vec, query, user_id, limit),
                 )
             except Exception as e:
                 # Fallback: fulltext only
@@ -264,7 +301,7 @@ class GraphRAGService:
                     f"Vector search failed, falling back to fulltext-only: {e}"
                 )
                 fulltext_ids = await self._fulltext_search(
-                    session, query, user_id, limit
+                    session_ft, query, user_id, limit
                 )
                 vector_ids = []
 
@@ -275,8 +312,8 @@ class GraphRAGService:
             )
             return fused
         finally:
-            if close_session:
-                await session.close()
+            await session_ft.close()
+            await session_vec.close()
 
     async def expand_subgraph(
         self,
