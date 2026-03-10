@@ -127,6 +127,36 @@ export interface DashboardStats {
   recent_decisions: Decision[]
 }
 
+// GraphRAG Ask types
+export interface AskSourceNode {
+  id: string
+  type: "decision" | "entity"
+  is_seed: boolean
+  data: {
+    trigger?: string
+    decision?: string
+    context?: string
+    rationale?: string
+    options?: string[]
+    confidence?: number
+    name?: string
+    entity_type?: string
+  }
+}
+
+export interface AskSubgraph {
+  nodes: AskSourceNode[]
+  edges: { source: string; target: string; relationship: string }[]
+  seed_ids: string[]
+}
+
+export interface AskMessage {
+  id: string
+  role: "user" | "assistant"
+  content: string
+  sources?: AskSubgraph
+}
+
 class ApiClient {
   private baseUrl: string
 

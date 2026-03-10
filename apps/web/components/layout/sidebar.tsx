@@ -17,6 +17,7 @@ import {
   Network,
   ClipboardList,
   Search,
+  MessageSquare,
   Folder,
   Sun,
   Moon,
@@ -35,6 +36,7 @@ const navigation = [
   { name: "Decisions", href: "/decisions", icon: ClipboardList },
   { name: "Projects", href: "/projects", icon: Folder },
   { name: "Search", href: "/search", icon: Search },
+  { name: "Ask", href: "/ask", icon: MessageSquare },
 ]
 
 interface SidebarProps {
