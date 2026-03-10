@@ -1,36 +1,70 @@
 # Contributing to Continuum
 
-Thank you for your interest in Continuum!
+Thank you for your interest in contributing to Continuum.
 
-## Current Status
+## Getting Started
 
-This project is currently in active development as part of an academic research initiative.
-**We are not accepting external contributions at this time.**
+1. **Fork** the repository and clone your fork
+2. Follow the [Getting Started](./README.md#getting-started) section to set up your dev environment
+3. Create a feature branch: `git checkout -b feat/your-feature`
 
-## For HCAI Lab Members
+## Development Workflow
 
-If you are a member of the HCAI Lab and would like to contribute:
+### Branch naming
 
-1. Contact the project maintainer for access permissions
-2. Follow the internal development guidelines
-3. Submit changes through the lab's standard review process
+- `feat/` -- New features
+- `fix/` -- Bug fixes
+- `refactor/` -- Code refactoring
+- `docs/` -- Documentation changes
 
-## Future Plans
+### Before submitting
 
-We anticipate opening this project for broader collaboration after:
+Run the quality checks:
 
-- Initial research publications are complete
-- Core features are stabilized
-- Documentation is finalized for external developers
+```bash
+# Frontend
+cd apps/web && pnpm typecheck && pnpm lint
+
+# Backend
+cd apps/api && .venv/bin/ruff check . && .venv/bin/pytest tests/ -v
+```
+
+### Pull Requests
+
+- Keep PRs focused on a single change
+- Include tests for new functionality
+- Update documentation if behavior changes
+- Write a clear description of what and why
+
+## Code Conventions
+
+### Frontend (Next.js / React)
+
+- Use `cn()` from `@/lib/utils` for className composition
+- Use semantic color tokens (`bg-primary`, `text-foreground`) -- never hardcode colors
+- Icons: `lucide-react` exclusively
+- Components: `React.forwardRef`, CVA for variants
+- See `apps/web/CLAUDE.md` for the full design system
+
+### Backend (FastAPI / Python)
+
+- All database operations use `async`/`await`
+- Pydantic models for request/response validation
+- Neo4j queries: always pass parameters via `parameters={}` dict (never `**kwargs`)
+- Run `ruff check` before committing
+
+## Architecture Notes
+
+- **PostgreSQL** -- Relational data (users, sessions, decision metadata)
+- **Neo4j** -- Knowledge graph (decisions, entities, relationships)
+- **Redis** -- Caching, rate limiting, session storage
+- **NVIDIA NIM** -- LLM inference and embeddings (with Bedrock as fallback)
+
+For detailed architecture info, see the [README](./README.md#architecture).
 
 ## Questions?
 
-For questions about the project or potential research collaboration, please contact:
+For questions about the project or potential research collaboration:
 
-**Ali Shehral**
-Email: shehral.m@northeastern.edu
+**Ali Shehral** -- shehral.m@northeastern.edu
 HCAI Lab, Northeastern University
-
----
-
-*This file will be updated when the project is ready for external contributions.*
