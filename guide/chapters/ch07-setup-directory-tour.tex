@@ -1,4 +1,266 @@
 \chapter{Setup \& Directory Tour}
 \label{ch:setup-directory-tour}
 
-\textit{Content to be written.}
+\textit{This chapter walks you through installing \sysname{}'s dependencies,
+configuring the environment, and starting the infrastructure for the first time.
+By the end you will have a running system and a mental map of where everything
+lives in the codebase.}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Prerequisites}
+\label{sec:prerequisites}
+
+Before cloning the repository, ensure the following tools are installed on your
+machine:
+
+\begin{itemize}
+    \item \textbf{Node.js 24 LTS} --- the frontend runtime.  Install via
+          \ic{nvm install 24} or from \url{https://nodejs.org}.
+    \item \textbf{Python 3.12+} --- the backend runtime.  Verify with
+          \ic{python3 --version}.
+    \item \textbf{Docker \& Docker Compose} --- runs PostgreSQL, Neo4j, and
+          Redis in containers.  Docker Desktop includes Compose on macOS and
+          Windows.
+    \item \textbf{pnpm 9+} --- the monorepo package manager.  Install with
+          \ic{npm install -g pnpm} or \ic{corepack enable}.
+    \item \textbf{NVIDIA NIM API key} --- obtain a free key from
+          \url{https://build.nvidia.com}.  You need \emph{two} keys: one for the
+          LLM (\confkey{NVIDIA\_API\_KEY}) and one for the embedding model
+          (\confkey{NVIDIA\_EMBEDDING\_API\_KEY}).  Alternatively, configure
+          AWS credentials for Amazon Bedrock.
+\end{itemize}
+
+\begin{keyinsight}
+\sysname{} uses two separate NVIDIA API keys because the LLM and embedding
+endpoints are billed independently.  You can generate both from the same
+\texttt{build.nvidia.com} account.
+\end{keyinsight}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Environment Setup}
+\label{sec:environment-setup}
+
+Follow these six steps in order.  Each step is idempotent---running it twice
+will not break anything.
+
+\medskip
+\noindent\textbf{Step 1.  Clone the repository.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+git clone https://github.com/shehral/continuum.git && cd continuum
+\end{lstlisting}
+
+\noindent\textbf{Step 2.  Create the environment file.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+cp .env.example .env
+\end{lstlisting}
+
+Open \codefile{.env} in your editor and set the following variables.  The
+template ships with placeholder values that \emph{must} be replaced.
+
+\begin{table}[ht]
+\centering
+\caption{Key environment variables to configure.}
+\label{tab:env-vars}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Variable} & \textbf{What to set} \\
+\midrule
+\confkey{NVIDIA\_API\_KEY}           & Your NVIDIA NIM LLM key (starts with \ic{nvapi-}). \\
+\confkey{NVIDIA\_EMBEDDING\_API\_KEY} & Your NVIDIA NIM embedding key. \\
+\confkey{POSTGRES\_PASSWORD}         & A strong random password.  Generate one with
+                                       \ic{python3 -c "import secrets; print(secrets.token\_urlsafe(24))"}. \\
+\confkey{NEO4J\_PASSWORD}            & Another random password for the graph database. \\
+\confkey{REDIS\_PASSWORD}            & Another random password for the cache. \\
+\confkey{DATABASE\_URL}              & Update the password segment to match
+                                       \confkey{POSTGRES\_PASSWORD}. \\
+\confkey{REDIS\_URL}                 & Update the password segment to match
+                                       \confkey{REDIS\_PASSWORD}. \\
+\confkey{SECRET\_KEY}                & A random 32-byte secret.  Generate with
+                                       \ic{python3 -c "import secrets; print(secrets.token\_urlsafe(32))"}. \\
+\confkey{NEXTAUTH\_SECRET}           & \textbf{Must be identical to} \confkey{SECRET\_KEY}. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{warning}
+\confkey{SECRET\_KEY} and \confkey{NEXTAUTH\_SECRET} must be the \emph{same}
+string.  The backend signs JWTs with \confkey{SECRET\_KEY}; the frontend
+verifies them with \confkey{NEXTAUTH\_SECRET}.  A mismatch causes silent
+authentication failures---you will be able to register but every subsequent
+request falls back to ``anonymous.''
+\end{warning}
+
+\noindent\textbf{Step 3.  Start infrastructure.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+docker-compose up -d
+\end{lstlisting}
+
+This launches three containers, all bound to \ic{127.0.0.1} (localhost only):
+
+\begin{itemize}
+    \item \textbf{PostgreSQL 18} on port \ic{5432} --- relational storage for
+          users, projects, and decision metadata.
+    \item \textbf{Neo4j 2025.01} on ports \ic{7474} (HTTP browser) and
+          \ic{7687} (Bolt protocol) --- the knowledge graph.
+    \item \textbf{Redis 7.4} on port \ic{6379} --- caching, rate limiting, and
+          session storage.
+\end{itemize}
+
+\noindent\textbf{Step 4.  Install frontend dependencies.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+pnpm install
+\end{lstlisting}
+
+\noindent\textbf{Step 5.  Set up the backend.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+cd apps/api && python3 -m venv .venv \
+  && .venv/bin/pip install -e ".[dev]" && cd ../..
+\end{lstlisting}
+
+This creates an isolated Python virtual environment and installs all backend
+dependencies including development tools (pytest, ruff).
+
+\noindent\textbf{Step 6.  Run database migrations.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+pnpm db:migrate
+\end{lstlisting}
+
+Under the hood this runs \ic{alembic upgrade head} inside the virtual
+environment, creating all PostgreSQL tables and indices.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Directory Tour}
+\label{sec:directory-tour}
+
+The project follows a monorepo structure managed by \ic{pnpm-workspace.yaml}.
+Below is the top-level layout with annotations.
+
+\begin{figure}[ht]
+\centering
+\begin{forest}
+  for tree={
+    font=\small\ttfamily,
+    grow'=0,
+    child anchor=west,
+    parent anchor=south,
+    anchor=west,
+    calign=first,
+    edge path={
+      \noexpand\path [draw, -{Stealth[length=3pt]}]
+        (!u.south west) +(7.5pt,0) |- (.child anchor)\forestoption{edge label};
+    },
+    before typesetting nodes={
+      if n=1 {insert before={[,phantom]}} {}
+    },
+    fit=band,
+    before computing xy={l=15pt},
+  }
+[continuum/
+  [apps/
+    [web/ \textnormal{\scriptsize\color{ContinuumGray} --- Next.js 16 frontend}]
+    [api/ \textnormal{\scriptsize\color{ContinuumGray} --- FastAPI backend}
+      [routers/ \textnormal{\scriptsize\color{ContinuumGray} --- 13 API endpoint modules}]
+      [services/ \textnormal{\scriptsize\color{ContinuumGray} --- 14 business logic modules}]
+      [models/ \textnormal{\scriptsize\color{ContinuumGray} --- SQLAlchemy + Pydantic schemas}]
+      [evaluation/ \textnormal{\scriptsize\color{ContinuumGray} --- Benchmark framework}]
+      [middleware/ \textnormal{\scriptsize\color{ContinuumGray} --- Security, rate limiting, metrics}]
+      [db/ \textnormal{\scriptsize\color{ContinuumGray} --- Database connections (PG, Neo4j, Redis)}]
+      [tests/ \textnormal{\scriptsize\color{ContinuumGray} --- Test suite}]
+    ]
+    [mcp/ \textnormal{\scriptsize\color{ContinuumGray} --- MCP server tools}]
+  ]
+  [docker-compose.yml \textnormal{\scriptsize\color{ContinuumGray} --- PG 18, Neo4j 2025.01, Redis 7.4}]
+  [infra/ \textnormal{\scriptsize\color{ContinuumGray} --- Grafana \& Prometheus dashboards}]
+  [pnpm-workspace.yaml \textnormal{\scriptsize\color{ContinuumGray} --- Monorepo workspace config}]
+]
+\end{forest}
+\caption{Top-level project structure.  The \codefile{apps/api/} directory
+contains the bulk of the backend logic.}
+\label{fig:directory-tree}
+\end{figure}
+
+The split is deliberate: the \codefile{apps/web/} directory is a self-contained
+Next.js application that communicates with the backend exclusively through
+HTTP and WebSocket endpoints.  The \codefile{apps/api/} directory is a
+standalone FastAPI application with its own virtual environment, configuration,
+and test suite.  The \codefile{apps/mcp/} directory provides a Model Context
+Protocol server that allows AI agents to query and write to the knowledge graph.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Key Files to Bookmark}
+\label{sec:key-files}
+
+As you work through this guide, you will return to certain files repeatedly.
+Table~\ref{tab:key-files} lists the most important ones and when to reach for
+them.
+
+\begin{table}[ht]
+\centering
+\caption{Files you will reference frequently.}
+\label{tab:key-files}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{File} & \textbf{Purpose} & \textbf{Read this when\ldots} \\
+\midrule
+\codefile{config.py}          & All settings           & \ldots you need to change any configuration. \\
+\codefile{entity\_resolver.py} & Core resolution algorithm & \ldots you are working on entity resolution. \\
+\codefile{graph\_rag.py}       & Retrieval pipeline     & \ldots you are working on search or the Ask feature. \\
+\codefile{ontology.py}        & Canonical mappings     & \ldots you are adding or modifying entity mappings. \\
+\codefile{extractor.py}       & Decision extraction    & \ldots you are modifying extraction prompts. \\
+\codefile{llm.py}             & LLM client             & \ldots you are debugging LLM calls or switching providers. \\
+\codefile{embeddings.py}      & Embedding client       & \ldots you are working on vector search. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+All paths in Table~\ref{tab:key-files} are relative to \codefile{apps/api/services/},
+except \codefile{config.py} (which lives at \codefile{apps/api/config.py}) and
+\codefile{ontology.py} (which lives at \codefile{apps/api/models/ontology.py}).
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Common First-Run Problems}
+\label{sec:first-run-problems}
+
+If things go wrong during setup, check these common causes first.
+
+\begin{warning}
+\textbf{Port conflicts.}  If another service is already listening on port
+\ic{5432}, \ic{7474}, or \ic{6379}, Docker will fail to bind.  Stop the
+conflicting service or edit \codefile{docker-compose.yml} to map to a different
+host port.  On macOS, \ic{lsof -i :5432} will show what is using the port.
+\end{warning}
+
+\begin{warning}
+\textbf{Alembic \texttt{DuplicateTableError}.}  This happens when the database
+already has tables but Alembic's version tracking table is missing (for example,
+after restoring a database dump).  The fix is to stamp the current state without
+re-running migrations:
+
+\begin{lstlisting}[style=bash, numbers=none]
+cd apps/api && .venv/bin/alembic stamp head
+\end{lstlisting}
+\end{warning}
+
+\begin{warning}
+\textbf{Silent authentication failure.}  You can register and log in, but every
+API request returns data as if you were anonymous.  This almost always means
+\confkey{NEXTAUTH\_SECRET} does not match \confkey{SECRET\_KEY}.  After
+correcting the mismatch, restart both the frontend and backend.
+\end{warning}
+
+\begin{tryit}
+Run \ic{docker-compose up -d} and verify that Neo4j is accessible at
+\url{http://localhost:7474}.  The default credentials are
+\ic{neo4j} / the password you set in \confkey{NEO4J\_PASSWORD}.  You should see
+the Neo4j Browser interface with an empty database ready for use.
+\end{tryit}

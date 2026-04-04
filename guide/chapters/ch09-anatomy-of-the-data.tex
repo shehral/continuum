@@ -1,4 +1,299 @@
 \chapter{Anatomy of the Data}
 \label{ch:anatomy-of-the-data}
 
-\textit{Content to be written.}
+\textit{A single decision in \sysname{} touches three databases and a cache.
+This chapter follows a concrete example---``Use PostgreSQL as the primary
+database''---from raw conversation through extraction, storage, embedding, and
+caching.  Understanding where data lives is the key to debugging anything in
+the system.}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The Raw Conversation}
+\label{sec:raw-conversation}
+
+Everything starts with a conversation between a developer and the AI interview
+agent.  Below is a condensed version of what the capture session from
+Chapter~\ref{ch:your-first-session} might produce:
+
+\begin{lstlisting}[style=bash, numbers=none, caption={A capture session about database selection (abridged).}]
+Agent:  What decision would you like to capture today?
+
+User:   We need to select a primary database for our new
+        transaction processing service.
+
+Agent:  What prompted this decision?
+
+User:   The team is starting a new fintech microservice that
+        handles payment processing.  We need strong consistency
+        guarantees.
+
+Agent:  What alternatives did you consider?
+
+User:   PostgreSQL, MongoDB, and CockroachDB.
+
+Agent:  What did you decide, and why?
+
+User:   We chose PostgreSQL.  It has the best ecosystem support,
+        our team already knows it, and ACID compliance is critical
+        for financial transactions.  MongoDB's eventual consistency
+        model was a dealbreaker.
+\end{lstlisting}
+
+This conversation is processed in real time by the extraction pipeline.  By the
+time the user confirms the summary in stage seven, the system has already
+identified the decision structure and the entities involved.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The Extracted Trace}
+\label{sec:extracted-trace}
+
+The extraction service (\codefile{apps/api/services/extractor.py}) sends the
+conversation to the LLM with a structured prompt that asks for five fields.
+The result is a \emph{decision trace}:
+
+\begin{table}[ht]
+\centering
+\caption{The extracted decision trace for our example.}
+\label{tab:extracted-trace}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Field} & \textbf{Value} \\
+\midrule
+Trigger    & Need to select a primary database for a new transaction processing service. \\
+Context    & Fintech microservice handling payment processing; team requires strong
+             consistency and ACID compliance. \\
+Options    & PostgreSQL, MongoDB, CockroachDB. \\
+Decision   & Use PostgreSQL as the primary database. \\
+Rationale  & Best ecosystem support, existing team expertise, ACID compliance critical
+             for financial transactions; MongoDB's eventual consistency was a
+             dealbreaker. \\
+Confidence & 0.92 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The confidence score (0.92) indicates that the LLM found clear, well-articulated
+reasoning in the conversation.  Scores below 0.7 typically mean the rationale
+was vague or the decision was not explicitly stated.  The extraction also
+identifies three entity mentions: \emph{PostgreSQL}, \emph{MongoDB}, and
+\emph{CockroachDB}.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{PostgreSQL Storage}
+\label{sec:postgres-storage}
+
+The decision trace is persisted as a row in the \ic{decision\_traces} table.
+PostgreSQL stores the structured metadata and serves as the system of record for
+relational queries (filtering by user, project, date range, status).
+
+\begin{table}[ht]
+\centering
+\caption{The relational row in PostgreSQL (selected columns).}
+\label{tab:postgres-row}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Column} & \textbf{Value} \\
+\midrule
+\ic{id}           & \ic{a3f7c2e1-...} (UUID, primary key) \\
+\ic{user\_id}     & \ic{b8d4a1f0-...} (foreign key to \ic{users}) \\
+\ic{project\_id}  & \ic{c5e9b3d2-...} (foreign key to \ic{projects}) \\
+\ic{source}       & \ic{"interview"} \\
+\ic{status}       & \ic{"confirmed"} \\
+\ic{trigger}      & \ic{"Need to select a primary database..."} \\
+\ic{decision}     & \ic{"Use PostgreSQL as the primary database"} \\
+\ic{confidence}   & \ic{0.92} \\
+\ic{created\_at}  & \ic{2026-04-04T14:23:17Z} \\
+\ic{updated\_at}  & \ic{2026-04-04T14:23:17Z} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The \ic{source} column tracks how the decision entered the system:
+\ic{"interview"} for the AI-guided capture, \ic{"import"} for bulk JSON uploads,
+or \ic{"auto"} for automatic extraction from conversation logs.
+The full text fields (context, options, rationale) are stored in additional
+columns not shown above.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Neo4j Storage}
+\label{sec:neo4j-storage}
+
+Simultaneously, the decision and its entities are written to the Neo4j knowledge
+graph.  You can query the decision directly with Cypher:
+
+\begin{lstlisting}[style=cypher, numbers=none, caption={Finding the decision in Neo4j.}]
+MATCH (d:DecisionTrace)
+WHERE d.trigger STARTS WITH 'Need to select a primary database'
+RETURN d
+\end{lstlisting}
+
+The \ic{DecisionTrace} node carries all five trace fields as properties, plus
+metadata like \ic{user\_id}, \ic{confidence}, and \ic{created\_at}.  The node
+also stores the 2048-dimensional embedding vector (discussed in
+Section~\ref{sec:embedding-storage}).
+
+The three entities are stored as \ic{Entity} nodes, connected to the decision
+via \ic{INVOLVES} edges:
+
+\begin{lstlisting}[style=cypher, numbers=none, caption={Viewing the decision and its entity relationships.}]
+MATCH (d:DecisionTrace)-[r:INVOLVES]->(e:Entity)
+WHERE d.trigger STARTS WITH 'Need to select a primary database'
+RETURN d.decision, type(r), e.name, e.type
+\end{lstlisting}
+
+This returns three rows:
+
+\begin{table}[ht]
+\centering
+\caption{The \ic{INVOLVES} edges for our example decision.}
+\label{tab:involves-edges}
+\begin{tabular}{l l l}
+\toprule
+\textbf{Decision} & \textbf{Relationship} & \textbf{Entity} \\
+\midrule
+Use PostgreSQL\ldots & INVOLVES & PostgreSQL (Database) \\
+Use PostgreSQL\ldots & INVOLVES & MongoDB (Database) \\
+Use PostgreSQL\ldots & INVOLVES & CockroachDB (Database) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+If another decision also involves PostgreSQL, both decisions connect to the
+\emph{same} \ic{Entity} node---this is the entity resolution at work (covered in
+detail in Chapter~\ref{ch:entity-resolution-pipeline}).  The shared node becomes
+a hub that lets you traverse from one decision to related decisions through their
+common entities.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Embedding Storage}
+\label{sec:embedding-storage}
+
+Every decision trace is embedded into a 2048-dimensional vector using NVIDIA's
+NV-EmbedQA model (\ic{nvidia/llama-3.2-nv-embedqa-1b-v2}).  The embedding is a
+weighted combination of the trace fields:
+
+\begin{table}[ht]
+\centering
+\caption{Embedding field weights (configured in \codefile{config.py}).}
+\label{tab:embedding-weights}
+\begin{tabular}{l c}
+\toprule
+\textbf{Field} & \textbf{Weight} \\
+\midrule
+Title     & 1.5$\times$ \\
+Decision  & 1.2$\times$ \\
+Rationale & 1.0$\times$ (base) \\
+Context   & 0.8$\times$ \\
+Trigger   & 0.8$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The resulting vector is stored as a property on the \ic{DecisionTrace} node in
+Neo4j and indexed for approximate nearest-neighbor search.  When you use the
+hybrid search or Ask features, the system embeds your query with the same model
+and finds the closest decision vectors by cosine similarity.
+
+Embeddings are also cached in Redis to avoid redundant API calls.  The cache key
+follows the pattern \ic{emb:nvembed:passage:\{md5\_hash\}} with a 30-day TTL.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Redis Cache}
+\label{sec:redis-cache}
+
+Redis serves as a multi-purpose cache layer.  For our example decision, three
+types of cache entries are relevant:
+
+\begin{table}[ht]
+\centering
+\caption{Redis cache keys related to a single decision.}
+\label{tab:redis-keys}
+\begin{tabularx}{\textwidth}{l c X}
+\toprule
+\textbf{Key Pattern} & \textbf{TTL} & \textbf{Purpose} \\
+\midrule
+\ic{entity:\{user\_id\}:exact:postgresql} & 5 min & Entity resolution cache.
+    Stores the resolved entity node for ``postgresql'' so subsequent mentions
+    skip the 7-stage resolution pipeline. \\
+\ic{llm:v1:extract:\{md5\_hash\}} & 24 h & LLM response cache.
+    Stores the extraction result so re-processing the same conversation text
+    returns instantly.  Invalidated by bumping
+    \confkey{LLM\_EXTRACTION\_PROMPT\_VERSION}. \\
+\ic{emb:nvembed:passage:\{md5\_hash\}} & 30 d & Embedding cache.
+    Stores the 2048-dimensional vector to avoid redundant NVIDIA API calls. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The entity cache is per-user to respect data isolation---user A's resolution of
+``postgres'' should not leak into user B's namespace.  The LLM and embedding
+caches are global because the same input always produces the same output
+regardless of user.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section*{The Full Picture}
+
+Figure~\ref{fig:data-flow} shows how a single decision flows through all four
+storage systems.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=2cm and 2.5cm,
+    every node/.style={font=\small},
+    storage/.style={
+        rectangle, rounded corners=6pt, draw=#1, fill=#1!8,
+        minimum width=3.2cm, minimum height=1.4cm, align=center,
+        font=\small\bfseries, line width=0.8pt
+    },
+    decision/.style={
+        rectangle, rounded corners=8pt, draw=ContinuumViolet,
+        fill=ContinuumViolet!12, minimum width=3.8cm, minimum height=1.6cm,
+        align=center, font=\bfseries, line width=1pt
+    },
+    arrow/.style={
+        -{Stealth[length=6pt]}, line width=0.7pt, ContinuumGray
+    },
+    label/.style={
+        font=\scriptsize\itshape, ContinuumGray, align=center
+    },
+]
+    % Central decision node
+    \node[decision] (dec) {Decision Trace\\{\scriptsize ``Use PostgreSQL\ldots''}};
+
+    % Storage nodes
+    \node[storage=ContinuumCyan, above left=1.8cm and 2.5cm of dec] (pg)
+        {PostgreSQL\\{\scriptsize\normalfont Relational row}};
+    \node[storage=ContinuumEmerald, above right=1.8cm and 2.5cm of dec] (neo)
+        {Neo4j\\{\scriptsize\normalfont Graph node + edges}};
+    \node[storage=ContinuumOrange, below left=1.8cm and 2.5cm of dec] (redis)
+        {Redis\\{\scriptsize\normalfont Cache entries}};
+    \node[storage=ContinuumRose, below right=1.8cm and 2.5cm of dec] (vec)
+        {Neo4j Vector Index\\{\scriptsize\normalfont 2048-d embedding}};
+
+    % Arrows with labels
+    \draw[arrow] (dec) -- node[label, above, sloped] {metadata, status} (pg);
+    \draw[arrow] (dec) -- node[label, above, sloped] {nodes, INVOLVES edges} (neo);
+    \draw[arrow] (dec) -- node[label, below, sloped] {entity, LLM, emb cache} (redis);
+    \draw[arrow] (dec) -- node[label, below, sloped] {weighted embedding} (vec);
+\end{tikzpicture}
+\caption{A single decision trace is stored in PostgreSQL (relational metadata),
+Neo4j (graph structure and vector index), and Redis (cached resolutions and
+embeddings).}
+\label{fig:data-flow}
+\end{figure}
+
+\begin{keyinsight}
+A single decision touches three databases and a cache.  PostgreSQL is the system
+of record for structured metadata.  Neo4j is the system of record for
+relationships and semantic search.  Redis accelerates repeated lookups.
+Understanding where data lives---and which system is authoritative---is essential
+for debugging any issue in \sysname{}.
+\end{keyinsight}

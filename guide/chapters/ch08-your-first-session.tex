@@ -1,4 +1,254 @@
 \chapter{Your First Session}
 \label{ch:your-first-session}
 
-\textit{Content to be written.}
+\textit{This chapter is a narrated walkthrough of your first 30 minutes with
+\sysname{}.  You will start the development servers, register an account, create
+a project, capture a decision through the AI-guided interview, explore the
+knowledge graph, and query it with natural language.  Every step after this
+chapter explains what happened under the hood.}
+
+\begin{skipahead}
+If you have already gone through the setup in Chapter~\ref{ch:setup-directory-tour}
+and want to understand the internals first, skip to
+Chapter~\ref{ch:anatomy-of-the-data}.  This chapter is intentionally hands-on
+and light on explanation.
+\end{skipahead}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Start Infrastructure}
+\label{sec:start-infra}
+
+If you have not already done so, bring up the three database containers:
+
+\begin{lstlisting}[style=bash, numbers=none]
+docker-compose up -d
+\end{lstlisting}
+
+Verify that all three are healthy:
+
+\begin{lstlisting}[style=bash, numbers=none]
+docker-compose ps
+\end{lstlisting}
+
+You should see \ic{continuum-postgres}, \ic{continuum-neo4j}, and
+\ic{continuum-redis} all reporting a status of \ic{Up} (or \ic{healthy} if
+health checks have completed).  If any container shows \ic{Restarting}, check
+your \codefile{.env} passwords---Docker Compose requires
+\confkey{POSTGRES\_PASSWORD}, \confkey{NEO4J\_PASSWORD}, and
+\confkey{REDIS\_PASSWORD} to be set.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Start Development Servers}
+\label{sec:start-dev-servers}
+
+A single command starts both the frontend and backend in parallel:
+
+\begin{lstlisting}[style=bash, numbers=none]
+pnpm dev
+\end{lstlisting}
+
+This runs two processes concurrently:
+
+\begin{itemize}
+    \item \textbf{Frontend} (Next.js) at \url{http://localhost:3000} --- started
+          by \ic{pnpm dev:web}.
+    \item \textbf{Backend} (FastAPI + Uvicorn) at \url{http://localhost:8000}
+          --- started by \ic{pnpm dev:api}, which invokes
+          \ic{uvicorn main:app --reload --port 8000}.
+\end{itemize}
+
+Both servers support hot reload: edit a file and the change takes effect within
+seconds.  If you prefer to run them in separate terminals for cleaner log
+output, use \ic{pnpm dev:web} and \ic{pnpm dev:api} individually.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Register an Account}
+\label{sec:register-account}
+
+Navigate to \url{http://localhost:3000/register} in your browser and create an
+account.  Alternatively, register via the API directly:
+
+\begin{lstlisting}[style=bash, numbers=none]
+curl -X POST http://localhost:8000/api/users/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Demo","email":"you@demo.com","password":"demo1234"}'
+\end{lstlisting}
+
+A successful response returns a JSON object with your user ID.  You can now log
+in at \url{http://localhost:3000/login} with the same credentials.
+
+\begin{warning}
+A fresh database has no users.  If you previously ran \ic{docker-compose down
+-v} (with the \ic{-v} flag), all data including user accounts was deleted.  You
+must register again.
+\end{warning}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Create a Project}
+\label{sec:create-project}
+
+After logging in, navigate to the \textbf{Projects} page from the sidebar.
+Click \textbf{New Project} and name it ``My First Project.''  Projects are
+organizational containers---every decision you capture belongs to exactly one
+project.  You might create separate projects for different codebases, teams, or
+research topics.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Capture a Decision}
+\label{sec:capture-decision}
+
+Select your new project and click \textbf{Capture Decision}.  This opens the
+AI-guided interview, a conversational flow that walks you through seven stages:
+
+\begin{enumerate}
+    \item \textbf{Opening} --- The system greets you and asks what decision you
+          would like to capture.
+    \item \textbf{Trigger} --- ``What prompted this decision?''  You describe
+          the event or requirement that forced a choice.
+    \item \textbf{Context} --- ``What background is relevant?''  You explain
+          constraints, team size, deadlines, existing infrastructure.
+    \item \textbf{Options} --- ``What alternatives did you consider?''  You list
+          the candidates you evaluated.
+    \item \textbf{Decision} --- ``What did you decide?''  You state the choice.
+    \item \textbf{Rationale} --- ``Why did you choose this?''  You explain the
+          reasoning.
+    \item \textbf{Summary} --- The system synthesizes your answers into a
+          structured decision trace and asks you to confirm.
+\end{enumerate}
+
+The interview uses streaming responses---you will see the AI's follow-up
+questions appear token by token via server-sent events.  Behind the scenes, each
+message is processed by the extraction pipeline to identify entities (like
+``PostgreSQL'' or ``Redis'') and resolve them against the knowledge graph.
+
+\begin{tryit}
+Try capturing this decision: ``We need to select a primary database for our
+new service.  The requirements are ACID transactions and strong consistency.
+We considered PostgreSQL, MongoDB, and CockroachDB.  We chose PostgreSQL because
+it has the best ecosystem support and our team already knows it.''
+\end{tryit}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{View Your Decision}
+\label{sec:view-decision}
+
+Navigate to the \textbf{Decisions} list.  Your newly captured decision appears
+with a title derived from the interview.  Click it to see the full detail view:
+
+\begin{itemize}
+    \item \textbf{Trigger} --- the event that prompted the decision.
+    \item \textbf{Context} --- the background constraints you described.
+    \item \textbf{Options Considered} --- the alternatives, each as a separate
+          entry.
+    \item \textbf{Decision} --- what was chosen.
+    \item \textbf{Rationale} --- why it was chosen.
+    \item \textbf{Confidence} --- a score between 0 and 1 indicating how
+          clearly the rationale supported the decision (typically 0.85--0.95 for
+          well-articulated decisions).
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Explore the Graph}
+\label{sec:explore-graph}
+
+Switch to the \textbf{Graph} view.  You will see your \ic{DecisionTrace} node
+in the center, connected to \ic{Entity} nodes via \ic{INVOLVES} edges.  If you
+captured the PostgreSQL decision from the Try It box above, you should see edges
+to entities like \emph{PostgreSQL}, \emph{MongoDB}, and \emph{CockroachDB}.
+
+The graph visualization is interactive: drag nodes to rearrange them, scroll to
+zoom, and click any node to see its properties in the side panel.  As you
+capture more decisions, the graph grows---shared entities become natural hubs
+that connect related decisions across projects.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Import Decisions}
+\label{sec:import-decisions}
+
+If you have existing decisions to bulk-load, use the \textbf{Import} feature.
+Prepare a JSON file with the following format:
+
+\begin{lstlisting}[style=bash, numbers=none, caption={JSON format for bulk import.}]
+[
+  {
+    "trigger": "Need to select a caching layer",
+    "context": "High-traffic API with 10k req/s",
+    "decision": "Use Redis with TTL-based invalidation",
+    "rationale": "Sub-millisecond reads, built-in TTL"
+  },
+  {
+    "trigger": "Need an async task queue",
+    "context": "Background jobs for email and PDF generation",
+    "decision": "Use Celery with Redis broker",
+    "rationale": "Team familiarity, good monitoring tools"
+  }
+]
+\end{lstlisting}
+
+Each object in the array becomes a separate decision trace.  The fields
+\ic{trigger}, \ic{context}, \ic{decision}, and \ic{rationale} map directly to
+the decision trace structure described in Chapter~\ref{ch:the-problem}.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Search and Ask}
+\label{sec:search-and-ask}
+
+\sysname{} provides two ways to query the knowledge graph.
+
+\textbf{Hybrid Search} (\ic{Cmd+K} or the search bar) combines lexical
+full-text search with semantic vector search.  Type a query like ``database
+selection'' and the results are ranked by a fusion of keyword matches and
+embedding similarity.
+
+\textbf{Ask} is a natural-language question-answering interface powered by the
+GraphRAG pipeline.  Navigate to the \textbf{Ask} page and type a question:
+
+\begin{quote}
+``Why did we choose PostgreSQL over MongoDB?''
+\end{quote}
+
+The response streams in via server-sent events, with source cards appearing
+alongside the answer.  Each source card links back to the decision trace that
+informed the response, so you can verify the provenance of every claim.
+
+\begin{keyinsight}
+Search finds decisions; Ask \emph{answers questions} by synthesizing across
+multiple decisions.  Use Search when you know what you are looking for and Ask
+when you need the system to reason for you.
+\end{keyinsight}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Explore the Dashboard}
+\label{sec:explore-dashboard}
+
+The \textbf{Dashboard} provides a bird's-eye view of your knowledge graph:
+
+\begin{itemize}
+    \item \textbf{Stats cards} --- total decisions captured, unique entities
+          resolved, and relationships discovered.
+    \item \textbf{Source breakdown} --- a chart showing how decisions were
+          captured (interview, import, or automatic extraction from logs).
+    \item \textbf{Timeline view} --- decisions plotted chronologically, showing
+          when architectural choices were made and how the graph grew over time.
+\end{itemize}
+
+With only one or two decisions the dashboard will look sparse.  As you capture
+more decisions---or import a batch---the visualizations become more informative.
+
+\begin{keyinsight}
+The first session takes about 30 minutes.  Everything from
+Chapter~\ref{ch:anatomy-of-the-data} onward explains what happened under the
+hood during these ten steps: how the interview drives extraction, how entities
+are resolved, how the graph is built, and how search retrieves and synthesizes
+answers.
+\end{keyinsight}
