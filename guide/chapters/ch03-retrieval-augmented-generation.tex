@@ -1,4 +1,250 @@
 \chapter{Retrieval-Augmented Generation}
 \label{ch:retrieval-augmented-generation}
 
-\textit{Content to be written.}
+\textit{This chapter explains why large language models hallucinate, how
+retrieval-augmented generation (RAG) grounds their responses in evidence, why
+hybrid retrieval outperforms either lexical or semantic search alone, and how
+\sysname{} extends basic RAG into GraphRAG by retrieving subgraphs instead of
+flat documents.}
+
+\begin{skipahead}
+If you have built RAG pipelines before, you can skip to
+Part~I\@. You may still want to read Section~\ref{sec:graphrag} to understand
+how \sysname{} extends standard RAG with graph-structured retrieval and k-hop
+expansion.
+\end{skipahead}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The Hallucination Problem}
+\label{sec:hallucination}
+
+Large language models generate text by predicting the most probable next token
+given the preceding context. This makes them fluent, but it also means they can
+produce text that is \emph{plausible but wrong}. A model asked ``What database
+did we choose for the caching layer?'' might confidently answer ``Redis'' even
+if the team actually chose Memcached---or never made a caching decision at all.
+
+This failure mode is called \textbf{hallucination}: the model fabricates facts
+that are not supported by any evidence. In a system that tracks architectural
+decisions, hallucinations are particularly dangerous because they can lead
+developers to act on decisions that were never actually made.
+
+RAG addresses this by adding a retrieval step before generation. Instead of
+relying solely on the model's parametric memory (the knowledge baked into its
+weights during training), the system first searches a knowledge base for
+relevant evidence, injects that evidence into the prompt, and asks the model to
+generate an answer grounded in the retrieved content.
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Basic RAG}
+\label{sec:basic-rag}
+
+A minimal RAG pipeline has four stages:
+
+\begin{enumerate}
+    \item \textbf{Embed the query.} Convert the user's natural-language
+          question into a vector using an embedding model.
+    \item \textbf{Search the index.} Find the top-$K$ most similar documents
+          (or document chunks) by comparing the query vector against a vector
+          index.
+    \item \textbf{Build the prompt.} Inject the retrieved documents into the
+          LLM's context window alongside the original question.
+    \item \textbf{Generate a grounded answer.} The LLM produces a response
+          that cites or draws on the retrieved evidence rather than relying on
+          its parametric memory alone.
+\end{enumerate}
+
+This approach works well when the knowledge base consists of flat documents
+(articles, wiki pages, code comments). But architectural decisions are not flat
+documents---they are connected through entities, supersession chains, and
+influence relationships. Basic RAG retrieves documents in isolation, missing
+the relational context that makes decisions meaningful.
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Hybrid Retrieval}
+\label{sec:hybrid-retrieval}
+
+Before discussing graph-aware retrieval, it is worth understanding why
+\sysname{} combines two search strategies instead of relying on one.
+
+\subsection{Lexical search}
+
+Lexical (keyword or fulltext) search matches documents that contain the exact
+terms in the query. A search for ``PostgreSQL'' will find every document
+containing that string. Lexical search is fast, deterministic, and excels at
+matching specific identifiers, error codes, and proper names.
+
+Its weakness is that it cannot bridge vocabulary gaps. A query for
+``database choice'' will not match a document that says ``PostgreSQL
+selection'' unless both terms happen to co-occur.
+
+\subsection{Semantic search}
+
+Semantic (vector) search embeds both the query and documents into a shared
+vector space and retrieves by cosine similarity. A query for ``database
+choice'' will find documents about ``PostgreSQL selection'' because the
+embeddings capture conceptual proximity.
+
+Its weakness is the inverse of lexical search: it can miss exact terminology.
+A search for ``pg\_hba.conf'' might return documents about PostgreSQL
+authentication in general rather than the specific configuration file.
+
+\subsection{Reciprocal Rank Fusion}
+
+\sysname{} runs both searches in parallel and combines the results using
+\textbf{Reciprocal Rank Fusion} (RRF). For a document $d$ that appears at
+position $r_{\text{lex}}$ in the lexical results and $r_{\text{sem}}$ in the
+semantic results, its fused score is:
+
+\[
+    \text{Score}(d) \;=\;
+    \frac{1}{k + r_{\text{lex}}}
+    \;+\;
+    \frac{1}{k + r_{\text{sem}}}
+\]
+
+\noindent where $k$ is a smoothing constant (typically 60). Documents that rank
+highly in both lists receive the highest fused scores; documents that rank
+highly in only one list still appear but with lower priority.
+
+\begin{warning}
+If a document does not appear in one of the two result lists, its rank for
+that list is treated as $\infty$, making its contribution from that list
+effectively zero. RRF degrades gracefully---it never penalizes a document for
+being absent from one list.
+\end{warning}
+
+\begin{keyinsight}
+\sysname{}'s ablation study shows that removing fulltext search drops recall
+to 13.3\%. Hybrid retrieval is essential, not optional. Semantic search alone
+misses exact entity names and technical identifiers that lexical search
+catches trivially.
+\end{keyinsight}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{GraphRAG}
+\label{sec:graphrag}
+
+Standard RAG retrieves flat documents. \sysname{}'s \textbf{GraphRAG} pipeline
+retrieves \emph{subgraphs}---interconnected sets of decisions and entities that
+provide relational context no flat document can capture.
+
+\subsection{Why subgraphs matter}
+
+Consider a question: ``Why did we choose PostgreSQL over MongoDB?'' A flat
+retrieval system might find the decision that mentions PostgreSQL. But it would
+miss the entity node for MongoDB (which is connected via
+\ic{ALTERNATIVE\_TO}), the earlier decision that was superseded (connected via
+\ic{SUPERSEDES}), and the downstream decisions that depend on this choice
+(connected via \ic{INFLUENCED\_BY}).
+
+By retrieving the subgraph around the initial matches, GraphRAG assembles a
+richer context that includes:
+
+\begin{itemize}
+    \item The seed decision(s) that directly match the query.
+    \item Related entities and their types (\ic{IS\_A}, \ic{PART\_OF},
+          \ic{DEPENDS\_ON}).
+    \item Decision chains (\ic{SUPERSEDES}, \ic{CONTRADICTS},
+          \ic{INFLUENCED\_BY}).
+    \item Alternative technologies (\ic{ALTERNATIVE\_TO}).
+\end{itemize}
+
+\subsection{The pipeline}
+
+Figure~\ref{fig:graphrag-pipeline} illustrates \sysname{}'s GraphRAG pipeline
+end to end.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm and 0.6cm,
+    every node/.style={font=\small},
+    stage/.style={
+        rectangle, rounded corners=3pt, draw=ContinuumViolet!70,
+        fill=ContinuumViolet!8, minimum width=2.2cm, minimum height=0.75cm,
+        align=center, font=\small
+    },
+    data/.style={
+        rectangle, rounded corners=3pt, draw=ContinuumCyan!70,
+        fill=ContinuumCyan!8, minimum width=2.2cm, minimum height=0.75cm,
+        align=center, font=\small
+    },
+    arr/.style={-{Stealth[length=5pt]}, thick, ContinuumGray},
+]
+    \node[data]  (query)    {Query};
+    \node[stage, right=of query]  (hybrid)   {Hybrid\\Retrieval};
+    \node[data,  right=of hybrid] (seeds)    {Seed\\Nodes};
+    \node[stage, right=of seeds]  (expand)   {K-Hop\\Expansion};
+    \node[data,  right=of expand] (subgraph) {Subgraph};
+    \node[stage, right=of subgraph] (context) {Context\\Builder};
+    \node[data,  below=0.9cm of context] (llm) {LLM};
+    \node[data,  left=of llm]    (answer)   {Answer};
+
+    \draw[arr] (query)    -- (hybrid);
+    \draw[arr] (hybrid)   -- (seeds);
+    \draw[arr] (seeds)    -- (expand);
+    \draw[arr] (expand)   -- (subgraph);
+    \draw[arr] (subgraph) -- (context);
+    \draw[arr] (context)  -- (llm);
+    \draw[arr] (llm)      -- (answer);
+\end{tikzpicture}
+\caption{\sysname{}'s GraphRAG pipeline. A natural-language query is matched
+against the graph using hybrid retrieval (lexical + semantic). The resulting
+seed nodes are expanded by $k$ hops to pull in relational context. The
+subgraph is serialized into a text context and passed to the LLM for grounded
+answer generation.}
+\label{fig:graphrag-pipeline}
+\end{figure}
+
+The pipeline proceeds in five steps:
+
+\begin{enumerate}
+    \item \textbf{Hybrid retrieval.} The query is matched against the graph
+          using both fulltext (lexical) and vector (semantic) search, fused
+          with RRF as described in Section~\ref{sec:hybrid-retrieval}.
+    \item \textbf{Seed nodes.} The top-$K$ results become \emph{seed nodes}:
+          the starting points for graph expansion.
+    \item \textbf{K-hop expansion.} From each seed node, the pipeline
+          traverses outward by $k$ hops (typically $k = 1$ or $k = 2$),
+          collecting all connected nodes and relationships. This pulls in
+          entities referenced by the decision, decisions that supersede or
+          contradict it, and related technologies.
+    \item \textbf{Context building.} The retrieved subgraph is serialized
+          into a structured text representation that the LLM can process:
+          decision summaries, entity names, and relationship descriptions.
+    \item \textbf{Grounded generation.} The LLM receives the query and the
+          serialized subgraph context, then generates an answer that
+          references the retrieved evidence.
+\end{enumerate}
+
+\subsection{Seed nodes vs.\ expanded context}
+
+A common question is why not simply retrieve more seed nodes instead of
+expanding by hops. The answer is that more seed nodes give you more
+\emph{independent} matches, while hop expansion gives you \emph{connected}
+context around each match. A decision about PostgreSQL is more useful when you
+also see the entities it involves and the decisions it supersedes---information
+that would not appear as independent search results because it is not
+textually similar to the query.
+
+\begin{tryit}
+Run a GraphRAG query against your \sysname{} instance and examine the
+returned sources. Notice how the answer references not just the directly
+matched decision but also entities and related decisions pulled in by k-hop
+expansion:
+\begin{lstlisting}[style=bash]
+curl -X POST http://localhost:8000/api/ask \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Why did we choose PostgreSQL?"}'
+\end{lstlisting}
+\end{tryit}
+
+\begin{keyinsight}
+GraphRAG's advantage over flat RAG is structural: it retrieves not just
+documents that match the query but the \emph{neighborhood} of those documents
+in the graph. This relational context---which entities are involved, which
+decisions superseded others, what alternatives were considered---is precisely
+the information needed to answer architectural questions accurately.
+\end{keyinsight}

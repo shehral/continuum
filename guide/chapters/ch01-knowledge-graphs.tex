@@ -1,4 +1,285 @@
 \chapter{Knowledge Graphs}
 \label{ch:knowledge-graphs}
 
-\textit{Content to be written.}
+\textit{This chapter introduces the graph data model that underpins \sysname{}.
+You will learn why graphs are a natural fit for storing architectural decisions,
+how labeled property graphs work, how to read and write Cypher queries, and how
+\sysname{} maps its domain---decisions, entities, and the relationships between
+them---onto Neo4j.}
+
+\begin{skipahead}
+If you have worked with Neo4j or any other labeled property graph database,
+you can skip to Chapter~\ref{ch:entity-resolution}. You may still want to skim
+Section~\ref{sec:continuum-graph-model} to familiarize yourself with
+\sysname{}'s specific node labels and relationship types.
+\end{skipahead}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Relational vs.\ Graph Databases}
+\label{sec:relational-vs-graph}
+
+Most developers learn to think in tables. A relational database stores records
+in rows, groups rows into tables, and connects tables through foreign keys.
+When you need to answer a question that spans several tables, you write
+\textsc{join}s. For many workloads this is the right tool, and \sysname{} uses
+PostgreSQL for exactly those workloads---user accounts, sessions, API keys.
+
+But consider a different kind of question: \emph{``Which architectural decisions
+involved PostgreSQL?''} In a relational schema you would need at least three
+tables---\ic{decisions}, \ic{entities}, and a join table
+\ic{decision\_entities}---and two \textsc{join} operations to answer the query.
+As the number of hops grows (``which decisions \emph{superseded} decisions that
+involved PostgreSQL?''), the SQL becomes deeply nested and expensive.
+
+A graph database stores the same information differently. Entities and
+decisions become \textbf{nodes}; the fact that a decision \emph{involves} an
+entity becomes a directed \textbf{edge} between them. Traversing from a
+decision to its related entities is a single pointer hop, regardless of how
+many relationships exist in the database.
+
+Figure~\ref{fig:graph-vs-relational} illustrates the difference. The graph on
+the right answers multi-hop questions naturally: start at a node, follow edges,
+collect results.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=2.2cm and 3cm,
+    every node/.style={font=\small},
+    decision/.style={
+        rectangle, rounded corners=4pt, draw=ContinuumViolet,
+        fill=ContinuumViolet!10, minimum width=2.8cm, minimum height=1cm,
+        align=center, font=\small\bfseries
+    },
+    entity/.style={
+        ellipse, draw=ContinuumCyan, fill=ContinuumCyan!10,
+        minimum width=2.4cm, minimum height=0.9cm,
+        align=center, font=\small\bfseries
+    },
+    edge label/.style={font=\scriptsize\itshape, ContinuumGray},
+]
+    % Nodes
+    \node[decision] (d1) {DecisionTrace\\``Choose DB''};
+    \node[decision, right=of d1] (d2) {DecisionTrace\\``Add caching''};
+    \node[entity, below=1.6cm of $(d1)!0.5!(d2)$] (e1) {Entity\\PostgreSQL};
+
+    % Edges
+    \draw[-{Stealth[length=6pt]}, thick, ContinuumViolet!70]
+        (d1) -- node[edge label, left, pos=0.4] {INVOLVES} (e1);
+    \draw[-{Stealth[length=6pt]}, thick, ContinuumViolet!70]
+        (d2) -- node[edge label, right, pos=0.4] {INVOLVES} (e1);
+    \draw[-{Stealth[length=6pt]}, thick, ContinuumRose!70]
+        (d2) -- node[edge label, above] {SUPERSEDES} (d1);
+\end{tikzpicture}
+\caption{Two \ic{DecisionTrace} nodes connected to a shared \ic{Entity} node
+via \ic{INVOLVES} edges. One decision supersedes the other. In a relational
+schema, answering ``which decisions share an entity?'' requires a self-join
+through the join table.}
+\label{fig:graph-vs-relational}
+\end{figure}
+
+\begin{keyinsight}
+Graphs excel when the \emph{relationships} between records are as important as
+the records themselves. In \sysname{}, the fact that one decision supersedes
+another, or that two entities are alternatives, carries as much meaning as the
+decisions and entities individually.
+\end{keyinsight}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Labeled Property Graphs}
+\label{sec:labeled-property-graphs}
+
+Neo4j implements the \textbf{labeled property graph} model. Every element in
+the graph---node or relationship---can carry:
+
+\begin{itemize}
+    \item \textbf{Labels} (nodes only). A node can have one or more labels that
+          describe its role: \ic{DecisionTrace}, \ic{Entity}.
+    \item \textbf{A type} (relationships only). Each relationship has exactly
+          one type: \ic{INVOLVES}, \ic{SUPERSEDES}, \ic{IS\_A}, etc.
+    \item \textbf{Properties}. Key--value pairs attached to nodes or
+          relationships. A \ic{DecisionTrace} node might have properties
+          \ic{trigger}, \ic{context}, \ic{decision}, and \ic{confidence}.
+    \item \textbf{Direction}. Every relationship has a start node and an end
+          node. \ic{(d:DecisionTrace)-[:INVOLVES]->(e:Entity)} reads as
+          ``decision \emph{d} involves entity \emph{e}.''
+\end{itemize}
+
+This model is flexible: you do not need to declare a schema upfront. If a new
+property appears on a node, Neo4j stores it without an \ic{ALTER TABLE}.
+However, \sysname{} enforces its own conventions through application code so
+that the graph remains consistent (see Section~\ref{sec:continuum-graph-model}).
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Cypher Basics}
+\label{sec:cypher-basics}
+
+Cypher is Neo4j's query language. Its syntax uses ASCII art to describe graph
+patterns: parentheses for nodes, square brackets for relationships, and arrows
+for direction. This section covers the four query patterns you will use most
+often when working with \sysname{}.
+
+\subsection{Finding decisions about an entity}
+
+The most common query retrieves all decisions that involve a particular entity:
+
+\begin{lstlisting}[style=cypher]
+MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+WHERE e.name = 'PostgreSQL'
+RETURN d
+\end{lstlisting}
+
+Read the pattern left to right: ``find a \ic{DecisionTrace} node \ic{d} that
+has an \ic{INVOLVES} relationship pointing to an \ic{Entity} node \ic{e},
+where the entity's name is PostgreSQL.''
+
+\subsection{Finding decision evolution}
+
+Decisions evolve over time. When a new decision replaces an older one,
+\sysname{} creates a \ic{SUPERSEDES} edge. To find these chains:
+
+\begin{lstlisting}[style=cypher]
+MATCH (d1:DecisionTrace)-[:SUPERSEDES]->(d2:DecisionTrace)
+RETURN d1, d2
+\end{lstlisting}
+
+This returns pairs where \ic{d1} supersedes \ic{d2}. To follow longer chains,
+you can use variable-length paths: \ic{(d1)-[:SUPERSEDES*1..3]->(d2)}.
+
+\subsection{Creating an entity}
+
+New entities are created with \ic{CREATE}:
+
+\begin{lstlisting}[style=cypher]
+CREATE (e:Entity {name: 'Redis', type: 'technology'})
+\end{lstlisting}
+
+In practice, \sysname{}'s entity resolution pipeline (Chapter~\ref{ch:entity-resolution})
+handles entity creation to avoid duplicates. You rarely write raw
+\ic{CREATE} statements for entities.
+
+\subsection{User-scoped queries}
+
+Every \ic{DecisionTrace} carries a \ic{user\_id} property. To count how many
+decisions a specific user has recorded:
+
+\begin{lstlisting}[style=cypher]
+MATCH (d:DecisionTrace)
+WHERE d.user_id = $user_id
+RETURN count(d)
+\end{lstlisting}
+
+The \ic{\$user\_id} syntax denotes a \textbf{parameter}---a value supplied at
+runtime rather than hardcoded in the query string. Parameters prevent Cypher
+injection and enable query plan caching.
+
+\begin{warning}
+Every Neo4j query in \sysname{} \textbf{must} include \ic{user\_id} filtering.
+If you omit it, one user's queries can return another user's decisions. The
+backend enforces this in its query-building layer, but if you write raw Cypher
+for debugging or evaluation, always include the \ic{WHERE d.user\_id =
+\$user\_id} clause.
+\end{warning}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Continuum's Graph Model}
+\label{sec:continuum-graph-model}
+
+\sysname{} uses two node labels and fourteen relationship types. This section
+documents the full model.
+
+\subsection{DecisionTrace nodes}
+
+A \ic{DecisionTrace} captures a single architectural decision extracted from a
+developer--AI conversation. Its properties are:
+
+\begin{table}[ht]
+\centering
+\caption{Properties of a \ic{DecisionTrace} node.}
+\label{tab:decision-properties}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Property} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\ic{trigger}    & string & What prompted the decision (e.g., ``need a caching layer'') \\
+\ic{context}    & string & Background information and constraints \\
+\ic{options}    & string & Alternatives that were considered \\
+\ic{decision}   & string & The option that was chosen \\
+\ic{rationale}  & string & Why this option was selected over others \\
+\ic{confidence} & float  & Model's self-assessed confidence ($0$--$1$) \\
+\ic{user\_id}   & string & Owner of this decision (data isolation key) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Entity nodes}
+
+An \ic{Entity} represents a technology, concept, pattern, or tool referenced by
+one or more decisions:
+
+\begin{table}[ht]
+\centering
+\caption{Properties of an \ic{Entity} node.}
+\label{tab:entity-properties}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Property} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\ic{name}      & string        & Canonical name (e.g., ``PostgreSQL'') \\
+\ic{type}      & string        & Category (e.g., ``technology'', ``pattern'', ``tool'') \\
+\ic{aliases}   & string[]      & Known alternative names (e.g., ``postgres'', ``PG'') \\
+\ic{embedding} & float[]       & Vector embedding for semantic search (2048 dimensions) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Relationship types}
+
+Table~\ref{tab:relationship-types} lists all fourteen relationship types in
+\sysname{}'s graph model, grouped by the node labels they connect.
+
+\begin{table}[ht]
+\centering
+\caption{Relationship types in \sysname{}'s graph model.}
+\label{tab:relationship-types}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Type} & \textbf{Connects} & \textbf{Meaning} \\
+\midrule
+\ic{INVOLVES}       & Decision $\to$ Entity   & Decision references this entity \\
+\ic{IS\_A}          & Entity $\to$ Entity     & Taxonomic (Redis \emph{is a} datastore) \\
+\ic{PART\_OF}       & Entity $\to$ Entity     & Composition (pg\_hba.conf \emph{part of} PostgreSQL) \\
+\ic{DEPENDS\_ON}    & Entity $\to$ Entity     & Runtime dependency \\
+\ic{RELATED\_TO}    & Entity $\to$ Entity     & General association \\
+\ic{ALTERNATIVE\_TO}& Entity $\to$ Entity     & Substitutable (Redis \emph{alternative to} Memcached) \\
+\ic{ENABLES}        & Entity $\to$ Entity     & One entity makes another possible \\
+\ic{PREVENTS}       & Entity $\to$ Entity     & One entity blocks or conflicts with another \\
+\ic{REQUIRES}       & Entity $\to$ Entity     & Hard prerequisite \\
+\ic{REFINES}        & Entity $\to$ Entity     & Specialization or narrowing \\
+\ic{SIMILAR\_TO}    & Decision $\to$ Decision & Decisions address analogous concerns \\
+\ic{INFLUENCED\_BY} & Decision $\to$ Decision & One decision shaped another \\
+\ic{SUPERSEDES}     & Decision $\to$ Decision & Newer decision replaces older one \\
+\ic{CONTRADICTS}    & Decision $\to$ Decision & Decisions are in tension \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{keyinsight}
+Every Neo4j query in \sysname{} \textbf{must} include \ic{user\_id} filtering.
+Missing this is a data isolation bug---one user's decisions would leak into
+another user's results. The backend enforces this constraint in its
+query-building layer, but you must enforce it yourself when writing raw Cypher
+for debugging or evaluation scripts.
+\end{keyinsight}
+
+\begin{tryit}
+Open the Neo4j browser at \ic{http://localhost:7474} and run the following
+query to see all relationship types currently in your graph:
+\begin{lstlisting}[style=cypher]
+CALL db.relationshipTypes() YIELD relationshipType
+RETURN relationshipType
+\end{lstlisting}
+Compare the output with Table~\ref{tab:relationship-types}. If you have run
+\sysname{}'s extraction pipeline, you should see a subset of these types
+depending on what decisions were captured.
+\end{tryit}

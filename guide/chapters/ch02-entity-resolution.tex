@@ -1,4 +1,235 @@
 \chapter{Entity Resolution}
 \label{ch:entity-resolution}
 
-\textit{Content to be written.}
+\textit{This chapter explains why the same real-world concept can appear under
+many different names, why resolving those names to a single canonical entity is
+essential for a useful knowledge graph, and how \sysname{} approaches the
+problem with a multi-stage cascading pipeline. You will also learn how to
+measure resolution quality using B-cubed metrics.}
+
+\begin{skipahead}
+If you have built deduplication or record linkage pipelines before, you can
+skip to Chapter~\ref{ch:retrieval-augmented-generation}. You may still want to
+read Section~\ref{sec:bcubed-metrics} for the specific evaluation methodology
+\sysname{} uses.
+\end{skipahead}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The Problem}
+\label{sec:er-problem}
+
+Developers do not use consistent terminology. In a single coding session, the
+same database might be called ``postgres,'' ``PostgreSQL,'' ``PG,'' or
+``Postgres~16.'' If \sysname{}'s extraction pipeline creates a new
+\ic{Entity} node for each surface form, the graph ends up with four
+disconnected nodes that all represent the same technology. Queries that should
+return a unified view of PostgreSQL-related decisions instead return partial,
+fragmented results.
+
+Entity resolution is the process of determining when two or more mentions refer
+to the same real-world entity and merging them into a single canonical node.
+Without it, the knowledge graph is fractured; with it, the graph becomes a
+reliable map of a developer's architectural landscape.
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Why It's Hard}
+\label{sec:why-hard}
+
+Entity resolution in developer tooling is harder than it might appear at first
+glance. Several factors compound the difficulty:
+
+\begin{itemize}
+    \item \textbf{No enforced schema.} Unlike a product catalog where every
+          item has a SKU, developer conversations have no controlled vocabulary.
+          New technologies appear constantly.
+    \item \textbf{Inconsistent naming.} The same entity is referred to by full
+          names, abbreviations, version-qualified names, and slang:
+          ``kubernetes,'' ``K8s,'' ``k8s,'' ``Kube.''
+    \item \textbf{Abbreviations and acronyms.} ``PG'' could mean PostgreSQL,
+          Procter \& Gamble, or a movie rating. ``RDS'' could be Amazon RDS or
+          Remote Desktop Services.
+    \item \textbf{Context dependence.} ``Spring'' is a Java framework in a
+          backend discussion but a season in a scheduling discussion. ``Go''
+          is a programming language or a verb.
+    \item \textbf{Compound terms.} ``React Native'' is not ``React'' plus
+          ``Native.'' ``Next.js App Router'' is a specific feature, not a
+          generic router.
+\end{itemize}
+
+\begin{warning}
+Naive approaches that rely solely on string similarity will merge entities that
+should remain separate. ``React'' and ``React Native'' have high string overlap
+but are fundamentally different technologies. \sysname{}'s pipeline uses
+semantic context, not just string distance, to handle these cases.
+\end{warning}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Approaches to Entity Resolution}
+\label{sec:er-approaches}
+
+There is no single best algorithm for entity resolution---every approach trades
+off speed, accuracy, and cost differently. Table~\ref{tab:er-approaches}
+summarizes the four main strategies.
+
+\begin{table}[ht]
+\centering
+\caption{Comparison of entity resolution approaches.}
+\label{tab:er-approaches}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Approach} & \textbf{Speed} & \textbf{Accuracy} & \textbf{Tradeoff} \\
+\midrule
+Exact matching      & Fast   & Brittle  & Only matches identical strings;
+    misses abbreviations, typos, and case variants \\
+Fuzzy matching      & Fast   & Moderate & Handles typos and minor variations;
+    produces false positives on short strings (``Go'' $\approx$ ``Go2'') \\
+Embedding similarity & Slow  & High     & Captures semantic meaning;
+    requires an embedding model and vector index \\
+Hybrid cascading    & Fast (amortized) & High & Tries cheap stages first, falls
+    through to expensive stages only when needed (\sysname{}'s approach) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\sysname{} uses the hybrid cascading strategy. Its seven-stage pipeline is
+ordered from cheapest to most expensive:
+
+\begin{enumerate}
+    \item \textbf{Cache lookup} --- Check Redis for a recently resolved
+          mention (5-minute TTL).
+    \item \textbf{Exact match} --- Case-insensitive string comparison against
+          existing entity names.
+    \item \textbf{Canonical lookup} --- Check a curated mapping of 534 known
+          aliases (e.g., \ic{postgres} $\to$ \ic{PostgreSQL}).
+    \item \textbf{Alias search} --- Search the \ic{aliases} array on existing
+          \ic{Entity} nodes.
+    \item \textbf{Fuzzy match} --- Fulltext-accelerated fuzzy matching using
+          RapidFuzz with an 85\% similarity threshold.
+    \item \textbf{Embedding similarity} --- Cosine similarity against entity
+          embeddings (threshold $> 0.9$).
+    \item \textbf{Create new} --- If no match is found, create a new
+          \ic{Entity} node.
+\end{enumerate}
+
+The pipeline short-circuits: once a stage finds a match, later stages are
+skipped entirely.
+
+\begin{keyinsight}
+\sysname{}'s pipeline resolves approximately 83\% of mentions in the first
+three stages (cache, exact, canonical) without calling the LLM or embedding
+service. This means the vast majority of resolutions are sub-millisecond
+lookups, and the expensive AI-powered stages are reserved for genuinely
+ambiguous cases.
+\end{keyinsight}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{B-Cubed Metrics}
+\label{sec:bcubed-metrics}
+
+How do you measure whether an entity resolution system is working well?
+Traditional clustering metrics like MUC and CEAF have known blind spots---MUC
+ignores singleton entities (mentions that map to a unique entity with no
+duplicates), and CEAF can produce misleading scores when cluster sizes are
+uneven. \sysname{} uses \textbf{B-cubed} metrics, which evaluate precision and
+recall at the level of individual mentions and naturally handle singletons.
+
+\subsection{Definitions}
+
+Given a set of mentions, let each mention $m$ belong to a \emph{ground-truth
+cluster} (the correct grouping) and a \emph{system cluster} (the grouping
+produced by the resolver).
+
+\begin{itemize}
+    \item \textbf{B-cubed precision} for a mention $m$: of all mentions in
+          $m$'s system cluster, what fraction shares $m$'s ground-truth cluster?
+    \item \textbf{B-cubed recall} for a mention $m$: of all mentions in $m$'s
+          ground-truth cluster, what fraction shares $m$'s system cluster?
+\end{itemize}
+
+\noindent Overall precision and recall are the averages across all mentions.
+
+\subsection{Worked example}
+
+Consider five mentions and their ground-truth clusters:
+
+\begin{table}[ht]
+\centering
+\caption{Ground truth and system output for five mentions.}
+\label{tab:bcubed-example}
+\begin{tabular}{l l l}
+\toprule
+\textbf{Mention} & \textbf{Ground Truth} & \textbf{System Output} \\
+\midrule
+postgres    & Cluster A & Cluster 1 \\
+PostgreSQL  & Cluster A & Cluster 1 \\
+PG          & Cluster A & Cluster 2 (singleton) \\
+MongoDB     & Cluster B & Cluster 3 \\
+Mongo       & Cluster B & Cluster 3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent \textbf{Ground truth:} $\{$postgres, PostgreSQL, PG$\}$ and
+$\{$MongoDB, Mongo$\}$.
+
+\noindent \textbf{System output:} $\{$postgres, PostgreSQL$\}$, $\{$PG$\}$,
+and $\{$MongoDB, Mongo$\}$.
+
+The system correctly groups MongoDB and Mongo but splits PG into its own
+cluster, missing that it belongs with postgres and PostgreSQL.
+
+\paragraph{Per-mention precision.} For each mention, count how many items in
+its system cluster share the same ground-truth cluster, then divide by the
+system cluster size.
+
+\begin{itemize}
+    \item \textbf{postgres}: system cluster $= \{$postgres, PostgreSQL$\}$,
+          both in ground-truth A. Precision $= 2/2 = 1.0$.
+    \item \textbf{PostgreSQL}: same cluster, same reasoning. Precision $= 1.0$.
+    \item \textbf{PG}: system cluster $= \{$PG$\}$, singleton. Precision
+          $= 1/1 = 1.0$.
+    \item \textbf{MongoDB}: system cluster $= \{$MongoDB, Mongo$\}$, both in
+          ground-truth B. Precision $= 2/2 = 1.0$.
+    \item \textbf{Mongo}: same. Precision $= 1.0$.
+\end{itemize}
+
+\noindent \textbf{Average precision} $= (1.0 + 1.0 + 1.0 + 1.0 + 1.0)/5 = 1.0$.
+
+\paragraph{Per-mention recall.} For each mention, count how many items in its
+ground-truth cluster share the same system cluster, then divide by the
+ground-truth cluster size.
+
+\begin{itemize}
+    \item \textbf{postgres}: ground-truth A $= \{$postgres, PostgreSQL, PG$\}$.
+          In system cluster 1: postgres, PostgreSQL (2 of 3). Recall $= 2/3$.
+    \item \textbf{PostgreSQL}: same ground-truth A, same system cluster.
+          Recall $= 2/3$.
+    \item \textbf{PG}: ground-truth A has 3 members; PG's system cluster
+          contains only PG from A. Recall $= 1/3$.
+    \item \textbf{MongoDB}: ground-truth B $= \{$MongoDB, Mongo$\}$. Both in
+          system cluster 3. Recall $= 2/2 = 1.0$.
+    \item \textbf{Mongo}: same. Recall $= 1.0$.
+\end{itemize}
+
+\noindent \textbf{Average recall} $= (2/3 + 2/3 + 1/3 + 1.0 + 1.0)/5
+= (0.667 + 0.667 + 0.333 + 1.0 + 1.0)/5 = 0.733$.
+
+The system achieves perfect precision (it never incorrectly groups unrelated
+mentions together) but imperfect recall (it failed to recognize that ``PG'' is
+an alias for PostgreSQL). This pattern---high precision, lower recall on
+abbreviations---is typical of conservative resolution pipelines.
+
+\begin{keyinsight}
+B-cubed metrics evaluate at the mention level, which means every mention
+contributes equally to the score. A system that perfectly resolves 100 easy
+mentions but fragments 5 hard ones will show a measurable recall drop. This
+makes B-cubed particularly sensitive to the kinds of abbreviation and alias
+errors that matter most in practice.
+\end{keyinsight}
+
+\begin{tryit}
+Manually compute B-cubed scores for a system that produces a single cluster
+containing all five mentions: $\{$postgres, PostgreSQL, PG, MongoDB, Mongo$\}$.
+What happens to precision? What happens to recall? This over-merging scenario
+is the dual failure mode to the under-splitting shown above.
+\end{tryit}
