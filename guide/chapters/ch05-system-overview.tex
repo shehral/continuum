@@ -1,4 +1,261 @@
 \chapter{System Overview}
 \label{ch:system-overview}
 
-\textit{Content to be written.}
+\textit{\sysname{} is a full-stack system that spans three tiers, five
+subsystems, and three databases.  This chapter maps the terrain so that the
+deep dives in Part~III have a frame of reference.}
+
+\section{Architecture}
+\label{sec:architecture}
+
+At the highest level, \sysname{} follows a three-tier architecture: a
+React-based frontend, a Python API server, and a persistence layer composed of
+three specialized databases plus a caching tier.
+Figure~\ref{fig:architecture} shows the major components and the protocols that
+connect them.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    tier/.style={draw, rounded corners, minimum width=12cm, minimum height=1.6cm,
+                 fill=ContinuumViolet!8, font=\small},
+    dbbox/.style={draw, rounded corners, minimum width=3.4cm, minimum height=1.4cm,
+                  fill=ContinuumCyan!10, font=\small, align=center},
+    arr/.style={-{Stealth[length=5pt]}, thick, ContinuumGray},
+    lbl/.style={font=\scriptsize\itshape, ContinuumGray},
+]
+
+% Top tier
+\node[tier] (fe) at (0, 4)
+    {\textbf{Next.js 16} (React 19, App Router, shadcn/ui) --- Port 3000};
+
+% Middle tier
+\node[tier] (be) at (0, 2)
+    {\textbf{FastAPI} (Python 3.12+, async, Pydantic v2) --- Port 8000};
+
+% Bottom tier databases
+\node[dbbox] (pg) at (-4.3, 0)
+    {\textbf{PostgreSQL}\\ Port 5432};
+\node[dbbox] (neo) at (0, 0)
+    {\textbf{Neo4j}\\ Ports 7474 / 7687};
+\node[dbbox] (redis) at (4.3, 0)
+    {\textbf{Redis}\\ Port 6379};
+
+% Arrows
+\draw[arr] (fe.south) -- (be.north)
+    node[lbl, midway, right=3pt] {REST / SSE / WebSocket};
+\draw[arr] (be.south) -- (pg.north)
+    node[lbl, midway, left=2pt] {SQLAlchemy async};
+\draw[arr] (be.south) -- (neo.north)
+    node[lbl, midway, right=2pt] {Bolt / Cypher};
+\draw[arr] (be.south) -- (redis.north)
+    node[lbl, midway, right=2pt] {aioredis};
+
+% Tier labels
+\node[font=\scriptsize\bfseries, ContinuumViolet, anchor=east] at (-6.5, 4) {FRONTEND};
+\node[font=\scriptsize\bfseries, ContinuumViolet, anchor=east] at (-6.5, 2) {BACKEND};
+\node[font=\scriptsize\bfseries, ContinuumViolet, anchor=east] at (-6.5, 0) {DATA};
+
+\end{tikzpicture}
+\caption{Three-tier architecture of \sysname{}.}
+\label{fig:architecture}
+\end{figure}
+
+The frontend communicates with the backend over three protocols: standard REST
+for CRUD operations, Server-Sent Events (SSE) for streaming AI responses in
+the Ask interface, and WebSocket for real-time conversation capture.  The
+backend talks to three databases, each chosen for a specific strength discussed
+in Section~\ref{sec:tech-stack}.
+
+
+\section{Five Subsystems}
+\label{sec:five-subsystems}
+
+\sysname{} is organized into five subsystems, each responsible for one stage of
+the pipeline from raw conversation to searchable knowledge.
+Table~\ref{tab:subsystems} summarizes them.
+
+\begin{table}[ht]
+\centering
+\caption{The five subsystems of \sysname{}.}
+\label{tab:subsystems}
+\small
+\begin{tabularx}{\textwidth}{l X l l}
+\toprule
+\textbf{Subsystem} & \textbf{Purpose} & \textbf{Key Files} & \textbf{Technologies} \\
+\midrule
+Capture &
+    Passive log extraction, AI interviews &
+    \codefile{capture.py} &
+    WebSocket, watcher \\
+Extraction &
+    LLM decision trace extraction &
+    \codefile{extractor.py} &
+    NVIDIA NIM \\
+Resolution &
+    7-stage entity deduplication &
+    \codefile{entity\_resolver.py} &
+    RapidFuzz, Redis \\
+Retrieval &
+    Hybrid search + GraphRAG &
+    \codefile{graph\_rag.py} &
+    Neo4j, RRF \\
+Integration &
+    AI agent access via MCP &
+    \codefile{agent.py} &
+    MCP (5 tools) \\
+\bottomrule
+\end{tabularx}
+\normalsize
+\end{table}
+
+\textbf{Capture} watches for new Claude Code conversation logs on disk and
+accepts real-time input via WebSocket.  It does not interpret the content---it
+simply ensures that raw conversations reach the extraction stage.
+
+\textbf{Extraction} sends each conversation to a 49-billion-parameter language
+model (Llama 3.3 Nemotron Super via NVIDIA NIM) with a structured prompt that
+requests decision traces in JSON format.  The model identifies triggers,
+context, options, decisions, and rationale.
+
+\textbf{Resolution} takes the raw entity mentions from extraction (e.g.,
+``postgres'', ``Postgres'', ``PostgreSQL'') and resolves them to canonical
+graph nodes through a seven-stage pipeline that progresses from cheap checks
+(cache, exact match, canonical lookup) to expensive ones (fuzzy matching,
+embedding similarity).
+
+\textbf{Retrieval} provides two search modes: keyword-based hybrid search
+(combining fulltext and vector similarity with Reciprocal Rank Fusion) and
+conversational GraphRAG that expands seed results into subgraphs for
+context-rich answers.
+
+\textbf{Integration} exposes the knowledge graph to external AI agents via the
+Model Context Protocol (MCP), providing five tools that let agents search
+decisions, query entities, and explore relationships.
+
+
+\section{Data Flow}
+\label{sec:data-flow}
+
+Figure~\ref{fig:data-flow} traces a single conversation from capture to
+queryable knowledge.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners, minimum width=2.8cm, minimum height=1cm,
+                fill=ContinuumViolet!8, font=\small, align=center},
+    db/.style={draw, rounded corners, minimum width=2.2cm, minimum height=1cm,
+               fill=ContinuumCyan!10, font=\small, align=center},
+    arr/.style={-{Stealth[length=5pt]}, thick, ContinuumGray},
+    lbl/.style={font=\scriptsize\itshape, ContinuumGray, align=center},
+]
+
+% Nodes
+\node[box] (conv) at (0, 0) {Conversation\\(JSONL log)};
+\node[box] (ext) at (3.5, 0) {\codefile{extractor.py}};
+\node[box] (traces) at (7, 0) {Decision\\Traces};
+\node[box] (er) at (10.5, 0) {\codefile{entity\_resolver.py}};
+\node[db] (neo) at (10.5, -2) {\textbf{Neo4j}};
+\node[box] (rag) at (7, -2) {\codefile{graph\_rag.py}};
+\node[box] (out) at (3.5, -2) {Search / Ask\\Interface};
+
+% Arrows
+\draw[arr] (conv) -- (ext) node[lbl, midway, above] {raw text};
+\draw[arr] (ext) -- (traces) node[lbl, midway, above] {JSON};
+\draw[arr] (traces) -- (er) node[lbl, midway, above] {mentions};
+\draw[arr] (er) -- (neo) node[lbl, midway, right] {nodes +\\edges};
+\draw[arr] (neo) -- (rag) node[lbl, midway, above] {subgraphs};
+\draw[arr] (rag) -- (out) node[lbl, midway, above] {context +\\answers};
+
+\end{tikzpicture}
+\caption{Data flow from raw conversation to queryable knowledge.}
+\label{fig:data-flow}
+\end{figure}
+
+\begin{enumerate}
+    \item A \textbf{conversation} (stored as a JSONL log file) enters the
+          system via file watcher or WebSocket.
+    \item The \textbf{extractor} sends the conversation text to the LLM, which
+          returns structured decision traces as JSON.
+    \item Each trace contains raw entity \textbf{mentions} (e.g., ``postgres'',
+          ``FastAPI'', ``Redis'').
+    \item The \textbf{entity resolver} maps each mention to a canonical node
+          in Neo4j, creating new nodes only when no match is found.
+    \item The decision node and its \ic{INVOLVES} edges are written to
+          \textbf{Neo4j}.
+    \item The \textbf{GraphRAG} pipeline answers queries by finding seed nodes
+          via hybrid search, expanding them into subgraphs, and synthesizing
+          answers.
+\end{enumerate}
+
+
+\section{Multi-Tenant Architecture}
+\label{sec:multi-tenant}
+
+\sysname{} enforces strict per-user isolation.  Every decision, entity, and
+relationship in the knowledge graph is scoped by a \ic{user\_id} property.
+When a user queries the system, all Neo4j Cypher queries include a
+\ic{WHERE n.user\_id = \$user\_id} clause, ensuring that users see only their
+own decisions and entities.
+
+This scoping is enforced at the API layer---the backend extracts the
+\ic{user\_id} from the JWT token and injects it into every database query.
+There is no shared namespace, no cross-user leakage, and no way for one user
+to access another user's knowledge graph.
+
+\begin{warning}
+Multi-tenancy is enforced at the application layer, not the database layer.
+A misconfigured query that omits the \ic{user\_id} filter would expose data
+across users.  Production deployment would require additional database-level
+row security policies.
+\end{warning}
+
+
+\section{Tech Stack}
+\label{sec:tech-stack}
+
+Each technology in \sysname{} was chosen for a specific reason.
+Table~\ref{tab:tech-stack} maps the major components to their justifications.
+
+\begin{table}[ht]
+\centering
+\caption{Technology choices and their rationale.}
+\label{tab:tech-stack}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Technology} & \textbf{Role} & \textbf{Why This Choice} \\
+\midrule
+PostgreSQL 18 &
+    Relational data + auth &
+    Alembic migrations, async SQLAlchemy, mature ecosystem \\
+Neo4j 2025.01 &
+    Knowledge graph &
+    Native graph traversal, Cypher queries, built-in fulltext + vector indexes \\
+Redis 7.4 &
+    Cache + rate limiting &
+    Three cache tiers (entity, LLM, query), token-bucket rate limiting \\
+NVIDIA NIM &
+    LLM + embeddings &
+    49B-param Nemotron for extraction, NV-EmbedQA (2048-dim) for similarity \\
+Next.js 16 &
+    Frontend &
+    React 19, App Router, Server Components, shadcn/ui component library \\
+FastAPI &
+    Backend API &
+    Native async, automatic OpenAPI docs, Pydantic validation \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{keyinsight}
+A single decision touches all three databases plus Redis cache.  A new
+PostgreSQL decision is stored relationally for auth context, as a Neo4j node
+with entity edges for graph traversal, and cached in Redis for fast
+retrieval.  Understanding where data lives is essential for debugging.
+\end{keyinsight}
+
+\begin{skipahead}
+If you want to run the system before understanding every component,
+skip to Chapter~\ref{ch:setup-directory-tour} for setup instructions.
+\end{skipahead}

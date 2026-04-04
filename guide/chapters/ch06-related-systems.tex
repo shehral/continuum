@@ -1,4 +1,163 @@
 \chapter{Related Systems \& Landscape}
 \label{ch:related-systems}
 
-\textit{Content to be written.}
+\textit{No system exists in a vacuum.  This chapter positions \sysname{} among
+existing tools for code understanding, decision tracking, and knowledge
+retrieval---and is honest about where it stands today.}
+
+\section{Comparison Table}
+\label{sec:comparison-table}
+
+Table~\ref{tab:landscape} compares \sysname{} against the categories of tools
+most frequently cited as alternatives.
+
+\begin{table}[ht]
+\centering
+\caption{Landscape comparison across five capability dimensions.}
+\label{tab:landscape}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\textwidth}{X c c c c c}
+\toprule
+\textbf{System Category} &
+    \rotatebox{55}{\textbf{Auto Capture}} &
+    \rotatebox{55}{\textbf{Rationale}} &
+    \rotatebox{55}{\textbf{Graph}} &
+    \rotatebox{55}{\textbf{Agent Access}} &
+    \rotatebox{55}{\textbf{Entity Dedup}} \\
+\midrule
+Architecture Decision Records &
+    No & Yes & No & No & No \\
+CodeQL / Sourcetrail &
+    Yes & No & Yes & Partially & No \\
+Conversation Analytics &
+    Yes & Yes & No & No & No \\
+General RAG Systems &
+    Varies & No & No & Yes & No \\
+\sysname{} &
+    \textbf{Yes} & \textbf{Yes} & \textbf{Yes} & \textbf{Yes} & \textbf{Yes} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Architecture Decision Records} capture rationale by design, but
+require manual authoring and have no automated capture, graph structure, or
+agent accessibility.
+
+\textbf{Code analysis tools} like CodeQL and Sourcetrail build graph
+representations of code (call graphs, data-flow graphs), but they model code
+structure, not decision rationale.  They can tell you that module A calls module
+B, but not \emph{why} module B was chosen over module C.
+
+\textbf{Conversation analytics platforms} (e.g., Gong, Chorus for sales calls)
+demonstrate that valuable information can be extracted from conversations at
+scale.  However, they target business conversations, not developer--AI
+interactions, and they do not produce graph-structured output.
+
+\textbf{General RAG systems} (LangChain, LlamaIndex, Haystack) provide the
+retrieval-augmented generation infrastructure that \sysname{} builds upon, but
+they operate on flat document collections.  They lack the graph-aware retrieval
+that lets \sysname{} follow relationships between decisions and entities.
+
+
+\section{What Makes \sysname{} Novel}
+\label{sec:novelty}
+
+Three capabilities distinguish \sysname{} from existing approaches.
+
+\subsection{Automated Extraction from AI Conversations}
+
+\sysname{} requires zero manual effort from the developer.  Conversations are
+captured passively from log files, and a large language model extracts
+structured decision traces automatically.  This inverts the ADR model: instead
+of asking developers to document decisions after the fact, the system extracts
+documentation from the artifact that already exists---the conversation.
+
+\subsection{Cascading Entity Resolution}
+
+Raw LLM output is noisy.  The same technology appears as ``postgres'',
+``Postgres'', ``PostgreSQL'', ``pg'', and ``PGSQL'' across different
+conversations.  \sysname{} addresses this with a seven-stage cascading
+pipeline that progresses from cheap operations to expensive ones:
+
+\begin{enumerate}
+    \item \textbf{Cache lookup} --- Redis, sub-millisecond (5-minute TTL).
+    \item \textbf{Exact match} --- case-insensitive string comparison.
+    \item \textbf{Canonical lookup} --- 534 hand-curated alias mappings.
+    \item \textbf{Alias search} --- check previously stored aliases.
+    \item \textbf{Fuzzy match} --- fulltext-accelerated RapidFuzz (85\% threshold).
+    \item \textbf{Embedding similarity} --- NV-EmbedQA cosine similarity ($>$0.9).
+    \item \textbf{Create new} --- only if all six prior stages fail.
+\end{enumerate}
+
+This cascading design means that over 90\% of entity mentions are resolved in
+the first three stages (cache, exact, canonical), keeping the average
+resolution time under 5 milliseconds while still handling novel or ambiguous
+mentions through the more expensive later stages.
+
+\subsection{Graph-Aware Retrieval}
+
+Most RAG systems treat documents as independent chunks and retrieve them via
+vector similarity.  \sysname{} performs \emph{subgraph expansion}: after
+finding seed nodes that match a query, it traverses the graph to pull in
+neighboring decisions, related entities, and connecting relationships.  This
+means a query about ``PostgreSQL'' returns not just decisions that mention
+PostgreSQL, but also the alternatives that were considered, the other
+technologies those decisions involved, and any decisions that contradict or
+supersede earlier ones.
+
+\begin{keyinsight}
+The combination of automated capture, cascading resolution, and graph-aware
+retrieval is what makes \sysname{} more than a RAG system with a graph
+database.  Each component addresses a different failure mode: capture
+eliminates manual effort, resolution eliminates duplicates, and graph retrieval
+eliminates context loss.
+\end{keyinsight}
+
+
+\section{Honest Positioning}
+\label{sec:honest-positioning}
+
+It is important to state clearly what \sysname{} is---and what it is not.
+
+\sysname{} is a \textbf{research prototype}.  It was built to explore the
+thesis that AI coding conversations contain extractable decision knowledge that
+can be structured into a useful knowledge graph.  The evaluation presented in
+Part~V uses synthetic conversations and automated metrics, not a longitudinal
+user study.
+
+What has been demonstrated:
+
+\begin{itemize}
+    \item Decision traces can be extracted from AI conversations with
+          reasonable accuracy using a prompted LLM.
+    \item Entity resolution can consolidate noisy mentions into canonical graph
+          nodes across the seven-stage pipeline.
+    \item GraphRAG retrieval can surface relevant decisions and their context
+          in response to natural-language queries.
+    \item The MCP integration enables AI agents to query the knowledge graph
+          programmatically.
+\end{itemize}
+
+What has \emph{not} been demonstrated:
+
+\begin{itemize}
+    \item Whether developers actually find the extracted knowledge useful in
+          practice (no user study).
+    \item How the system performs at enterprise scale (thousands of users,
+          millions of decisions).
+    \item Whether the knowledge graph improves downstream development outcomes
+          (fewer repeated mistakes, faster onboarding).
+\end{itemize}
+
+\begin{warning}
+This is a research system.  It is \textbf{not} production-ready for enterprise
+use without additional security review, scale testing, and user validation.
+The multi-tenant isolation is enforced at the application layer only, the LLM
+extraction has a roughly 85\% success rate, and no formal security audit has
+been conducted.
+\end{warning}
+
+\noindent
+With this honest framing established, the rest of the guide focuses on the
+practical: how to set up, run, understand, and extend the system.  Part~II
+begins with installation and your first session.

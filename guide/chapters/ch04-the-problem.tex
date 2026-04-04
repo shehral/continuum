@@ -1,4 +1,217 @@
 \chapter{The Problem}
 \label{ch:the-problem}
 
-\textit{Content to be written.}
+\textit{Every day, millions of developers sit down with an AI assistant and make
+dozens of consequential decisions---choosing databases, designing APIs,
+selecting architectures.  The code that results from these conversations
+survives.  The reasoning that produced it does not.}
+
+\section{AI-Assisted Development}
+\label{sec:ai-dev}
+
+Software development in 2025 looks fundamentally different from even two years
+ago.  Over 90\% of professional developers report using AI coding assistants at
+least weekly, and tools like GitHub Copilot, Cursor, and Claude Code have
+become as ubiquitous as version control itself.  A typical coding session now
+involves dozens of conversational exchanges: the developer describes intent,
+the assistant proposes options, and together they iterate toward a solution.
+
+Each of these exchanges carries information that traditional software
+engineering artifacts were never designed to capture.  A single afternoon
+session might involve:
+
+\begin{itemize}
+    \item Evaluating three caching strategies before choosing Redis with a
+          TTL-based invalidation scheme.
+    \item Deciding to use PostgreSQL over MongoDB after discussing ACID
+          requirements.
+    \item Rejecting a microservices split in favor of a modular monolith after
+          weighing operational complexity.
+    \item Choosing FastAPI over Flask because of native async support and
+          automatic OpenAPI generation.
+\end{itemize}
+
+These are not trivial preferences---they are \emph{architectural decisions}
+with months-long consequences.  And they happen entirely inside a conversation
+window.
+
+\begin{keyinsight}
+AI-assisted development has made decision-making more explicit than ever.
+Developers literally \emph{write out} their reasoning when prompting an
+assistant.  The problem is not that rationale is missing---it is that we throw
+it away.
+\end{keyinsight}
+
+\section{The Rationale Gap}
+\label{sec:rationale-gap}
+
+When the conversation window closes, the rationale evaporates.  What remains
+is code: functions, configuration files, dependency manifests.  The code tells
+you \emph{what} was built, but not \emph{why}.
+
+Three months later, a new team member opens a pull request and asks:
+
+\begin{quote}
+``Why did we choose PostgreSQL over MongoDB for the user service?  The access
+patterns look document-oriented.''
+\end{quote}
+
+Nobody remembers.  The original developer has moved to another project.  The
+conversation where the trade-offs were weighed is buried in a chat log that
+nobody indexes, searches, or even knows exists.  The new developer makes a
+reasonable but uninformed decision to migrate---and re-introduces the very
+problem the original choice was designed to prevent.
+
+This is the \textbf{rationale gap}: the systematic loss of decision context
+that occurs when the medium of decision-making (conversation) is disconnected
+from the medium of record (code and documentation).
+
+\begin{warning}
+The rationale gap is not merely inconvenient.  It leads to repeated
+architectural mistakes, contradictory decisions across teams, and wasted
+engineering effort re-deriving conclusions that were already reached.
+\end{warning}
+
+\section{Existing Approaches}
+\label{sec:existing-approaches}
+
+The software engineering community has tried several approaches to close the
+rationale gap.  None have succeeded at scale.
+
+\begin{table}[ht]
+\centering
+\caption{Existing approaches to capturing decision rationale.}
+\label{tab:existing-approaches}
+\begin{tabularx}{\textwidth}{l c c c c X}
+\toprule
+\textbf{Approach} & \textbf{Auto?} & \textbf{Rationale?} & \textbf{Search?} & \textbf{Agent?} & \textbf{Problem} \\
+\midrule
+ADRs           & No  & Yes       & Partially & No & $<$5\% adoption; manual effort \\
+Commit msgs    & No  & Rarely    & Yes       & No & Captures \emph{what}, not \emph{why} \\
+Documentation  & No  & Sometimes & Yes       & No & Perpetually stale \\
+Slack / Chat   & No  & Yes       & Barely    & No & Ephemeral, unsearchable \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Architecture Decision Records (ADRs)} are the gold standard in theory.
+Each ADR documents a single decision with its context, options considered, and
+rationale.  In practice, fewer than 5\% of engineering organizations maintain
+ADRs consistently.  They require manual effort at precisely the moment when
+developers are least motivated to write documentation---right after making the
+decision and wanting to move on to implementation.
+
+\textbf{Commit messages} are automated in the sense that every commit requires
+one, but they overwhelmingly describe \emph{what} changed rather than
+\emph{why}.
+
+\textbf{Documentation} captures rationale when written well, but documentation
+is notoriously difficult to keep synchronized with the codebase.  The half-life
+of accurate documentation in a fast-moving project is measured in weeks.
+
+\textbf{Slack and chat logs} often contain the richest rationale, but they are
+buried in ephemeral message streams, unsearchable by future developers, and
+completely inaccessible to AI agents.
+
+\begin{keyinsight}
+Every existing approach either requires manual effort (which kills adoption) or
+captures the wrong information (what changed, not why).  The challenge is
+finding a source that is both \emph{automatic} and \emph{rationale-rich}.
+\end{keyinsight}
+
+\section{The Insight}
+\label{sec:the-insight}
+
+The insight behind \sysname{} is deceptively simple:
+
+\begin{quote}
+\emph{The AI conversation \textbf{is} the decision record.}
+\end{quote}
+
+When a developer discusses options with an AI assistant, the conversation
+naturally contains every element of a well-written ADR:
+
+\begin{enumerate}
+    \item \textbf{Trigger} --- what prompted the decision.
+    \item \textbf{Context} --- background constraints.
+    \item \textbf{Options considered} --- alternatives discussed.
+    \item \textbf{Decision} --- what was chosen.
+    \item \textbf{Rationale} --- why it was chosen.
+\end{enumerate}
+
+This information does not need to be \emph{created}---it already exists.  It
+just needs to be \emph{extracted} and \emph{structured}.
+
+That is the core thesis of \sysname{}: passively capture AI coding
+conversations, extract decision traces using a large language model, resolve
+the entities mentioned into a canonical knowledge graph, and make the result
+searchable by both humans and AI agents.  No manual effort.  No behavior
+change.  The developer keeps working exactly as they already do.
+
+\section{Worked Example}
+\label{sec:worked-example}
+
+To make this concrete, consider the following exchange between a developer and
+an AI coding assistant (Listing~\ref{lst:conv}).
+
+\begingroup
+\lstset{style=bash, numbers=none, basicstyle=\small\ttfamily}
+\begin{lstlisting}[caption={Developer--AI conversation about database selection.},label={lst:conv},escapechar=\%]
+%\textbf{Developer:}% I need to select a database for a new
+  transaction processing service on our fintech platform.
+  Requirements: strong consistency, ACID transactions,
+  and complex queries on financial records.
+
+%\textbf{Assistant:}% For a transaction-heavy financial service,
+  the main contenders would be PostgreSQL, MongoDB, and
+  CockroachDB. Let me compare them:
+  - PostgreSQL: Mature ACID support, rich SQL, excellent
+    for complex joins on financial data.
+  - MongoDB: Flexible schema, but multi-document
+    transactions add overhead and complexity.
+  - CockroachDB: Distributed ACID, but adds operational
+    complexity you may not need yet.
+  Given your emphasis on ACID compliance and complex
+  queries, PostgreSQL is the strongest fit.
+
+%\textbf{Developer:}% Good point about MongoDB transactions.
+  We also need PostGIS later for location-based fraud
+  detection. Going with PostgreSQL.
+\end{lstlisting}
+\endgroup
+
+\noindent
+From this 20-line exchange, \sysname{} extracts a structured \textbf{decision
+trace} (Table~\ref{tab:extracted-trace}).
+
+\begin{table}[ht]
+\centering
+\caption{Decision trace extracted by \sysname{} from Listing~\ref{lst:conv}.}
+\label{tab:extracted-trace}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Field} & \textbf{Extracted Value} \\
+\midrule
+Trigger    & Need to select database for new service \\
+Context    & Building a transaction-heavy financial API \\
+Options    & PostgreSQL, MongoDB, CockroachDB \\
+Decision   & Use PostgreSQL \\
+Rationale  & ACID compliance critical for financial transactions;
+             PostGIS needed for future fraud detection \\
+Confidence & 0.92 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Each entity mentioned---PostgreSQL, MongoDB, CockroachDB, PostGIS---is resolved
+against \sysname{}'s knowledge graph using the seven-stage entity resolution
+pipeline (Chapter~\ref{ch:entity-resolution-pipeline}).  The decision node is
+linked to these entities via \ic{INVOLVES} relationships, making it
+discoverable through graph traversal.
+
+\begin{keyinsight}
+A single short conversation produced a complete decision record---trigger,
+context, alternatives, choice, and rationale---without the developer writing
+any documentation at all.  This is the power of treating conversations as
+first-class engineering artifacts.
+\end{keyinsight}
