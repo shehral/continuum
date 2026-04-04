@@ -168,16 +168,32 @@ async def search(
                         depth=depth,
                     )
                     # Add expanded nodes as additional results
+                    # expand_subgraph returns flat node dicts with {id, label, name, type, trigger, ...}
                     existing_ids = {r.id for r in results}
                     for node in subgraph["nodes"]:
                         if node["id"] not in existing_ids:
+                            node_label = node.get("label", "")
+                            node_kind = "decision" if node_label == "DecisionTrace" else "entity"
+                            display_label = (node.get("name") or node.get("trigger") or "")[:100]
+                            # Build data dict from flat node properties
+                            if node_kind == "decision":
+                                node_data = {
+                                    "trigger": node.get("trigger", ""),
+                                    "decision": node.get("decision", ""),
+                                    "confidence": node.get("confidence", 0.0),
+                                }
+                            else:
+                                node_data = {
+                                    "name": node.get("name", ""),
+                                    "type": node.get("type", "concept"),
+                                }
                             results.append(
                                 SearchResult(
-                                    type=node["type"],
+                                    type=node_kind,
                                     id=node["id"],
-                                    label=node["data"].get("name", node["data"].get("trigger", ""))[:100],
+                                    label=display_label,
                                     score=0.5,
-                                    data=node["data"],
+                                    data=node_data,
                                 )
                             )
                 except Exception as e:

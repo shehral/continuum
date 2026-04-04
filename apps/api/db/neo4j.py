@@ -309,15 +309,20 @@ async def init_neo4j():
                 logger.debug(f"Vector index creation skipped: {e}")
 
             # Full-text indexes for hybrid search
+            # Include both field name variants (agent_decision/decision, agent_rationale/rationale)
+            # so fulltext search works regardless of which field name was used at creation time.
             try:
+                # Drop and recreate if the index exists with fewer properties
+                # (migrating from 4-field to 6-field index)
+                await session.run("DROP INDEX decision_fulltext IF EXISTS")
                 await session.run(
                     """
-                    CREATE FULLTEXT INDEX decision_fulltext IF NOT EXISTS
+                    CREATE FULLTEXT INDEX decision_fulltext
                     FOR (d:DecisionTrace)
-                    ON EACH [d.trigger, d.context, d.agent_decision, d.agent_rationale]
+                    ON EACH [d.trigger, d.context, d.agent_decision, d.agent_rationale, d.decision, d.rationale]
                     """
                 )
-                logger.info("Created decision_fulltext index")
+                logger.info("Created decision_fulltext index (6-field)")
             except (ClientError, DatabaseError) as e:
                 logger.debug(f"Full-text index creation skipped: {e}")
 
