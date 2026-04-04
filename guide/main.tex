@@ -1,0 +1,89 @@
+\documentclass[11pt, letterpaper, openany]{book}
+
+\input{preamble}
+
+% ── Title Info ────────────────────────────────────────────────────
+\title{%
+    \textbf{\sysname{} Onboarding Guide}\\[0.5em]
+    \Large A Comprehensive Guide to Understanding, Running,\\
+    and Extending the \sysname{} Knowledge Graph System
+}
+\author{%
+    Ali Shehral\\
+    Khoury College of Computer Sciences\\
+    Northeastern University\\
+    \texttt{shehral.m@northeastern.edu}
+}
+\date{\today}
+
+\begin{document}
+
+% ══════════════════════════════════════════════════════════════════
+%  Front Matter
+% ══════════════════════════════════════════════════════════════════
+\frontmatter
+\maketitle
+\tableofcontents
+
+% ══════════════════════════════════════════════════════════════════
+%  Main Matter
+% ══════════════════════════════════════════════════════════════════
+\mainmatter
+
+% ── Part 0: Foundations ──────────────────────────────────────────
+\part{Foundations}
+\include{chapters/ch01-knowledge-graphs}
+\include{chapters/ch02-entity-resolution}
+\include{chapters/ch03-retrieval-augmented-generation}
+
+% ── Part I: What Is Continuum ────────────────────────────────────
+\part{What Is \sysname{}}
+\include{chapters/ch04-the-problem}
+\include{chapters/ch05-system-overview}
+\include{chapters/ch06-related-systems}
+
+% ── Part II: Getting Started ─────────────────────────────────────
+\part{Getting Started}
+\include{chapters/ch07-setup-directory-tour}
+\include{chapters/ch08-your-first-session}
+\include{chapters/ch09-anatomy-of-the-data}
+
+% ── Part III: How It Works ───────────────────────────────────────
+\part{How It Works}
+\include{chapters/ch10-infrastructure}
+\include{chapters/ch11-configuration}
+\include{chapters/ch12-entity-resolution-pipeline}
+\include{chapters/ch13-decision-extraction}
+\include{chapters/ch14-backend-api}
+\include{chapters/ch15-graphrag-search}
+\include{chapters/ch16-frontend-architecture}
+
+% ── Part IV: Extending Continuum ─────────────────────────────────
+\part{Extending \sysname{}}
+\include{chapters/ch17-how-to-add-features}
+\include{chapters/ch18-exercises}
+\include{chapters/ch19-starter-project}
+
+% ── Part V: Research & Future ────────────────────────────────────
+\part{Research \& Future}
+\include{chapters/ch20-evaluation-methodology}
+\include{chapters/ch21-known-limitations}
+\include{chapters/ch22-future-directions}
+
+% ══════════════════════════════════════════════════════════════════
+%  Appendices
+% ══════════════════════════════════════════════════════════════════
+\appendix
+\include{chapters/appendix-a-config-reference}
+\include{chapters/appendix-b-api-reference}
+\include{chapters/appendix-c-glossary}
+\include{chapters/appendix-d-troubleshooting}
+
+% ══════════════════════════════════════════════════════════════════
+%  Back Matter
+% ══════════════════════════════════════════════════════════════════
+\backmatter
+\bibliographystyle{plain}
+\bibliography{bibliography}
+
+\end{document}

@@ -1,0 +1,253 @@
+% ── Page Layout ───────────────────────────────────────────────────
+\usepackage[margin=1in]{geometry}
+
+% ── Fonts & Encoding ─────────────────────────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ── Math ──────────────────────────────────────────────────────────
+\usepackage{amsmath, amssymb}
+
+% ── Colors ────────────────────────────────────────────────────────
+\usepackage[dvipsnames, svgnames, x11names]{xcolor}
+
+\definecolor{ContinuumViolet}{HTML}{7C3AED}
+\definecolor{ContinuumRose}{HTML}{EC4899}
+\definecolor{ContinuumOrange}{HTML}{F97316}
+\definecolor{ContinuumCyan}{HTML}{0891B2}
+\definecolor{ContinuumEmerald}{HTML}{059669}
+\definecolor{ContinuumGray}{HTML}{6B7280}
+\definecolor{ContinuumBg}{HTML}{F8FAFC}
+\definecolor{CodeBg}{HTML}{F1F5F9}
+
+% ── Tables ────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{longtable}
+
+% ── Graphics & Diagrams ──────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{shapes, arrows.meta, positioning, calc, fit, backgrounds}
+
+% ── Directory Trees ──────────────────────────────────────────────
+\usepackage{forest}
+
+% ── Code Listings ────────────────────────────────────────────────
+\usepackage{listings}
+
+% Python style
+\lstdefinestyle{python}{
+    language=Python,
+    basicstyle=\small\ttfamily,
+    keywordstyle=\color{ContinuumViolet}\bfseries,
+    stringstyle=\color{ContinuumEmerald},
+    commentstyle=\color{ContinuumGray}\itshape,
+    backgroundcolor=\color{CodeBg},
+    frame=single,
+    framerule=0.5pt,
+    rulecolor=\color{ContinuumGray!30},
+    breaklines=true,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{ContinuumGray},
+    numbersep=8pt,
+    tabsize=4,
+    xleftmargin=1.5em,
+    framexleftmargin=1em,
+}
+
+% TypeScript style (Java base + extra keywords)
+\lstdefinestyle{typescript}{
+    language=Java,
+    basicstyle=\small\ttfamily,
+    keywordstyle=\color{ContinuumViolet}\bfseries,
+    stringstyle=\color{ContinuumEmerald},
+    commentstyle=\color{ContinuumGray}\itshape,
+    backgroundcolor=\color{CodeBg},
+    frame=single,
+    framerule=0.5pt,
+    rulecolor=\color{ContinuumGray!30},
+    breaklines=true,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{ContinuumGray},
+    numbersep=8pt,
+    tabsize=2,
+    xleftmargin=1.5em,
+    framexleftmargin=1em,
+    morekeywords={const, let, async, await, export, import, interface, type, extends,
+                  function, return, from, of, as, implements, declare, namespace,
+                  readonly, enum, keyof, typeof, infer, never, unknown},
+}
+
+% Bash style
+\lstdefinestyle{bash}{
+    language=bash,
+    basicstyle=\small\ttfamily,
+    keywordstyle=\color{ContinuumViolet}\bfseries,
+    stringstyle=\color{ContinuumEmerald},
+    commentstyle=\color{ContinuumGray}\itshape,
+    backgroundcolor=\color{CodeBg},
+    frame=single,
+    framerule=0.5pt,
+    rulecolor=\color{ContinuumGray!30},
+    breaklines=true,
+    showstringspaces=false,
+    xleftmargin=1.5em,
+    framexleftmargin=1em,
+}
+
+% YAML style
+\lstdefinestyle{yaml}{
+    basicstyle=\small\ttfamily,
+    keywordstyle=\color{ContinuumViolet}\bfseries,
+    stringstyle=\color{ContinuumEmerald},
+    commentstyle=\color{ContinuumGray}\itshape,
+    backgroundcolor=\color{CodeBg},
+    frame=single,
+    framerule=0.5pt,
+    rulecolor=\color{ContinuumGray!30},
+    breaklines=true,
+    showstringspaces=false,
+    xleftmargin=1.5em,
+    framexleftmargin=1em,
+    morekeywords={true, false, null, yes, no},
+}
+
+% Cypher style (Java base + Cypher keywords)
+\lstdefinestyle{cypher}{
+    language=Java,
+    basicstyle=\small\ttfamily,
+    keywordstyle=\color{ContinuumCyan}\bfseries,
+    stringstyle=\color{ContinuumEmerald},
+    commentstyle=\color{ContinuumGray}\itshape,
+    backgroundcolor=\color{CodeBg},
+    frame=single,
+    framerule=0.5pt,
+    rulecolor=\color{ContinuumGray!30},
+    breaklines=true,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{ContinuumGray},
+    numbersep=8pt,
+    tabsize=2,
+    xleftmargin=1.5em,
+    framexleftmargin=1em,
+    morekeywords={MATCH, WHERE, RETURN, CREATE, MERGE, SET, DELETE, DETACH,
+                  WITH, ORDER, BY, LIMIT, SKIP, OPTIONAL, CALL, YIELD, UNWIND,
+                  AS, ON, CASE, WHEN, THEN, ELSE, END, AND, OR, NOT, IN, IS,
+                  NULL, TRUE, FALSE, EXISTS, COLLECT, COUNT, SUM, AVG, MIN, MAX,
+                  DISTINCT, REMOVE, FOREACH, UNION, ALL, ANY, NONE, SINGLE,
+                  STARTS, ENDS, CONTAINS, CONSTRAINT, INDEX, UNIQUE, NODE, KEY,
+                  RELATIONSHIP, DROP, ASSERT, EXPLAIN, PROFILE},
+    sensitive=false,
+}
+
+\lstset{style=python}
+
+% ── Callout Boxes ────────────────────────────────────────────────
+\usepackage[most]{tcolorbox}
+
+% "Try It" box — emerald
+\newtcolorbox{tryit}[1][]{
+    colback=ContinuumEmerald!5,
+    colframe=ContinuumEmerald!70,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title={\raisebox{-0.1em}{\small$\triangleright$}~Try It},
+    rounded corners,
+    boxrule=0.8pt,
+    left=6pt, right=6pt, top=4pt, bottom=4pt,
+    #1
+}
+
+% "Key Insight" box — violet
+\newtcolorbox{keyinsight}[1][]{
+    colback=ContinuumViolet!5,
+    colframe=ContinuumViolet!70,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title={\raisebox{-0.1em}{\small$\star$}~Key Insight},
+    rounded corners,
+    boxrule=0.8pt,
+    left=6pt, right=6pt, top=4pt, bottom=4pt,
+    #1
+}
+
+% "Warning" box — orange
+\newtcolorbox{warning}[1][]{
+    colback=ContinuumOrange!5,
+    colframe=ContinuumOrange!70,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title={\raisebox{-0.1em}{\small$\triangle$}~Warning},
+    rounded corners,
+    boxrule=0.8pt,
+    left=6pt, right=6pt, top=4pt, bottom=4pt,
+    #1
+}
+
+% "Skip Ahead" box — gray
+\newtcolorbox{skipahead}[1][]{
+    colback=ContinuumGray!5,
+    colframe=ContinuumGray!50,
+    coltitle=white,
+    fonttitle=\bfseries,
+    title={\raisebox{-0.1em}{\small$\Rightarrow$}~Skip Ahead},
+    rounded corners,
+    boxrule=0.8pt,
+    left=6pt, right=6pt, top=4pt, bottom=4pt,
+    #1
+}
+
+% ── Lists ─────────────────────────────────────────────────────────
+\usepackage{enumitem}
+\setlist{nosep, leftmargin=1.5em}
+
+% ── Headers & Footers ────────────────────────────────────────────
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\small\itshape\leftmark}
+\fancyhead[RO]{\small\itshape\rightmark}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Chapter & Section Titles ─────────────────────────────────────
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+    {\normalfont\huge\bfseries}
+    {\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{-20pt}{30pt}
+
+% ── Hyperlinks ────────────────────────────────────────────────────
+\usepackage[
+    colorlinks=true,
+    linkcolor=ContinuumViolet,
+    citecolor=ContinuumEmerald,
+    urlcolor=ContinuumViolet!80,
+    bookmarks=true,
+    bookmarksnumbered=true,
+]{hyperref}
+
+% ── Custom Commands ──────────────────────────────────────────────
+
+% System name
+\newcommand{\sysname}{Continuum}
+
+% File path reference
+\newcommand{\codefile}[1]{\texttt{\small\color{ContinuumViolet}#1}}
+
+% File:line reference
+\newcommand{\coderef}[2]{\texttt{\small\color{ContinuumViolet}#1\color{ContinuumGray}:#2}}
+
+% Inline code
+\newcommand{\ic}[1]{\texttt{\small #1}}
+
+% Config key
+\newcommand{\confkey}[1]{\texttt{\small\color{ContinuumOrange}#1}}
