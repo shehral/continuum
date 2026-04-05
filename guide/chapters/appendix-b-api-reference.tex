@@ -1,4 +1,330 @@
 \chapter{API Reference}
 \label{ch:api-reference}
 
-\textit{Content to be written.}
+The \sysname{} backend exposes a REST API at \ic{http://localhost:8000}.
+Interactive Swagger documentation is available at \ic{/docs}.
+All endpoints requiring authentication expect a \ic{Bearer} token in the
+\ic{Authorization} header. Unauthenticated requests fall back to the
+\ic{anonymous} user scope.
+
+%% ─── Authentication ─────────────────────────────────────────────────
+\section{Authentication}
+\label{sec:api-auth}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+POST & \ic{/api/users/register} & No & Register a new user account. \\
+POST & \ic{/api/users/login} & No & Authenticate and receive user data. \\
+GET  & \ic{/api/users/me} & Yes & Get current user profile with stats. \\
+DELETE & \ic{/api/users/me} & Yes & Delete account and all associated data. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── Decisions ──────────────────────────────────────────────────────
+\section{Decisions}
+\label{sec:api-decisions}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET  & \ic{/api/decisions} & Optional & List decisions (paginated: \ic{limit}, \ic{offset}). \\
+POST & \ic{/api/decisions} & Optional & Create a decision with auto entity extraction. \\
+GET  & \ic{/api/decisions/\{id\}} & Optional & Get a single decision by ID. \\
+PUT  & \ic{/api/decisions/\{id\}} & Optional & Update decision fields. \\
+DELETE & \ic{/api/decisions/\{id\}} & Optional & Delete a decision (preserves entities). \\
+GET  & \ic{/api/decisions/needs-review} & Optional & Decisions missing human rationale. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── Search ─────────────────────────────────────────────────────────
+\section{Search}
+\label{sec:api-search}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET & \ic{/api/search} & No & Search decisions and entities. \\
+GET & \ic{/api/search/suggest} & No & Autocomplete suggestions. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+\paragraph{Query parameters for \ic{/api/search}:}
+\begin{description}[style=nextline]
+  \item[\ic{query}] Search string (min 2 chars, required).
+  \item[\ic{type}] Filter by \ic{decision} or \ic{entity}.
+  \item[\ic{expand}] Enable graph expansion on results (\ic{true}/\ic{false}).
+  \item[\ic{depth}] Expansion depth when \ic{expand=true} (1--3, default 1).
+\end{description}
+
+%% ─── Ask (GraphRAG) ────────────────────────────────────────────────
+\section{Ask (GraphRAG)}
+\label{sec:api-ask}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET & \ic{/api/ask} & Optional & Stream a graph-grounded answer (SSE). \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+\paragraph{Query parameters:}
+\begin{description}[style=nextline]
+  \item[\ic{q}] The question to ask (min 3 chars, required).
+  \item[\ic{depth}] Graph traversal depth (1--3, default 2).
+  \item[\ic{top\_k}] Number of seed nodes to retrieve (1--10, default 5).
+\end{description}
+
+%% ─── Graph ──────────────────────────────────────────────────────────
+\section{Graph}
+\label{sec:api-graph}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET  & \ic{/api/graph} & Optional & Paginated knowledge graph. \\
+GET  & \ic{/api/graph/all} & Optional & Full graph (use sparingly). \\
+GET  & \ic{/api/graph/stats} & Optional & Node/edge/relationship counts. \\
+GET  & \ic{/api/graph/nodes/\{id\}} & Optional & Single node by ID. \\
+GET  & \ic{/api/graph/nodes/\{id\}/neighbors} & Optional & Neighbors of a node. \\
+GET  & \ic{/api/graph/nodes/\{id\}/similar} & Optional & Semantically similar decisions. \\
+GET  & \ic{/api/graph/validate} & Optional & Run graph validation checks. \\
+POST & \ic{/api/graph/search/hybrid} & Optional & Hybrid lexical+semantic search. \\
+POST & \ic{/api/graph/search/semantic} & Optional & Pure vector similarity search. \\
+POST & \ic{/api/graph/analyze-relationships} & Optional & Discover supersedes/contradicts edges. \\
+GET  & \ic{/api/graph/relationships/types} & Optional & List all relationship types. \\
+GET  & \ic{/api/graph/sources} & Optional & List decision sources. \\
+GET  & \ic{/api/graph/projects} & Optional & List projects in the graph. \\
+DELETE & \ic{/api/graph/reset} & Optional & Wipe all graph data (dangerous). \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── Entities ───────────────────────────────────────────────────────
+\section{Entities}
+\label{sec:api-entities}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET  & \ic{/api/entities} & Optional & List entities linked to user's decisions. \\
+POST & \ic{/api/entities} & Optional & Create or deduplicate an entity. \\
+GET  & \ic{/api/entities/\{id\}} & Optional & Get entity by ID. \\
+PUT  & \ic{/api/entities/\{id\}} & Optional & Update entity name/type. \\
+DELETE & \ic{/api/entities/\{id\}} & Optional & Delete entity (with force option). \\
+POST & \ic{/api/entities/link} & Optional & Link entity to a decision. \\
+POST & \ic{/api/entities/suggest} & Optional & Suggest entities from text. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── Capture ────────────────────────────────────────────────────────
+\section{Capture}
+\label{sec:api-capture}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+POST & \ic{/api/capture/sessions} & Optional & Start a new capture session. \\
+GET  & \ic{/api/capture/sessions/\{id\}} & Optional & Get session with messages. \\
+POST & \ic{/api/capture/sessions/\{id\}/messages} & Optional & Send a message, get AI reply. \\
+POST & \ic{/api/capture/sessions/\{id\}/complete} & Optional & Complete session, save decision. \\
+WS   & \ic{/api/capture/sessions/\{id\}/ws} & No & Real-time streaming capture. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── Agent (MCP) ───────────────────────────────────────────────────
+\section{Agent (MCP)}
+\label{sec:api-agent}
+
+These endpoints provide structured knowledge graph access for AI coding
+agents (Claude Code, Cursor, etc.) via the Model Context Protocol.
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET  & \ic{/api/agent/summary} & Optional & High-level project overview. \\
+POST & \ic{/api/agent/context} & Optional & Focused context via hybrid search. \\
+GET  & \ic{/api/agent/context/\{name\}} & Optional & Everything about one entity. \\
+POST & \ic{/api/agent/check} & Optional & Prior-art check before deciding. \\
+POST & \ic{/api/agent/remember} & Yes & Record an agent-made decision. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── Projects ───────────────────────────────────────────────────────
+\section{Projects}
+\label{sec:api-projects}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET  & \ic{/api/projects} & No & List all projects with counts. \\
+GET  & \ic{/api/projects/\{name\}/stats} & No & Detailed project statistics. \\
+DELETE & \ic{/api/projects/\{name\}} & No & Delete all decisions in a project. \\
+POST & \ic{/api/projects/\{name\}/reset} & No & Reset project for re-import. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── Dashboard ──────────────────────────────────────────────────────
+\section{Dashboard}
+\label{sec:api-dashboard}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET & \ic{/api/dashboard/stats} & No & Aggregated dashboard statistics. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── Export / Import ────────────────────────────────────────────────
+\section{Export \& Import}
+\label{sec:api-export}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET  & \ic{/api/export/export} & Optional & Export decisions as JSON. \\
+GET  & \ic{/api/export/export/download} & Optional & Download decisions as JSON file. \\
+POST & \ic{/api/export/import} & Optional & Bulk import decisions (max 500). \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── Ingest ─────────────────────────────────────────────────────────
+\section{Ingest}
+\label{sec:api-ingest}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET  & \ic{/api/ingest/projects} & No & List Claude log project directories. \\
+GET  & \ic{/api/ingest/files} & No & List JSONL conversation files. \\
+GET  & \ic{/api/ingest/preview} & No & Preview conversations before import. \\
+GET  & \ic{/api/ingest/status} & No & Current ingestion status. \\
+POST & \ic{/api/ingest/trigger} & No & Start ingestion run. \\
+POST & \ic{/api/ingest/import-selected} & No & Import selected conversations. \\
+GET  & \ic{/api/ingest/import/progress} & No & Poll import job progress. \\
+POST & \ic{/api/ingest/import/cancel} & No & Cancel running import job. \\
+POST & \ic{/api/ingest/watch/start} & No & Start file watcher. \\
+POST & \ic{/api/ingest/watch/stop} & No & Stop file watcher. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── Health ─────────────────────────────────────────────────────────
+\section{Health}
+\label{sec:api-health}
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Description} \\
+\midrule
+GET & \ic{/health} & No & Basic liveness check. \\
+GET & \ic{/health/ready} & No & Readiness probe (checks all DBs). \\
+GET & \ic{/health/live} & No & Lightweight liveness probe. \\
+GET & \ic{/health/circuits} & No & Circuit breaker status dashboard. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── SSE Events ─────────────────────────────────────────────────────
+\section{SSE Events for \ic{/api/ask}}
+\label{sec:sse-events}
+
+The \ic{/api/ask} endpoint returns a \ic{text/event-stream} response.
+Each event has an \ic{event:} type line followed by a \ic{data:} JSON
+payload.
+
+\begin{small}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Event} & \textbf{Payload} \\
+\midrule
+\ic{context} & Retrieved subgraph JSON: \ic{\{nodes, edges, seed\_ids\}}.
+  Each node includes \ic{type} (\ic{decision}/\ic{entity}), \ic{is\_seed},
+  and a \ic{data} object with the node's properties. \\
+\ic{token} & LLM output chunk: \ic{\{text: "..."}\}. Concatenate all
+  \ic{token} events to build the full answer. \\
+\ic{done} & Stream complete: \ic{\{token\_count: N\}}. \\
+\ic{error} & Error detail: \ic{\{detail: "..."}\}. \\
+\bottomrule
+\end{tabularx}
+\end{small}
+
+%% ─── WebSocket Protocol ────────────────────────────────────────────
+\section{WebSocket Protocol for Capture}
+\label{sec:ws-protocol}
+
+Connect to \ic{/api/capture/sessions/\{id\}/ws} to stream a capture session
+in real time. The protocol follows this sequence:
+
+\begin{enumerate}
+  \item \textbf{Connect} --- Client opens the WebSocket connection.
+  \item \textbf{Send message} --- Client sends JSON:
+    \ic{\{"content": "user's answer"\}}.
+  \item \textbf{Receive chunks} --- Server streams
+    \ic{\{"type":"chunk", "content":"...", "entities":[...]\}}.
+  \item \textbf{Completion} --- Server sends
+    \ic{\{"type":"complete"\}} when the response is finished.
+  \item \textbf{Repeat} --- Steps 2--4 repeat until the session ends.
+\end{enumerate}
+
+\begin{warning}
+Messages are rate-limited to 20 per minute per session. Messages exceeding
+10\,KB are rejected. The server trims conversation history at 50 messages.
+\end{warning}
+
+%% ─── Example curl Commands ─────────────────────────────────────────
+\section{Example \ic{curl} Commands}
+\label{sec:api-examples}
+
+\paragraph{Register a user.}
+\begin{lstlisting}[style=bash]
+curl -X POST http://localhost:8000/api/users/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Demo","email":"ali@demo.com","password":"demo1234"}'
+\end{lstlisting}
+
+\paragraph{Search decisions and entities.}
+\begin{lstlisting}[style=bash]
+curl "http://localhost:8000/api/search?query=postgres&type=entity"
+\end{lstlisting}
+
+\paragraph{Ask a question (SSE stream).}
+\begin{lstlisting}[style=bash]
+curl -N "http://localhost:8000/api/ask?q=Why+did+we+choose+Redis&depth=2&top_k=5" \
+  -H "Authorization: Bearer $TOKEN"
+\end{lstlisting}

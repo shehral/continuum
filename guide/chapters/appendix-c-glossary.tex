@@ -1,4 +1,139 @@
 \chapter{Glossary}
 \label{ch:glossary}
 
-\textit{Content to be written.}
+\begin{description}[style=nextline, leftmargin=2em]
+
+\item[Ablation study]
+  An experiment that disables one pipeline stage at a time to measure its
+  individual contribution.
+  (Chapter~\ref{ch:evaluation})
+
+\item[B-cubed metrics]
+  Precision, recall, and F1 scores computed per mention and averaged,
+  used to evaluate entity-resolution quality.
+  (Chapter~\ref{ch:evaluation})
+
+\item[Canonical mapping]
+  A deterministic lookup table (534 entries) that maps common aliases to
+  their canonical entity name, e.g.\ \ic{postgres} $\to$ \ic{PostgreSQL}.
+  (Chapter~\ref{ch:entity-resolution})
+
+\item[Circuit breaker]
+  A resilience pattern that trips after repeated failures (default 5),
+  rejecting subsequent calls until a cooldown period elapses.
+  (Chapter~\ref{ch:architecture})
+
+\item[Cypher]
+  Neo4j's declarative graph query language, analogous to SQL for
+  relational databases.
+  (Chapter~\ref{ch:knowledge-graph})
+
+\item[Decision trace]
+  The atomic unit of knowledge in \sysname{}: a structured record
+  containing trigger, context, options, decision, rationale, and
+  confidence.
+  (Chapter~\ref{ch:data-model})
+
+\item[Entity resolution]
+  The 7-stage cascading pipeline that maps raw mention strings to
+  canonical graph entities, preventing duplicates.
+  (Chapter~\ref{ch:entity-resolution})
+
+\item[Fulltext index]
+  A Neo4j index that supports Lucene-style text search across node
+  properties, used as the lexical leg of hybrid search.
+  (Chapter~\ref{ch:knowledge-graph})
+
+\item[GraphRAG]
+  Graph-augmented Retrieval-Augmented Generation: retrieving a relevant
+  subgraph and feeding it as context to an LLM for grounded answers.
+  (Chapter~\ref{ch:graphrag})
+
+\item[Hybrid search]
+  A search strategy that fuses lexical (fulltext) and semantic (vector)
+  results using Reciprocal Rank Fusion for higher recall.
+  (Chapter~\ref{ch:graphrag})
+
+\item[K-hop expansion]
+  Traversing the graph $k$ edges out from seed nodes to capture
+  surrounding context for the LLM prompt.
+  (Chapter~\ref{ch:graphrag})
+
+\item[Labeled property graph]
+  The Neo4j data model where nodes and edges carry labels, properties,
+  and direction---the storage foundation of the knowledge graph.
+  (Chapter~\ref{ch:knowledge-graph})
+
+\item[MCP (Model Context Protocol)]
+  An open protocol for AI agents to read and write structured context.
+  \sysname{}'s Agent API implements MCP-compatible endpoints.
+  (Chapter~\ref{ch:agent-integration})
+
+\item[Multi-tenant]
+  The architecture pattern where every query is scoped to a
+  \ic{user\_id}, ensuring data isolation between accounts.
+  (Chapter~\ref{ch:architecture})
+
+\item[NV-EmbedQA]
+  NVIDIA's embedding model (\ic{llama-3.2-nv-embedqa-1b-v2}) that
+  produces 2048-dimensional vectors for semantic search.
+  (Chapter~\ref{ch:architecture})
+
+\item[Ontology]
+  The classification schema (530+ canonical mappings) that categorizes
+  entities into types such as \ic{language}, \ic{framework},
+  \ic{database}, and \ic{concept}.
+  (Chapter~\ref{ch:entity-resolution})
+
+\item[RapidFuzz]
+  A fast C-extension fuzzy string matching library used in stage 5 of
+  entity resolution for partial and token-sort matching.
+  (Chapter~\ref{ch:entity-resolution})
+
+\item[Reciprocal Rank Fusion (RRF)]
+  A score fusion method that combines ranked lists by summing
+  $1/(k + \text{rank})$ across systems, used to merge lexical and
+  semantic search results.
+  (Chapter~\ref{ch:graphrag})
+
+\item[ResolvedEntity]
+  The dataclass returned by the entity resolver, carrying the canonical
+  name, type, confidence, resolution method, and match metadata.
+  (Chapter~\ref{ch:entity-resolution})
+
+\item[Seed nodes]
+  The initial set of top-scoring nodes retrieved by hybrid search,
+  from which $k$-hop expansion builds the context subgraph.
+  (Chapter~\ref{ch:graphrag})
+
+\item[Server-Sent Events (SSE)]
+  A unidirectional streaming protocol over HTTP used by the
+  \ic{/api/ask} endpoint to deliver LLM tokens incrementally.
+  (Appendix~\ref{ch:api-reference})
+
+\item[Subgraph]
+  A subset of the full knowledge graph---typically seed nodes plus
+  their $k$-hop neighbors---serialized as \ic{\{nodes, edges\}} JSON.
+  (Chapter~\ref{ch:graphrag})
+
+\item[Token bucket]
+  The rate-limiting algorithm backed by Redis that allows burst traffic
+  up to the bucket size, then refills at a steady rate.
+  (Chapter~\ref{ch:architecture})
+
+\item[User scoping]
+  The practice of adding \ic{WHERE d.user\_id = \$user\_id} to every
+  Cypher query so that each user sees only their own data.
+  (Chapter~\ref{ch:architecture})
+
+\item[Vector search]
+  Retrieving nodes by embedding cosine similarity, the semantic leg of
+  hybrid search.
+  (Chapter~\ref{ch:graphrag})
+
+\item[WebSocket]
+  A full-duplex communication protocol used by the capture session
+  endpoint for real-time interview streaming.
+  (Appendix~\ref{ch:api-reference})
+
+\end{description}

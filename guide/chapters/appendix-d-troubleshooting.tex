@@ -1,4 +1,142 @@
 \chapter{Troubleshooting}
 \label{ch:troubleshooting}
 
-\textit{Content to be written.}
+The table below collects the most common issues encountered during
+development and deployment, along with their root causes and fixes.
+
+\bigskip
+
+\begin{small}
+\begin{longtable}{p{4cm} p{4cm} p{5.5cm}}
+\toprule
+\textbf{Symptom} & \textbf{Cause} & \textbf{Fix} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Symptom} & \textbf{Cause} & \textbf{Fix} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{3}{r}{\itshape Continued on next page\ldots} \\
+\endfoot
+\bottomrule
+\endlastfoot
+
+% 1
+Auth silently fails; every request resolves to ``anonymous''. &
+\ic{NEXTAUTH\_SECRET} in the frontend does not match \ic{SECRET\_KEY} in the
+backend. NextAuth signs JWTs with its secret; the backend verifies with
+\ic{SECRET\_KEY}. &
+Set both to the same value, then restart the frontend and backend. \\
+\midrule
+
+% 2
+Alembic \ic{DuplicateTableError} on startup. &
+Database tables already exist but the \ic{alembic\_version} table is missing
+or empty. &
+Run \ic{alembic stamp head} to mark the current schema version without
+re-running migrations. \\
+\midrule
+
+% 3
+Neo4j fulltext search returns zero results. &
+The \ic{decision\_fulltext} or \ic{entity\_fulltext} index was not created
+during initialization. &
+Check \codefile{db/neo4j.py} for the index creation logic. Restart the
+backend or manually create the index via the Neo4j Browser. \\
+\midrule
+
+% 4
+Decision extraction returns 0 decisions from valid conversations. &
+NVIDIA API key is invalid or \ic{max\_tokens} is too low (thinking tags
+consume tokens). &
+Verify \ic{NVIDIA\_API\_KEY} is set and valid. Use
+\ic{max\_tokens=4096} or higher. \\
+\midrule
+
+% 5
+All data disappeared after restarting Docker. &
+Ran \ic{docker-compose down -v}, which removes named volumes containing
+PostgreSQL, Neo4j, and Redis data. &
+Use \ic{docker-compose down} \textbf{without} the \ic{-v} flag to preserve
+volumes across restarts. \\
+\midrule
+
+% 6
+Backend ignores code changes despite \ic{--reload}. &
+Stale \ic{\_\_pycache\_\_} directories cause \ic{uvicorn} to serve old
+bytecode. &
+Run: \ic{find apps/api -name "\_\_pycache\_\_" -type d -exec rm -rf \{\} +}
+then restart the backend. \\
+\midrule
+
+% 7
+Embedding service returns \ic{None} for all texts. &
+The circuit breaker tripped after 5 consecutive failures to the NVIDIA
+embedding API. &
+Check \ic{NVIDIA\_EMBEDDING\_API\_KEY} is valid. Restart the backend to reset
+the circuit breaker. Inspect \ic{/health/circuits} for status. \\
+\midrule
+
+% 8
+Rate-limited on NVIDIA NIM API (HTTP 429). &
+The free tier allows only 40 requests per minute. &
+Wait for the rate window to reset, or upgrade to a paid NVIDIA NIM plan.
+For bulk operations, reduce \ic{embedding\_batch\_size}. \\
+\midrule
+
+% 9
+React Flow graph does not render (blank canvas). &
+\ic{useNodesState}/\ic{useEdgesState} hooks declared after
+\ic{useCallback} that references their setters. &
+Move all \ic{useNodesState}/\ic{useEdgesState} declarations \textbf{before}
+any \ic{useCallback} definitions in the component. \\
+\midrule
+
+% 10
+CSS colors appear wrong in light mode; dark mode looks fine. &
+Bare \ic{:root} selectors apply in both light and dark mode, overriding
+dark-mode tokens. &
+Use \ic{:root:not(.dark)} for light-mode-only CSS custom properties. \\
+\midrule
+
+% 11
+Radix \ic{ScrollArea} refuses to auto-scroll to the bottom. &
+The Radix root element sets \ic{overflow:hidden}, preventing programmatic
+scroll. &
+Replace \ic{ScrollArea} with a plain \ic{<div>} that has
+\ic{overflow-y: auto}. \\
+\midrule
+
+% 12
+Tooltip text is truncated in the UI. &
+The default \ic{max-width} on the Radix Tooltip content is too small for
+long text. &
+Add the \ic{max-w-lg} Tailwind class to the \ic{TooltipContent} component. \\
+\midrule
+
+% 13
+LLM response JSON is truncated or malformed. &
+The model's \ic{<think>...</think>} tags consume output tokens, leaving
+insufficient room for the JSON payload. &
+Set \ic{max\_tokens=4096} or higher. Implement JSON repair logic that locates
+the last complete \ic{\}} + \ic{]} pair. \\
+\midrule
+
+% 14
+Prompt sanitizer blocks evaluation conversations. &
+The input sanitizer flags \ic{USER:} / \ic{ASSISTANT:} labels in synthetic
+conversations as prompt injection. &
+Pass \ic{sanitize\_input=False} when calling the LLM on evaluation or
+synthetic data. \\
+\midrule
+
+% 15
+Multiple extraction runs show inflated decision counts. &
+Old decisions accumulate in Neo4j because the pipeline appends rather
+than replaces. &
+Wipe the Neo4j database before each new evaluation run using
+\ic{/api/graph/reset} or the Neo4j Browser. \\
+
+\end{longtable}
+\end{small}

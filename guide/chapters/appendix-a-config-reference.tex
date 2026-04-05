@@ -1,4 +1,233 @@
 \chapter{Configuration Reference}
 \label{ch:config-reference}
 
-\textit{Content to be written.}
+All settings are defined in \codefile{apps/api/config.py} as a Pydantic
+\ic{BaseSettings} class. Every field maps to an environment variable of the
+same name (upper-cased). Place overrides in \codefile{.env} in the repository
+root or export them in your shell.
+
+\bigskip
+
+\begin{small}
+\begin{longtable}{p{3.8cm} p{1.5cm} p{2.8cm} p{1.6cm} p{3.2cm}}
+\toprule
+\textbf{Setting} & \textbf{Type} & \textbf{Default} & \textbf{Env Var} & \textbf{Description} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Setting} & \textbf{Type} & \textbf{Default} & \textbf{Env Var} & \textbf{Description} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{5}{r}{\itshape Continued on next page\ldots} \\
+\endfoot
+\bottomrule
+\endlastfoot
+
+% ── Database ──────────────────────────────────────────────
+\multicolumn{5}{l}{\textbf{Database}} \\
+\midrule
+\confkey{database\_url} & \ic{str} & \ic{""} & \ic{DATABASE\_URL} &
+  PostgreSQL async connection string. Auto-converts \ic{postgresql://} to
+  \ic{postgresql+asyncpg://}. \\
+\confkey{neo4j\_uri} & \ic{str} & \ic{""} & \ic{NEO4J\_URI} &
+  Neo4j Bolt or \ic{neo4j+s://} URI. \\
+\confkey{neo4j\_user} & \ic{str} & \ic{""} & \ic{NEO4J\_USER} &
+  Neo4j username. \\
+\confkey{neo4j\_password} & \ic{SecretStr} & \ic{""} & \ic{NEO4J\_PASSWORD} &
+  Neo4j password. Masked in logs. \\
+\confkey{redis\_url} & \ic{str} & \ic{""} & \ic{REDIS\_URL} &
+  Redis connection string with optional password. \\
+
+% ── LLM Provider ─────────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{LLM Provider}} \\
+\midrule
+\confkey{llm\_provider} & \ic{str} & \ic{"nvidia"} & \ic{LLM\_PROVIDER} &
+  Active LLM backend: \ic{"nvidia"} or \ic{"bedrock"}. \\
+\confkey{embedding\_provider} & \ic{str} & \ic{"nvidia"} & \ic{EMBEDDING\_PROVIDER} &
+  Embedding backend. Keep \ic{"nvidia"} even with Bedrock LLM to avoid
+  re-indexing. \\
+
+% ── NVIDIA NIM ───────────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{NVIDIA NIM}} \\
+\midrule
+\confkey{nvidia\_api\_key} & \ic{SecretStr} & \ic{""} & \ic{NVIDIA\_API\_KEY} &
+  API key for NVIDIA NIM LLM endpoint. \\
+\confkey{nvidia\_model} & \ic{str} & \ic{nvidia/llama-3.3- nemotron-super-49b-v1.5} &
+  \ic{NVIDIA\_MODEL} &
+  LLM model identifier. \\
+\confkey{nvidia\_embedding\_api\_key} & \ic{SecretStr} & \ic{""} &
+  \ic{NVIDIA\_EMBEDDING\_API\_KEY} &
+  Separate API key for the embedding model. \\
+\confkey{nvidia\_embedding\_model} & \ic{str} & \ic{nvidia/llama-3.2- nv-embedqa-1b-v2} &
+  \ic{NVIDIA\_EMBEDDING\_MODEL} &
+  Embedding model identifier. \\
+
+% ── Amazon Bedrock ───────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{Amazon Bedrock}} \\
+\midrule
+\confkey{bedrock\_model\_id} & \ic{str} & \ic{anthropic.claude- sonnet-4-20250514} &
+  \ic{BEDROCK\_MODEL\_ID} &
+  Bedrock model ID for LLM calls. \\
+\confkey{bedrock\_embedding\_model\_id} & \ic{str} &
+  \ic{amazon.titan-embed- text-v2:0} &
+  \ic{BEDROCK\_EMBEDDING\_MODEL\_ID} &
+  Bedrock embedding model. \\
+\confkey{aws\_region} & \ic{str} & \ic{"us-west-2"} & \ic{AWS\_REGION} &
+  AWS region for Bedrock API calls. \\
+
+% ── Observability ────────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{Observability}} \\
+\midrule
+\confkey{dd\_trace\_enabled} & \ic{bool} & \ic{False} & \ic{DD\_TRACE\_ENABLED} &
+  Enable Datadog LLM Observability tracing. \\
+
+% ── Embedding Cache ──────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{Embedding Cache}} \\
+\midrule
+\confkey{embedding\_cache\_ttl} & \ic{int} & \ic{2592000} &
+  \ic{EMBEDDING\_CACHE\_TTL} &
+  Embedding cache lifetime in seconds (30 days). \\
+\confkey{embedding\_cache\_min\_text\_length} & \ic{int} & \ic{10} &
+  \ic{EMBEDDING\_CACHE\_MIN\_TEXT\_LENGTH} &
+  Minimum text length to cache an embedding. \\
+\confkey{embedding\_batch\_size} & \ic{int} & \ic{32} &
+  \ic{EMBEDDING\_BATCH\_SIZE} &
+  Texts per batch for bulk embedding calls. NVIDIA NIM supports up to 256. \\
+
+% ── Rate Limiting ────────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{Rate Limiting}} \\
+\midrule
+\confkey{rate\_limit\_requests} & \ic{int} & \ic{30} &
+  \ic{RATE\_LIMIT\_REQUESTS} &
+  Maximum API requests per window. \\
+\confkey{rate\_limit\_window} & \ic{int} & \ic{60} &
+  \ic{RATE\_LIMIT\_WINDOW} &
+  Rate-limit window in seconds. \\
+
+% ── LLM Retry ───────────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{LLM Retry}} \\
+\midrule
+\confkey{llm\_max\_retries} & \ic{int} & \ic{3} & \ic{LLM\_MAX\_RETRIES} &
+  Maximum retry attempts with exponential backoff. \\
+\confkey{llm\_retry\_base\_delay} & \ic{float} & \ic{1.0} &
+  \ic{LLM\_RETRY\_BASE\_DELAY} &
+  Base delay in seconds for exponential backoff. \\
+
+% ── LLM Prompt ──────────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{LLM Prompt}} \\
+\midrule
+\confkey{max\_prompt\_tokens} & \ic{int} & \ic{70000} &
+  \ic{MAX\_PROMPT\_TOKENS} &
+  Maximum input tokens (Nemotron 128k context). \\
+\confkey{prompt\_warning\_threshold} & \ic{float} & \ic{0.8} &
+  \ic{PROMPT\_WARNING\_THRESHOLD} &
+  Warn when prompt exceeds this fraction of max. \\
+
+% ── LLM Cache ───────────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{LLM Cache}} \\
+\midrule
+\confkey{llm\_cache\_enabled} & \ic{bool} & \ic{True} &
+  \ic{LLM\_CACHE\_ENABLED} &
+  Toggle Redis-backed LLM response caching. \\
+\confkey{llm\_cache\_ttl} & \ic{int} & \ic{86400} & \ic{LLM\_CACHE\_TTL} &
+  LLM cache lifetime in seconds (24 hours). \\
+\confkey{llm\_extraction\_prompt\_version} & \ic{str} & \ic{"v1"} &
+  \ic{LLM\_EXTRACTION\_PROMPT\_VERSION} &
+  Bump to invalidate cached extraction results. \\
+\confkey{llm\_fallback\_model} & \ic{str} & \ic{nvidia/llama-3.1- nemotron-70b-instruct} &
+  \ic{LLM\_FALLBACK\_MODEL} &
+  Secondary model used on primary 503 failures. \\
+\confkey{llm\_fallback\_enabled} & \ic{bool} & \ic{True} &
+  \ic{LLM\_FALLBACK\_ENABLED} &
+  Enable automatic fallback to secondary model. \\
+
+% ── Entity Cache ────────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{Entity Cache}} \\
+\midrule
+\confkey{entity\_cache\_ttl} & \ic{int} & \ic{300} &
+  \ic{ENTITY\_CACHE\_TTL} &
+  Entity resolution cache lifetime (5 minutes). \\
+\confkey{entity\_cache\_enabled} & \ic{bool} & \ic{True} &
+  \ic{ENTITY\_CACHE\_ENABLED} &
+  Toggle entity resolution caching. \\
+
+% ── Similarity Thresholds ───────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{Similarity Thresholds}} \\
+\midrule
+\confkey{similarity\_threshold} & \ic{float} & \ic{0.85} &
+  \ic{SIMILARITY\_THRESHOLD} &
+  Minimum cosine similarity for \ic{SIMILAR\_TO} edges. \\
+\confkey{high\_confidence\_similarity\_threshold} & \ic{float} & \ic{0.90} &
+  \ic{HIGH\_CONFIDENCE\_SIMILARITY\_THRESHOLD} &
+  Threshold for high-confidence matches. \\
+\confkey{fuzzy\_match\_threshold} & \ic{float} & \ic{0.85} &
+  \ic{FUZZY\_MATCH\_THRESHOLD} &
+  RapidFuzz string similarity threshold (0--1). \\
+\confkey{embedding\_similarity\_threshold} & \ic{float} & \ic{0.90} &
+  \ic{EMBEDDING\_SIMILARITY\_THRESHOLD} &
+  Embedding cosine similarity for entity resolution. \\
+
+% ── Embedding Weights ───────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{Embedding Weights}} \\
+\midrule
+\confkey{decision\_embedding\_weight\_title} & \ic{float} & \ic{1.5} &
+  \ic{DECISION\_EMBEDDING\_WEIGHT\_TITLE} &
+  Weight multiplier for the title field. \\
+\confkey{decision\_embedding\_weight\_decision} & \ic{float} & \ic{1.2} &
+  \ic{DECISION\_EMBEDDING\_WEIGHT\_DECISION} &
+  Weight multiplier for the decision field. \\
+\confkey{decision\_embedding\_weight\_rationale} & \ic{float} & \ic{1.0} &
+  \ic{DECISION\_EMBEDDING\_WEIGHT\_RATIONALE} &
+  Base weight for the rationale field. \\
+\confkey{decision\_embedding\_weight\_context} & \ic{float} & \ic{0.8} &
+  \ic{DECISION\_EMBEDDING\_WEIGHT\_CONTEXT} &
+  Weight multiplier for the context field. \\
+\confkey{decision\_embedding\_weight\_trigger} & \ic{float} & \ic{0.8} &
+  \ic{DECISION\_EMBEDDING\_WEIGHT\_TRIGGER} &
+  Weight multiplier for the trigger field. \\
+
+% ── Authentication ──────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{Authentication}} \\
+\midrule
+\confkey{secret\_key} & \ic{SecretStr} & \ic{""} & \ic{SECRET\_KEY} &
+  JWT signing key. \textbf{Must match} \ic{NEXTAUTH\_SECRET}. \\
+\confkey{algorithm} & \ic{str} & \ic{"HS256"} & \ic{ALGORITHM} &
+  JWT signing algorithm. \\
+\confkey{access\_token\_expire\_minutes} & \ic{int} & \ic{30} &
+  \ic{ACCESS\_TOKEN\_EXPIRE\_MINUTES} &
+  JWT token lifetime in minutes. \\
+
+% ── App ─────────────────────────────────────────────────
+\midrule
+\multicolumn{5}{l}{\textbf{App}} \\
+\midrule
+\confkey{debug} & \ic{bool} & \ic{False} & \ic{DEBUG} &
+  Enable debug mode and verbose logging. \\
+\confkey{cors\_origins} & \ic{list[str]} & \ic{["http://localhost:3000"]} &
+  \ic{CORS\_ORIGINS} &
+  Allowed CORS origins for the frontend. \\
+
+\end{longtable}
+\end{small}
+
+\begin{keyinsight}
+Settings whose type is \ic{SecretStr} (\confkey{neo4j\_password},
+\confkey{nvidia\_api\_key}, \confkey{nvidia\_embedding\_api\_key},
+\confkey{secret\_key}) are automatically masked in log output and
+\ic{repr()} calls. Access their values through the corresponding getter
+methods, e.g.\ \ic{settings.get\_nvidia\_api\_key()}.
+\end{keyinsight}
