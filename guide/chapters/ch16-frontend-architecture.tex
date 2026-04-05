@@ -1,4 +1,285 @@
 \chapter{Frontend Architecture}
 \label{ch:frontend-architecture}
 
-\textit{Content to be written.}
+The \sysname{} frontend is a Next.js 16 application using the App Router,
+React 19, Tailwind CSS v4, and shadcn/ui.  This chapter covers the routing
+structure, the Nebula design system, component patterns, graph visualization,
+and state management.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Next.js 16 App Router}
+\label{sec:app-router}
+
+\sysname{} uses the App Router (the \ic{app/} directory), not the legacy
+Pages Router.  Key concepts:
+
+\begin{itemize}
+    \item \textbf{Layouts} (\ic{layout.tsx}): Wrap child routes with shared
+          UI (sidebar, navigation, providers).  The root layout at
+          \ic{app/layout.tsx} applies the Instrument Sans font, theme
+          provider, session provider, and React Query provider.
+
+    \item \textbf{Pages} (\ic{page.tsx}): The actual content for a route.
+          Each route segment maps to a directory, and the \ic{page.tsx}
+          inside it renders the page content.
+
+    \item \textbf{Route groups} (\ic{(group)/}): Organize routes without
+          affecting the URL.  For example, \ic{app/(dashboard)/} groups
+          all authenticated pages under a shared layout without adding
+          ``dashboard'' to the URL path.
+
+    \item \textbf{Server Components}: By default, every component in the
+          \ic{app/} directory is a React Server Component.  Components
+          that use browser APIs, hooks, or event handlers must be marked
+          with \ic{'use client'} at the top of the file.
+\end{itemize}
+
+\paragraph{Adding a new page.}
+To add a page at \ic{/settings}:
+
+\begin{enumerate}
+    \item Create \ic{app/(dashboard)/settings/page.tsx}.
+    \item Export a default React component.
+    \item The route inherits the dashboard layout automatically.
+    \item Add a navigation link in \ic{components/layout/Sidebar.tsx}.
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Nebula Design System}
+\label{sec:nebula-design-system}
+
+\sysname{}'s visual identity is called ``Nebula''---a dark-first theme
+built on violet, rose, and orange accent colors with glassmorphism effects.
+All colors are defined as CSS custom properties in \codefile{app/globals.css}
+and consumed via Tailwind's semantic classes.
+
+\subsection{Semantic Color Tokens}
+
+\begin{table}[ht]
+\centering
+\caption{Semantic color tokens (light / dark).}
+\label{tab:semantic-colors}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Token} & \textbf{Light} & \textbf{Dark} & \textbf{Usage} \\
+\midrule
+\ic{--primary}      & Violet 48\%  & Violet 58\%  & Primary actions, focus rings \\
+\ic{--accent}       & Rose 50\%    & Rose 60\%    & Secondary accents, highlights \\
+\ic{--destructive}  & Red 51\%     & Red 45\%     & Delete, error states \\
+\ic{--muted}        & Gray 94\%    & Dark 14\%    & Disabled, secondary text \\
+\ic{--background}   & Off-white    & Space 6\%    & Page background \\
+\ic{--card}         & White        & Glass 10\%   & Card surfaces \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Entity Type Colors}
+
+Entities in the graph and in badges are color-coded by type:
+
+\begin{table}[ht]
+\centering
+\caption{Entity type color assignments.}
+\label{tab:entity-colors}
+\begin{tabular}{lll}
+\toprule
+\textbf{Entity Type} & \textbf{Color} & \textbf{Hex} \\
+\midrule
+Technology & Orange  & \ic{\#fb923c} \\
+Pattern    & Rose    & \ic{\#ec4899} \\
+Concept    & Violet  & \ic{\#a78bfa} \\
+Person     & Emerald & \ic{\#34d399} \\
+System     & Green   & \ic{\#4ade80} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These colors are used consistently across the graph visualization,
+dashboard charts, entity badges, and search result cards.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Component Patterns}
+\label{sec:component-patterns}
+
+The codebase follows several conventions that ensure consistency:
+
+\subsection{\texttt{cn()} for Class Names}
+
+All className composition uses the \ic{cn()} utility from
+\codefile{lib/utils.ts}, which merges Tailwind classes with
+\ic{clsx} and resolves conflicts with \ic{tailwind-merge}:
+
+\begin{lstlisting}[style=typescript, caption={Using \ic{cn()} for conditional classes.}]
+<div className={cn(
+  "rounded-lg border p-4",
+  variant === "glass" && "backdrop-blur-xl bg-card/50",
+  className
+)} />
+\end{lstlisting}
+
+Never concatenate class strings manually---\ic{cn()} handles
+deduplication and conflict resolution.
+
+\subsection{CVA for Variants}
+
+Component variants are defined using Class Variance Authority (CVA):
+
+\begin{lstlisting}[style=typescript, caption={CVA variant definition for a Button.}]
+const buttonVariants = cva("base-classes rounded-lg font-medium", {
+  variants: {
+    variant: {
+      default: "bg-primary text-primary-foreground",
+      glass: "backdrop-blur-xl bg-card/50 border-white/10",
+      gradient: "bg-gradient-to-r from-violet-500 via-fuchsia-500 ...",
+      destructive: "bg-destructive text-destructive-foreground",
+    },
+    size: {
+      default: "h-10 px-4",
+      sm: "h-8 px-3 text-sm",
+      lg: "h-12 px-6 text-lg",
+    },
+  },
+  defaultVariants: { variant: "default", size: "default" },
+})
+\end{lstlisting}
+
+\subsection{\texttt{React.forwardRef}}
+
+All UI components use \ic{React.forwardRef} so that parent components
+can attach refs for focus management, scroll control, and animations:
+
+\begin{lstlisting}[style=typescript, caption={ForwardRef pattern.}]
+const Card = React.forwardRef<HTMLDivElement, CardProps>(
+  ({ className, variant, ...props }, ref) => (
+    <div ref={ref} className={cn(cardVariants({ variant }), className)}
+         {...props} />
+  )
+)
+Card.displayName = "Card"
+\end{lstlisting}
+
+\subsection{Compound Components}
+
+Complex components export multiple related sub-components:
+\ic{Card}, \ic{CardHeader}, \ic{CardTitle}, \ic{CardContent},
+\ic{CardFooter}.  This gives consumers full control over layout without
+exposing internal implementation details.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Graph Visualization}
+\label{sec:graph-visualization}
+
+The knowledge graph is rendered using React Flow (\ic{@xyflow/react})
+with custom node types and automatic layout via Dagre.
+
+\begin{itemize}
+    \item \textbf{Custom node types}:
+          \begin{itemize}
+              \item \emph{Decision nodes} render as gradient cards with a
+                    violet-to-rose background, showing the trigger text and
+                    a confidence badge.
+              \item \emph{Entity nodes} render as colored pills, tinted
+                    by entity type (orange for technology, rose for pattern,
+                    etc.).
+          \end{itemize}
+
+    \item \textbf{Layout algorithms}: Dagre provides four layout modes:
+          force-directed, hierarchical, clustered, and radial.  The user
+          can switch between them from the graph toolbar.
+
+    \item \textbf{Interaction}: Arrow keys for panning, Tab/Enter for
+          node selection, Escape to deselect.  A minimap and zoom
+          controls are always visible.
+
+    \item \textbf{Performance}: Large graphs (500+ nodes) use
+          \ic{React.memo} with custom comparison functions on node
+          components to prevent unnecessary re-renders.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{State Management}
+\label{sec:state-management}
+
+\sysname{} does not use a global state library like Redux.  Instead,
+it combines several purpose-specific tools:
+
+\begin{table}[ht]
+\centering
+\caption{State management strategy.}
+\label{tab:state-management}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Kind of State} & \textbf{Tool} & \textbf{Details} \\
+\midrule
+Server / async &
+    React Query &
+    60-second stale time.  Queries auto-refetch on window focus.
+    Mutations invalidate related queries. \\
+\addlinespace
+Form &
+    react-hook-form + Zod &
+    Schema-first validation.  Zod schemas are shared with
+    backend Pydantic models where possible. \\
+\addlinespace
+Theme &
+    next-themes &
+    System / light / dark.  The \ic{.dark} class on
+    \ic{<html>} toggles CSS custom properties. \\
+\addlinespace
+Auth session &
+    NextAuth v5 &
+    \ic{SessionProvider} at the root layout.
+    \ic{useSession()} hook in client components. \\
+\addlinespace
+Local / ephemeral &
+    \ic{useState} / \ic{useReducer} &
+    Component-level state for UI toggles, form drafts,
+    modal open/close. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Gotchas}
+\label{sec:frontend-gotchas}
+
+Several non-obvious pitfalls have tripped up contributors.  These are
+documented here to save you debugging time.
+
+\begin{warning}
+\textbf{Radix ScrollArea breaks \texttt{scrollTop}.} Radix's
+\ic{ScrollArea} component sets \ic{overflow: hidden} on its root element,
+which prevents programmatic scroll control via \ic{scrollTop}.  If you
+need auto-scrolling (e.g., the chat panel in the Ask view), use a plain
+\ic{<div>} with \ic{overflow-y-auto} instead.
+\end{warning}
+
+\begin{warning}
+\textbf{React Flow hook ordering.}  The \ic{useNodesState} and
+\ic{useEdgesState} setter functions must be declared \emph{before} any
+\ic{useCallback} that references them.  React hooks must always be called
+in the same order, and referencing a setter before its declaration
+causes stale-closure bugs that are silent in development but break in
+production.
+\end{warning}
+
+\begin{warning}
+\textbf{CSS \texttt{:root} in dark mode.}  Because \ic{next-themes}
+applies the \ic{.dark} class on \ic{<html>}, bare \ic{:root} selectors
+apply in \emph{both} light and dark mode.  Use \ic{:root:not(.dark)} for
+light-mode-only overrides.  Getting this wrong causes colors to bleed
+between themes.
+\end{warning}
+
+\begin{tryit}
+Explore the design system live: start the frontend (\ic{pnpm dev:web}),
+navigate to the graph view, and try switching between layout modes.
+Open the browser DevTools and inspect a decision node to see the Nebula
+color tokens in action.
+\end{tryit}

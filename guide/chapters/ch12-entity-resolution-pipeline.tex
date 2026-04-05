@@ -1,4 +1,487 @@
 \chapter{Entity Resolution Pipeline}
 \label{ch:entity-resolution-pipeline}
 
-\textit{Content to be written.}
+This chapter covers \sysname{}'s primary research contribution.  When a
+developer says ``postgres,'' ``PG,'' or ``PostgreSQL,'' they mean the same
+database.  When an LLM extracts entities from conversation logs, it produces
+all three variants---and the knowledge graph must collapse them into a single
+node or drown in duplicates.  The entity resolution pipeline is the subsystem
+that solves this problem, and it does so through a seven-stage cascade that
+balances speed, accuracy, and graceful degradation.
+
+\begin{skipahead}
+If you just want to \emph{use} entity resolution (call \ic{resolve()} and
+get a \ic{ResolvedEntity} back), skip to Section~\ref{sec:resolved-entity}.
+This chapter is for readers who want to understand \emph{how} and \emph{why}
+the pipeline works.
+\end{skipahead}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The Problem}
+\label{sec:er-problem}
+
+Developers refer to the same technology in dozens of ways.  An entity
+resolution system must map all surface forms to a single canonical identity.
+Table~\ref{tab:er-examples} shows representative inputs and their expected
+outputs.
+
+\begin{table}[ht]
+\centering
+\caption{Messy inputs and their canonical outputs.}
+\label{tab:er-examples}
+\begin{tabular}{ll}
+\toprule
+\textbf{Raw Input} & \textbf{Canonical Output} \\
+\midrule
+\ic{postgres}    & PostgreSQL   \\
+\ic{React.js}    & React        \\
+\ic{k8s}         & Kubernetes   \\
+\ic{PG}          & PostgreSQL   \\
+\ic{react 18}    & React        \\
+\ic{mongo}       & MongoDB      \\
+\ic{express}     & Express.js   \\
+\ic{tf}          & TensorFlow   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Exact string matching handles none of these.  Fuzzy matching alone produces
+too many false positives (``Go'' matching ``GORM'').  Embedding similarity is
+accurate but slow.  \sysname{} solves this by \emph{cascading} through
+progressively more expensive methods, stopping as soon as a confident match
+is found.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The 7-Stage Cascade}
+\label{sec:seven-stage-cascade}
+
+Figure~\ref{fig:er-cascade} shows the full pipeline.  Every entity name
+enters at the top and exits through exactly one stage.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=0.9cm and 1.5cm,
+    stage/.style={
+        rectangle, rounded corners=3pt,
+        draw=ContinuumViolet!70, fill=ContinuumViolet!8,
+        text width=4.2cm, minimum height=0.8cm,
+        align=center, font=\small\sffamily
+    },
+    decision/.style={
+        diamond, aspect=2.2,
+        draw=ContinuumOrange!70, fill=ContinuumOrange!8,
+        text width=1.2cm, align=center, font=\scriptsize\sffamily,
+        inner sep=1pt
+    },
+    result/.style={
+        rectangle, rounded corners=3pt,
+        draw=ContinuumEmerald!70, fill=ContinuumEmerald!8,
+        text width=2.8cm, minimum height=0.6cm,
+        align=center, font=\small\sffamily
+    },
+    arr/.style={-{Stealth[length=4pt]}, thick, ContinuumGray},
+    yesarr/.style={-{Stealth[length=4pt]}, thick, ContinuumEmerald!70},
+    lbl/.style={font=\scriptsize\sffamily, ContinuumGray},
+]
+    % Stages
+    \node[stage] (input)     {Input \& Normalize};
+    \node[stage, below=of input] (cache) {Stage 1: Cache Lookup};
+    \node[decision, below=of cache] (d1) {hit?};
+    \node[stage, below=of d1] (exact) {Stage 2: Exact Match};
+    \node[decision, below=of exact] (d2) {hit?};
+    \node[stage, below=of d2] (canonical) {Stage 3: Canonical Lookup};
+    \node[decision, below=of canonical] (d3) {hit?};
+    \node[stage, below=of d3] (alias) {Stage 4: Alias Search};
+    \node[decision, below=of alias] (d4) {hit?};
+    \node[stage, below=of d4] (fuzzy) {Stage 5: Fuzzy Match};
+    \node[decision, below=of fuzzy] (d5) {hit?};
+    \node[stage, below=of d5] (embed) {Stage 6: Embedding};
+    \node[decision, below=of embed] (d6) {hit?};
+    \node[stage, below=of d6] (create) {Stage 7: Create New};
+
+    % Return node (right side)
+    \node[result, right=2.5cm of d3] (ret) {Return\\ResolvedEntity};
+
+    % Vertical arrows
+    \draw[arr] (input)     -- (cache);
+    \draw[arr] (cache)     -- (d1);
+    \draw[arr] (d1)        -- node[lbl,left] {no} (exact);
+    \draw[arr] (exact)     -- (d2);
+    \draw[arr] (d2)        -- node[lbl,left] {no} (canonical);
+    \draw[arr] (canonical) -- (d3);
+    \draw[arr] (d3)        -- node[lbl,left] {no} (alias);
+    \draw[arr] (alias)     -- (d4);
+    \draw[arr] (d4)        -- node[lbl,left] {no} (fuzzy);
+    \draw[arr] (fuzzy)     -- (d5);
+    \draw[arr] (d5)        -- node[lbl,left] {no} (embed);
+    \draw[arr] (embed)     -- (d6);
+    \draw[arr] (d6)        -- node[lbl,left] {no} (create);
+    \draw[yesarr] (create) -- ++(3.25,0) |- (ret);
+
+    % Yes arrows to return
+    \draw[yesarr] (d1) -- ++(3.25,0) node[lbl,above,pos=0.2] {yes} |- (ret);
+    \draw[yesarr] (d2) -- ++(3.25,0) node[lbl,above,pos=0.2] {yes} |- (ret);
+    \draw[yesarr] (d3) -- node[lbl,above] {yes} (ret);
+    \draw[yesarr] (d4) -- ++(3.25,0) node[lbl,above,pos=0.2] {yes} |- (ret);
+    \draw[yesarr] (d5) -- ++(3.25,0) node[lbl,above,pos=0.2] {yes} |- (ret);
+    \draw[yesarr] (d6) -- ++(3.25,0) node[lbl,above,pos=0.2] {yes} |- (ret);
+
+    % Annotations (right margin)
+    \node[lbl, right=0.3cm of cache, text width=3cm]
+        {Redis, 5-min TTL\\Confidence: 1.0};
+    \node[lbl, right=0.3cm of exact, text width=3cm]
+        {Cypher \ic{toLower}\\Confidence: 1.0};
+    \node[lbl, right=0.3cm of canonical, text width=3cm]
+        {534 curated maps\\Confidence: 0.95};
+    \node[lbl, right=0.3cm of alias, text width=3cm]
+        {\ic{e.aliases} array\\Confidence: 0.92};
+    \node[lbl, right=0.3cm of fuzzy, text width=3cm]
+        {RapidFuzz Indel\\Threshold: 85\%};
+    \node[lbl, right=0.3cm of embed, text width=3cm]
+        {NV-EmbedQA cosine\\Threshold: 0.9};
+    \node[lbl, right=0.3cm of create, text width=3cm]
+        {\ic{is\_new=True}, UUID\\Confidence: 1.0};
+\end{tikzpicture}
+\caption{The 7-stage entity resolution cascade.  Each diamond is a
+match/no-match decision.  On a hit, the pipeline short-circuits to the
+return node.}
+\label{fig:er-cascade}
+\end{figure}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Stage 1: Cache Lookup}
+\label{sec:er-cache}
+
+Before touching the database, the pipeline checks Redis.  The cache key is
+scoped by \ic{user\_id} and the normalized entity name.
+
+\begin{lstlisting}[style=python, caption={Cache lookup (simplified from \codefile{entity\_resolver.py}).}]
+cached = await self.cache.get_by_exact_name(
+    self.user_id, normalized_name
+)
+if cached is not None:
+    return ResolvedEntity(
+        id=cached["id"], name=cached["name"],
+        type=cached["type"], is_new=False,
+        match_method="cached", confidence=1.0,
+    )
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{TTL}: 5 minutes.  Short enough that renames propagate
+          quickly; long enough to absorb repeated lookups during a single
+          extraction batch.
+    \item \textbf{Hit rate}: Approximately 40\% in production, because
+          the same entities (React, PostgreSQL, Docker) appear across many
+          decisions.
+    \item \textbf{Negative caching}: When no match is found at the end
+          of the pipeline, the cache stores a \ic{None} entry to avoid
+          repeating the full cascade for names that will always be new.
+    \item \textbf{Confidence}: 1.0---a cache hit is a replay of a previous
+          confident match.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Stage 2: Exact Match}
+\label{sec:er-exact}
+
+The exact match stage queries Neo4j with a case-insensitive comparison.
+It first searches entities connected to the user's decisions, then falls
+back to global entities.
+
+\begin{lstlisting}[style=cypher, caption={Exact match query (user-scoped).}]
+MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+AND toLower(e.name) = $name
+RETURN DISTINCT e.id AS id, e.name AS name, e.type AS type
+LIMIT 1
+\end{lstlisting}
+
+This catches inputs where the developer typed the canonical name in any
+casing: ``postgresql,'' ``POSTGRESQL,'' ``PostgreSQL.''  The confidence
+is 1.0 because the match is exact (modulo case).
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Stage 3: Canonical Lookup}
+\label{sec:er-canonical}
+
+The \codefile{models/ontology.py} file contains 534 curated mappings from
+common aliases to canonical names.  This is a hand-maintained dictionary
+that encodes domain knowledge about how developers abbreviate technologies.
+
+\begin{lstlisting}[style=python, caption={Excerpt from \ic{CANONICAL\_NAMES} (10 of 534 entries).}]
+CANONICAL_NAMES = {
+    "postgres":    "PostgreSQL",
+    "pg":          "PostgreSQL",
+    "mongo":       "MongoDB",
+    "k8s":         "Kubernetes",
+    "tf":          "TensorFlow",
+    "react.js":    "React",
+    "nextjs":      "Next.js",
+    "express":     "Express.js",
+    "tailwind":    "Tailwind CSS",
+    "sklearn":     "scikit-learn",
+    # ... 524 more entries
+}
+\end{lstlisting}
+
+The pipeline calls \ic{get\_canonical\_name(name)}, which does a
+dictionary lookup in O(1).  If the canonical form differs from the
+normalized input, it runs an exact match against the canonical form.
+
+\begin{itemize}
+    \item \textbf{Confidence}: 0.95.  Slightly below 1.0 because the
+          mapping is maintained by humans and may occasionally be wrong
+          (e.g., ``Go'' could mean the language or the game).
+    \item \textbf{Maintenance}: Adding a new alias is a one-line change
+          to \codefile{ontology.py}.  No retraining, no redeployment of
+          ML models.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Stage 4: Alias Search}
+\label{sec:er-alias}
+
+Entities in Neo4j can carry an \ic{aliases} property---a list of strings
+that were previously resolved to this entity.  When an entity is merged
+via duplicate detection, the absorbed entity's name is appended to the
+surviving entity's alias list.
+
+\begin{lstlisting}[style=cypher, caption={Alias search query.}]
+MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+AND ANY(alias IN COALESCE(e.aliases, [])
+        WHERE toLower(alias) = $name)
+RETURN DISTINCT e.id AS id, e.name AS name, e.type AS type
+LIMIT 1
+\end{lstlisting}
+
+The \ic{COALESCE(e.aliases, [])} guard prevents null-pointer errors when
+an entity has never been merged.  Confidence is 0.92---lower than canonical
+because aliases can accumulate from fuzzy matches that were borderline.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Stage 5: Fuzzy Match}
+\label{sec:er-fuzzy}
+
+When no exact or dictionary match exists, the pipeline falls back to
+approximate string matching.  This is a two-phase process:
+
+\begin{enumerate}
+    \item \textbf{Candidate retrieval}: A Neo4j fulltext index
+          (\ic{entity\_fulltext}) retrieves up to 500 candidate entities
+          using prefix-wildcard search (\ic{name*}).
+    \item \textbf{Scoring}: Each candidate is scored against the input
+          using RapidFuzz's \ic{fuzz.ratio} (Indel distance, normalized
+          to 0--100).  The best match above the threshold is returned.
+\end{enumerate}
+
+\begin{lstlisting}[style=python, caption={Fuzzy matching with fulltext acceleration.}]
+search_term = f"{normalized_name}*"
+# ... fulltext query returns candidates ...
+
+best_match, best_score = None, 0
+for entity in candidates:
+    score = fuzz.ratio(normalized_name, entity["name"].lower())
+    if score >= self.fuzzy_threshold and score > best_score:
+        best_score = score
+        best_match = entity
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{Threshold}: 85\% (configurable via
+          \confkey{FUZZY\_MATCH\_THRESHOLD}).  90\%+ misses common
+          variations like ``PostgreSQL'' vs.\ ``Postgres'';
+          80\% and below creates false positives.
+    \item \textbf{Batch limit}: \ic{FUZZY\_MATCH\_LIMIT = 500}.  If the
+          fulltext index is unavailable, candidates are loaded in batches
+          of 100 to prevent memory exhaustion.
+    \item \textbf{Confidence}: \ic{score / 100}---a 91\% fuzzy match
+          yields confidence 0.91.
+    \item \textbf{Fallback}: If the fulltext index does not exist (fresh
+          database), the pipeline falls back to
+          \ic{\_find\_by\_fuzzy\_batched()}, which paginates through
+          entities with \ic{SKIP}/\ic{LIMIT}.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Stage 6: Embedding Similarity}
+\label{sec:er-embedding}
+
+For names that are semantically related but lexically different (e.g.,
+``distributed cache'' and ``Redis''), the pipeline computes vector
+similarity.
+
+\begin{enumerate}
+    \item Embed the input string as \ic{"{entity\_type}: {name}"} using
+          NVIDIA NV-EmbedQA (2048 dimensions).
+    \item Query Neo4j for entities with stored embeddings, computing
+          cosine similarity.
+    \item Return the best match above the threshold.
+\end{enumerate}
+
+\begin{lstlisting}[style=python, caption={Embedding similarity (GDS path).}]
+embedding = await self.embedding_service.embed_text(
+    f"{entity_type}: {name}", input_type="passage"
+)
+
+# GDS-accelerated query
+result = await self.session.run("""
+    MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+    WHERE (d.user_id = $user_id OR d.user_id IS NULL)
+    AND e.embedding IS NOT NULL
+    WITH DISTINCT e,
+         gds.similarity.cosine(e.embedding, $embedding) AS similarity
+    WHERE similarity > $threshold
+    RETURN e.id AS id, e.name AS name, e.type AS type, similarity
+    ORDER BY similarity DESC LIMIT 1
+""", embedding=embedding, threshold=threshold, user_id=self.user_id)
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{Threshold}: 0.9 (configurable via
+          \confkey{EMBEDDING\_SIMILARITY\_THRESHOLD}).
+    \item \textbf{Confidence}: The cosine similarity score itself.
+    \item \textbf{Circuit breaker}: If the embedding service fails
+          (timeout, connection error), the stage is skipped.  After 5
+          consecutive failures, the circuit breaker opens and the
+          pipeline degrades to stages 1--5 only.
+    \item \textbf{Fallback}: If Neo4j GDS is not installed, the pipeline
+          falls back to \ic{\_find\_by\_embedding\_similarity\_manual()},
+          which loads embeddings client-side and computes cosine
+          similarity in Python.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Stage 7: Create New}
+\label{sec:er-create-new}
+
+If no stage produced a match, the entity is genuinely new.  The pipeline
+returns a \ic{ResolvedEntity} with \ic{is\_new=True} and a fresh UUID.
+
+\begin{lstlisting}[style=python, caption={New entity creation.}]
+final_name = canonical if canonical.lower() != normalized_name else name
+return ResolvedEntity(
+    id=str(uuid4()),
+    name=final_name,
+    type=entity_type,
+    is_new=True,
+    match_method="new",
+    confidence=1.0,
+    aliases=[name] if final_name != name else [],
+)
+\end{lstlisting}
+
+Notice that even new entities benefit from the canonical lookup: if the
+canonical name differs from the input, the entity is created with the
+canonical form as its primary name and the original input as an alias.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Why Cascading Works}
+\label{sec:er-why-cascading}
+
+The cascade design was chosen over a single ``best'' method for three
+reasons:
+
+\begin{enumerate}
+    \item \textbf{Latency}: Approximately 83\% of lookups are handled by
+          the first three stages (cache, exact, canonical), which
+          complete in under 1\,ms.  Only 17\% of inputs reach the
+          expensive fuzzy and embedding stages.
+    \item \textbf{Interpretability}: Every \ic{ResolvedEntity} carries a
+          \ic{match\_method} field (``cached,'' ``exact,'' ``canonical,''
+          ``alias,'' ``fuzzy,'' ``embedding,'' ``new'') and a numeric
+          \ic{confidence}.  Downstream systems can filter or flag
+          low-confidence matches for human review.
+    \item \textbf{Graceful degradation}: If Redis is down, stage 1 is
+          skipped.  If the embedding service is unreachable, stage 6 is
+          skipped.  If the fulltext index does not exist, stage 5 falls
+          back to batched loading.  The pipeline always produces a
+          result.
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The \texttt{ResolvedEntity} Dataclass}
+\label{sec:resolved-entity}
+
+Every call to \ic{resolve()} returns an instance of this dataclass:
+
+\begin{lstlisting}[style=python, caption={The \ic{ResolvedEntity} dataclass from \codefile{models/ontology.py}.}]
+@dataclass
+class ResolvedEntity:
+    """Result of entity resolution."""
+    id: Optional[str]
+    name: str
+    type: str
+    is_new: bool = False
+    match_method: Optional[str] = None  # cached, exact, canonical,
+                                        # alias, fuzzy, embedding, new
+    confidence: float = 1.0
+    canonical_name: Optional[str] = None
+    aliases: list[str] = None
+
+    def __post_init__(self):
+        if self.aliases is None:
+            self.aliases = []
+\end{lstlisting}
+
+\begin{warning}
+\ic{resolve()} does \textbf{NOT} write to Neo4j.  It returns a
+\ic{ResolvedEntity} describing what the pipeline found (or what should be
+created), but the caller is responsible for executing the actual
+\ic{CREATE} query.  If you call \ic{resolve()} and discard the result,
+no node is created.
+\end{warning}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Evaluation Results}
+\label{sec:er-evaluation}
+
+The pipeline was evaluated on a synthetic benchmark of 2,438 entity
+mention variants using B-cubed precision, recall, and F1 metrics.
+Table~\ref{tab:er-evaluation} compares \sysname{}'s cascade against
+single-method baselines.
+
+\begin{table}[ht]
+\centering
+\caption{Entity resolution evaluation (B-cubed metrics).  McNemar's test:
+$p < 0.001$ for \sysname{} vs.\ all baselines.}
+\label{tab:er-evaluation}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{B-cubed P} & \textbf{B-cubed R} & \textbf{B-cubed F1} \\
+\midrule
+\sysname{} (cascade) & 0.985 & 0.974 & \textbf{0.979} \\
+SBERT cosine          & 0.891 & 0.858 & 0.874 \\
+Fuzzy only            & 0.812 & 0.726 & 0.767 \\
+Exact only            & 0.793 & 0.703 & 0.746 \\
+SpaCy NER             & 0.583 & 0.468 & 0.521 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The gap between the cascade and the best single method (SBERT, F1 = 0.874)
+is 10.5 percentage points---statistically significant and practically
+meaningful.  SpaCy NER performs poorly because it was designed for named
+entity \emph{recognition}, not \emph{resolution}; it treats ``postgres'' and
+``PostgreSQL'' as distinct entities.
+
+\begin{keyinsight}
+The pipeline achieves 97.9\% F1 not through one clever stage, but through the
+cascade.  Each stage catches a different class of variation: canonical maps
+handle abbreviations, fuzzy matching handles typos, and embeddings handle
+semantic synonyms.  Remove any stage and the overall score drops.
+\end{keyinsight}

@@ -1,4 +1,233 @@
 \chapter{Backend API Layer}
 \label{ch:backend-api}
 
-\textit{Content to be written.}
+The backend is a FastAPI application that sits between the Next.js frontend
+and three databases (PostgreSQL, Neo4j, Redis).  It registers 12 routers,
+applies 4 middleware layers, and reshapes raw database records into the
+contracts the frontend expects.  This chapter explains how the pieces
+fit together.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Application Structure}
+\label{sec:api-structure}
+
+The entry point is \codefile{apps/api/main.py}.  At startup, it:
+
+\begin{enumerate}
+    \item Initializes connection pools for PostgreSQL (async SQLAlchemy),
+          Neo4j (async Bolt driver), and Redis.
+    \item Registers 4 middleware layers (applied bottom-to-top on each
+          request):
+          \begin{itemize}
+              \item \textbf{CORS} --- allows the frontend origin only, with
+                    credentials.
+              \item \textbf{GZip} --- compresses responses larger than
+                    1,000 bytes.
+              \item \textbf{Request size limit} --- rejects bodies exceeding
+                    10\,MB (SEC-010).
+              \item \textbf{Security headers} --- adds
+                    \ic{X-Content-Type-Options},
+                    \ic{X-Frame-Options},
+                    \ic{Strict-Transport-Security}, and others
+                    (DEVOPS-P2-1).
+          \end{itemize}
+    \item Registers 12 routers under the \ic{/api} prefix.
+    \item Installs global exception handlers for validation errors,
+          HTTP exceptions, and circuit-breaker opens.
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Router Organization}
+\label{sec:router-organization}
+
+The 12 routers are grouped by subsystem.  Table~\ref{tab:routers} shows
+each router, its URL prefix, and its responsibility.
+
+\begin{table}[ht]
+\centering
+\caption{Backend routers grouped by subsystem.}
+\label{tab:routers}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Subsystem} & \textbf{Router} & \textbf{Prefix} & \textbf{Responsibility} \\
+\midrule
+Capture &
+    \ic{capture.py} & \ic{/api/capture} &
+    Real-time capture of developer--AI conversations. \\
+\addlinespace
+\multirow{2}{*}{Extraction} &
+    \ic{ingest.py}  & \ic{/api/ingest} &
+    Bulk ingestion of conversation logs. \\
+& \ic{agent.py}   & \ic{/api/agent} &
+    Agent context for MCP tool integration. \\
+\addlinespace
+\multirow{3}{*}{Graph} &
+    \ic{graph.py}    & \ic{/api/graph} &
+    Graph visualization data (nodes, edges, stats). \\
+& \ic{entities.py} & \ic{/api/entities} &
+    CRUD operations on entity nodes. \\
+& \ic{decisions.py} & \ic{/api/decisions} &
+    CRUD operations on decision traces. \\
+\addlinespace
+\multirow{2}{*}{Search} &
+    \ic{search.py} & \ic{/api/search} &
+    Fulltext and hybrid search. \\
+& \ic{ask.py}     & \ic{/api/ask} &
+    GraphRAG Q\&A with SSE streaming. \\
+\addlinespace
+\multirow{4}{*}{Management} &
+    \ic{projects.py}  & \ic{/api/projects} &
+    Multi-project workspace management. \\
+& \ic{dashboard.py} & \ic{/api/dashboard} &
+    Aggregated statistics and charts. \\
+& \ic{export.py}    & \ic{/api/export} &
+    Data export (JSON, CSV). \\
+& \ic{users.py}     & \ic{/api/users} &
+    User registration, profile, and management. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Authentication Flow}
+\label{sec:auth-flow}
+
+\sysname{} uses Auth.js v5 (NextAuth) on the frontend and JWT verification
+on the backend.  The flow is:
+
+\begin{enumerate}
+    \item The user signs in via the Next.js frontend.  Auth.js issues a
+          JWT signed with \confkey{NEXTAUTH\_SECRET}.
+    \item Every API request from the frontend includes this JWT in the
+          \ic{Authorization: Bearer <token>} header.
+    \item The backend verifies the JWT signature using
+          \confkey{SECRET\_KEY} from its own environment.
+    \item On success, the backend extracts \ic{user\_id} from the JWT
+          payload and injects it into the request context.
+    \item On failure (expired, malformed, or wrong secret), the request
+          falls back to the ``anonymous'' user---which has no data.
+\end{enumerate}
+
+\begin{warning}
+\confkey{NEXTAUTH\_SECRET} (in \codefile{apps/web/.env.local}) and
+\confkey{SECRET\_KEY} (in \codefile{apps/api/.env}) must be identical.
+A mismatch causes silent authentication failure: the user appears to be
+logged in on the frontend but sees an empty graph on the backend because
+all queries scope to ``anonymous.''
+\end{warning}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Multi-Tenant Isolation}
+\label{sec:multi-tenant}
+
+Every Neo4j query that touches user data must include a user-scoping
+\ic{WHERE} clause.  This is \sysname{}'s primary mechanism for
+multi-tenant isolation: all users share a single Neo4j database, and
+their data is separated by the \ic{user\_id} property on
+\ic{DecisionTrace} nodes.
+
+The correct pattern:
+
+\begin{lstlisting}[style=cypher, caption={Correct: user-scoped query.}]
+MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+WHERE d.user_id = $user_id OR d.user_id IS NULL
+RETURN e.name, e.type
+\end{lstlisting}
+
+The incorrect pattern:
+
+\begin{lstlisting}[style=cypher, caption={Incorrect: missing user scope.}]
+MATCH (d:DecisionTrace)-[:INVOLVES]->(e:Entity)
+RETURN e.name, e.type
+\end{lstlisting}
+
+The \ic{OR d.user\_id IS NULL} clause handles legacy data and system-level
+entities that are shared across all users.
+
+\begin{warning}
+A missing \ic{user\_id} filter is a \textbf{security bug}.  It leaks one
+user's decisions and entities to every other user.  Every new Cypher query
+in the codebase must include the user-scoping pattern shown above.
+\end{warning}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{SSE Streaming}
+\label{sec:sse-streaming}
+
+The \ic{/api/ask} endpoint streams its response as Server-Sent Events
+(SSE) rather than returning a single JSON payload.  This allows the
+frontend to display tokens as they arrive from the LLM.
+
+The stream emits four event types:
+
+\begin{table}[ht]
+\centering
+\caption{SSE event types in the ask endpoint.}
+\label{tab:sse-events}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Event} & \textbf{Payload \& Purpose} \\
+\midrule
+\ic{context} &
+    \ic{\{"sources": [...], "context\_length": N\}} ---
+    The retrieved graph context and source nodes, sent once
+    before the first token. \\
+\addlinespace
+\ic{token} &
+    \ic{\{"text": "..."}\} ---
+    A chunk of the LLM's response.  Sent repeatedly as
+    tokens stream from the model. \\
+\addlinespace
+\ic{done} &
+    \ic{\{"token\_count": N\}} ---
+    End-of-stream marker.  The frontend stops its loading
+    indicator. \\
+\addlinespace
+\ic{error} &
+    \ic{\{"detail": "..."}\} ---
+    An error occurred during retrieval or generation.  The
+    frontend shows an error message. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Each event is serialized with a helper function that formats the SSE
+protocol:
+
+\begin{lstlisting}[style=python, caption={SSE event formatter from \codefile{routers/ask.py}.}]
+def _sse_event(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+\end{lstlisting}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The Reshaping Layer}
+\label{sec:reshaping-layer}
+
+Neo4j returns flat dictionaries of node properties.  The frontend expects
+structured, typed objects.  The routers bridge this gap by reshaping raw
+database results into frontend-ready contracts.
+
+For example, the \ic{ask.py} router transforms raw Neo4j
+\ic{DecisionTrace} and \ic{Entity} nodes into \ic{AskSourceNode} objects
+that the frontend's \ic{<AskPanel>} component expects.  Similarly,
+\ic{search.py} reshapes into \ic{SearchResult} objects with highlighted
+snippets.
+
+This reshaping is intentionally done in the router layer (not in the
+service layer) because different endpoints may need different projections
+of the same underlying data.  The service layer returns raw data; the
+router layer decides what the frontend sees.
+
+\begin{tryit}
+Start the backend (\ic{pnpm dev:api}) and open
+\ic{http://localhost:8000/docs} in your browser.  FastAPI auto-generates
+an OpenAPI UI where you can test every endpoint, see request/response
+schemas, and try authenticated requests by pasting your JWT into the
+Authorize dialog.
+\end{tryit}
