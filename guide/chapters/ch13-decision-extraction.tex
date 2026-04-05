@@ -1,4 +1,254 @@
 \chapter{Decision Extraction}
 \label{ch:decision-extraction}
 
-\textit{Content to be written.}
+\textit{The extraction pipeline is the heart of \sysname{}.  It takes a
+free-form conversation---possibly thousands of tokens of rambling
+developer--AI dialogue---and distills it into a structured decision trace
+with six fields.  This chapter walks through every stage of that pipeline,
+from prompt design to JSON repair to caching.}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The Pipeline}
+\label{sec:extraction-pipeline}
+
+The extraction service lives in
+\codefile{apps/api/services/extractor.py}.  At a high level the pipeline
+is five stages:
+
+\begin{enumerate}
+  \item \textbf{Input.}  A block of conversation text arrives---either from a
+        completed capture session (Chapter~\ref{ch:your-first-session}) or
+        from a bulk JSON import.
+  \item \textbf{Prompt construction.}  The text is injected into a
+        few-shot extraction prompt that tells the LLM what a ``decision''
+        is and what fields to return.
+  \item \textbf{LLM call.}  The prompt is sent to the configured LLM
+        (default: NVIDIA Nemotron 49B) with \ic{temperature=0.3} and
+        \ic{max\_tokens=4096}.
+  \item \textbf{JSON parse \& repair.}  The raw response is cleaned
+        (thinking tags stripped, truncated JSON repaired) and parsed into a
+        Python list of dicts.
+  \item \textbf{Validation \& defaults.}  Missing fields are filled with
+        safe defaults, and each dict is validated against the
+        \ic{DecisionCreate} schema.
+\end{enumerate}
+
+\begin{keyinsight}
+The pipeline is intentionally \emph{stateless}.  It takes text in and
+returns structured JSON out.  Persistence to Neo4j, PostgreSQL, and Redis
+happens in a separate \ic{save\_decision()} step---which means you can
+test extraction in isolation without touching any database.
+\end{keyinsight}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The Extraction Prompt}
+\label{sec:extraction-prompt}
+
+The core prompt (\ic{DECISION\_EXTRACTION\_PROMPT}) is a few-shot,
+chain-of-thought template.  Its structure has three parts:
+
+\paragraph{1.\ Definition of ``decision.''}
+The prompt defines four categories that the LLM should recognize:
+
+\begin{itemize}
+  \item \textbf{Explicit decisions:} ``Should we use X or Y?  Let's use X
+        because\ldots''
+  \item \textbf{Implicit decisions:} ``Let's use X for this'' (no
+        stated alternatives).
+  \item \textbf{Technical choices:} Framework selections, architecture
+        patterns, tool adoptions.
+  \item \textbf{Implementation strategies:} How to solve a problem,
+        approach to take.
+\end{itemize}
+
+\paragraph{2.\ Required fields.}
+Each decision must include six fields:
+
+\begin{table}[ht]
+\centering
+\caption{The six fields of a decision trace.}
+\label{tab:trace-fields}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Field} & \textbf{Description} \\
+\midrule
+\ic{trigger}    & What prompted the decision (problem, requirement, or question). \\
+\ic{context}    & Background information---constraints, requirements, team situation. \\
+\ic{options}    & Alternatives considered (may be a single-element list). \\
+\ic{decision}   & A clear statement of what was chosen. \\
+\ic{rationale}  & Why this choice was made, or ``Not explicitly stated.'' \\
+\ic{confidence} & 0.0--1.0 score reflecting how clear the decision was. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{3.\ Output format.}
+The prompt closes with: ``Return ONLY valid JSON, no markdown code blocks
+or explanation.''  The expected output is a JSON array of decision objects,
+or an empty array \ic{[]} if no decisions are found.
+
+The prompt also includes four few-shot examples (single decision, multiple
+decisions, implicit decision, and no-decision conversation) to anchor the
+LLM's behavior.  An abbreviated version:
+
+\begin{lstlisting}[style=python, caption={Abbreviated extraction prompt (see extractor.py for the full version).}]
+DECISION_EXTRACTION_PROMPT = """Analyze this conversation
+and extract any technical decisions made.
+
+## What constitutes a decision?
+A decision is a choice that affects the project direction,
+architecture, or implementation. This includes:
+- Explicit decisions: "Should we use X or Y? ..."
+- Implicit decisions: "Let's use X for this"
+- Technical choices: Framework, architecture, tools
+- Implementation strategies: How to solve a problem
+
+## Examples
+### Example 1: Single clear decision
+Conversation: "We need to pick a database. ..."
+Output: [{"trigger": "...", "decision": "...", ...}]
+
+### Example 4: No decisions (just discussion)
+Output: []
+
+## Conversation to analyze:
+{conversation_text}
+
+Return ONLY valid JSON, no markdown code blocks."""
+\end{lstlisting}
+
+\sysname{} also ships specialized prompts for architecture, technology,
+and process decisions (\ic{ARCHITECTURE\_DECISION\_PROMPT},
+\ic{TECHNOLOGY\_DECISION\_PROMPT}, \ic{PROCESS\_DECISION\_PROMPT}).
+These narrow the LLM's focus when the decision type is known in advance.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{JSON Repair}
+\label{sec:json-repair}
+
+LLM responses are not always well-formed JSON.  Two problems are common:
+
+\paragraph{Thinking tags.}
+NVIDIA Nemotron generates \ic{<think>...</think>} blocks as part of its
+chain-of-thought reasoning.  These consume output tokens and are not valid
+JSON.  The system strips them before parsing.
+
+\paragraph{Truncated output.}
+When the combined thinking + JSON exceeds \ic{max\_tokens}, the response
+is cut off mid-object.  The JSON repair strategy in
+\codefile{utils/json\_extraction.py} tries four strategies in order:
+
+\begin{enumerate}
+  \item Parse as pure JSON.
+  \item Extract from \ic{\`{}\`{}\`{}json} code blocks.
+  \item Extract from untyped \ic{\`{}\`{}\`{}} code blocks.
+  \item Regex fallback: find the last complete \ic{\}} followed by
+        \ic{]} and parse the substring.
+\end{enumerate}
+
+\begin{warning}
+Always use \ic{max\_tokens=4096}, not the default 2000.  Thinking tags
+routinely consume 1000--2000 tokens before the model starts producing
+JSON.  With \ic{max\_tokens=2000}, roughly 14.5\% of extractions fail
+due to truncation.
+\end{warning}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Prompt Versioning}
+\label{sec:prompt-versioning}
+
+LLM extraction responses are cached in Redis to avoid redundant API calls.
+The cache key includes the prompt version:
+
+\begin{lstlisting}[style=python, numbers=none]
+# Format: llm:{version}:{type}:{md5(text)}
+key = f"llm:{version}:extract:{text_hash}"
+\end{lstlisting}
+
+The version string is controlled by
+\confkey{LLM\_EXTRACTION\_PROMPT\_VERSION} in
+\codefile{apps/api/config.py} (default: \ic{"v1"}).  When you modify the
+extraction prompt, bump this value.  All cached responses whose keys
+contain the old version will naturally miss, forcing re-extraction with the
+new prompt.
+
+\begin{lstlisting}[style=python, numbers=none, caption={The cache key generation method.}]
+def _get_cache_key(self, text: str, extraction_type: str) -> str:
+    text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
+    version = self._settings.llm_extraction_prompt_version
+    return f"llm:{version}:{extraction_type}:{text_hash}"
+\end{lstlisting}
+
+Cached responses have a 24-hour TTL (\confkey{llm\_cache\_ttl} =
+86\,400\,s).  Entity resolution results are cached separately with a
+5-minute TTL.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Default Values}
+\label{sec:default-values}
+
+Not every LLM response includes all six fields.  The
+\ic{apply\_decision\_defaults()} function fills in safe values for anything
+missing or empty:
+
+\begin{lstlisting}[style=python, caption={Default values for incomplete extraction results.}]
+DEFAULT_DECISION_FIELDS = {
+    "confidence": 0.5,
+    "context":    "",
+    "rationale":  "",
+    "options":    [],
+    "trigger":    "Unknown trigger",
+    "decision":   "",
+}
+\end{lstlisting}
+
+The function also preserves extra fields not in the defaults dict, so
+specialized prompts that return \ic{decision\_type} or other custom fields
+are not silently dropped.
+
+\begin{tryit}
+Run a single extraction manually to see defaults in action:
+\begin{lstlisting}[style=bash, numbers=none]
+curl -X POST http://localhost:8000/api/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Let us use Redis for caching."}'
+\end{lstlisting}
+The response will show \ic{confidence: 0.85} (from the LLM) but
+\ic{context: ""} and \ic{options: ["Redis"]} (both filled by the model),
+demonstrating that the LLM usually provides most fields when the
+conversation is clear.
+\end{tryit}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Gotchas}
+\label{sec:extraction-gotchas}
+
+\begin{warning}
+\textbf{Prompt sanitizer blocks synthetic conversations.}
+The LLM client includes a prompt injection detector that flags
+``USER:'' and ``ASSISTANT:'' labels as potential attacks.  Synthetic
+conversations (used in evaluation) naturally contain these markers.
+Always pass \ic{sanitize\_input=False} when calling the LLM on
+synthetic or imported conversation text.
+\end{warning}
+
+\begin{warning}
+\textbf{Multiple extraction runs accumulate.}
+The \ic{save\_decision()} method \emph{creates} new Neo4j nodes---it
+does not upsert.  If you run the extraction pipeline twice on the same
+conversations, you get duplicate decision traces.  Always wipe Neo4j
+(\ic{MATCH (n) DETACH DELETE n}) before starting a new evaluation run.
+\end{warning}
+
+\begin{warning}
+\textbf{True extraction yield is approximately 1.9 decisions per
+conversation} with an 85.5\% success rate across 200 synthetic
+conversations.  If you see significantly higher numbers, you are likely
+looking at accumulated results from multiple runs.
+\end{warning}

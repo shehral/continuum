@@ -1,4 +1,316 @@
 \chapter{Infrastructure Layer}
 \label{ch:infrastructure}
 
-\textit{Content to be written.}
+\textit{\sysname{} runs on three databases and a cache, each chosen for a
+specific job.  This chapter explains what they are, how they are wired together
+via Docker Compose, how to persist (or destroy) your data, and how Alembic
+keeps PostgreSQL schemas in sync across contributors.}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Three Databases}
+\label{sec:three-databases}
+
+Most web applications use a single database.  \sysname{} uses three---not out of
+complexity fetishism, but because relational data, graph data, and ephemeral
+cache data have fundamentally different access patterns.
+Table~\ref{tab:database-overview} summarizes the choices.
+
+\begin{table}[ht]
+\centering
+\caption{Infrastructure services and why each was chosen.}
+\label{tab:database-overview}
+\begin{tabularx}{\textwidth}{l c X l}
+\toprule
+\textbf{Service} & \textbf{Port} & \textbf{Purpose} & \textbf{Why Chosen} \\
+\midrule
+PostgreSQL~18 & 5432 &
+    Relational storage for users, projects, decision metadata.
+    Schema managed by Alembic migrations. &
+    ACID compliance, concurrent access, rich ecosystem.
+    Chosen over SQLite for multi-user concurrency. \\
+\addlinespace
+Neo4j~2025.01 & 7474 / 7687 &
+    Knowledge graph: entity nodes, decision traces, relationship edges.
+    Queried via Cypher. &
+    Native labeled property graph model.
+    Cypher makes multi-hop traversals readable. \\
+\addlinespace
+Redis~7.4 & 6379 &
+    Caching (3 tiers with different TTLs), rate limiting,
+    session ephemera. &
+    Sub-millisecond reads.  Append-only file persistence for
+    crash recovery without full durability overhead. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{keyinsight}
+PostgreSQL is the system of record for \emph{who} and \emph{what}.  Neo4j is the
+system of record for \emph{how things relate}.  Redis is the accelerator---if you
+lose its data, nothing is permanently lost; the caches rebuild themselves.
+\end{keyinsight}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Docker Compose}
+\label{sec:docker-compose}
+
+All three services are defined in a single
+\codefile{docker-compose.yml} at the repository root.  Here is the full file:
+
+\begin{lstlisting}[style=yaml, caption={docker-compose.yml (complete).}]
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: continuum-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-continuum}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL",
+             "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB:-continuum}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:2025.01-community
+    container_name: continuum-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:?}/${NEO4J_PASSWORD:?}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+    ports:
+      - "127.0.0.1:7474:7474"   # HTTP browser
+      - "127.0.0.1:7687:7687"   # Bolt protocol
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider",
+             "http://localhost:7474"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: continuum-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a",
+             "$${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >-
+      redis-server --appendonly yes
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  redis_data:
+\end{lstlisting}
+
+A few things to notice:
+
+\begin{itemize}
+    \item Every port mapping begins with \ic{127.0.0.1}---the service is only
+          reachable from your local machine, never from the network.
+    \item Environment variables ending with \ic{:?} are \emph{required}---Docker
+          Compose will refuse to start if they are unset.
+    \item Neo4j gets a 512\,MB initial heap and a 1\,GB maximum.  The
+          community edition is single-tenant, which is fine for local
+          development.
+    \item Redis uses \ic{--appendonly yes} for crash-safe persistence without
+          full RDB snapshots.
+\end{itemize}
+
+\begin{warning}
+Never bind ports to \ic{0.0.0.0} (the default when you omit the IP).
+Doing so exposes your databases---including their credentials---to every device
+on your network.  The \ic{127.0.0.1} prefix is a deliberate security measure.
+\end{warning}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Volume Persistence}
+\label{sec:volume-persistence}
+
+Docker Compose creates four \emph{named volumes} at the bottom of the file:
+\ic{postgres\_data}, \ic{neo4j\_data}, \ic{neo4j\_logs}, and \ic{redis\_data}.
+Named volumes survive container restarts and even container recreation.
+
+There are two ways to stop the services:
+
+\begin{lstlisting}[style=bash, numbers=none]
+# Stop containers, KEEP all data
+docker-compose down
+
+# Stop containers and DESTROY all volumes
+docker-compose down -v
+\end{lstlisting}
+
+The first command is safe to run daily---your databases, user accounts,
+migrations, and graph data are all preserved.
+
+\begin{warning}
+\texttt{docker-compose down -v} \textbf{wipes everything}: PostgreSQL rows,
+Neo4j nodes and edges, Redis caches, and the Alembic migration stamp.  After
+running it, you must re-register users, re-run \ic{alembic upgrade head}, and
+re-import any data.  Only use \ic{-v} when you intentionally want a clean
+slate.  The same warning applies to \ic{docker volume prune}.
+\end{warning}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Database Migrations}
+\label{sec:database-migrations}
+
+\sysname{} uses \textbf{Alembic} to manage PostgreSQL schema changes.  Alembic
+is a migration framework built on SQLAlchemy---it generates incremental SQL
+scripts from your Python model definitions and applies them in order.
+
+\subsection*{How Alembic is organized}
+
+\begin{forest}
+for tree={
+    font=\small\ttfamily,
+    grow'=0,
+    child anchor=west,
+    parent anchor=south,
+    anchor=west,
+    calign=first,
+    edge path={
+        \noexpand\path [draw, \forestoption{edge}]
+        (!u.south west) +(7.5pt,0) |- (.child anchor)\forestoption{edge label};
+    },
+    before typesetting nodes={
+        if n=1 {insert before={[,phantom]}} {}
+    },
+    fit=band,
+    before computing xy={l=15pt},
+}
+[apps/api/
+    [alembic.ini {\normalfont\itshape\color{ContinuumGray} --- database URL, script location}]
+    [alembic/
+        [env.py {\normalfont\itshape\color{ContinuumGray} --- reads SQLAlchemy models, configures autogenerate}]
+        [versions/
+            [001\_initial.py]
+            [002\_add\_projects.py]
+            [\ldots]
+        ]
+    ]
+]
+\end{forest}
+
+\begin{itemize}
+    \item \codefile{alembic.ini} tells Alembic where to find the database and
+          where to find migration scripts.
+    \item \codefile{env.py} imports your SQLAlchemy models so that
+          \ic{--autogenerate} can diff the Python definitions against the live
+          database.
+    \item \codefile{versions/} holds numbered Python scripts, each with an
+          \ic{upgrade()} and \ic{downgrade()} function.
+\end{itemize}
+
+\subsection*{Common commands}
+
+\begin{lstlisting}[style=bash, numbers=none, caption={Alembic commands you will use most.}]
+# Apply all pending migrations
+pnpm db:migrate          # or: alembic upgrade head
+
+# Create a new migration from model changes
+alembic revision --autogenerate -m "add confidence column"
+
+# Roll back the last migration
+alembic downgrade -1
+
+# Check current migration state
+alembic current
+\end{lstlisting}
+
+\subsection*{The stamp head escape hatch}
+
+If the database already has tables (e.g., you ran the app before adding Alembic)
+but the \ic{alembic\_version} table is missing or empty, \ic{alembic upgrade head}
+will fail with a \ic{DuplicateTableError}.  The fix:
+
+\begin{lstlisting}[style=bash, numbers=none]
+alembic stamp head
+\end{lstlisting}
+
+This writes the latest revision ID into \ic{alembic\_version} without actually
+running any migration scripts---it tells Alembic ``the database is already at
+this state, just record it.''
+
+\begin{warning}
+Only use \ic{alembic stamp head} when you are certain the live schema matches
+the latest migration.  If the schema is actually behind, stamping skips the
+missing changes and your application will encounter column-not-found errors at
+runtime.  When in doubt, compare the live schema against the migration scripts
+manually.
+\end{warning}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Redis Key Patterns}
+\label{sec:redis-key-patterns}
+
+Redis stores three tiers of cached data, each with a different TTL based on how
+quickly the underlying data can change.
+Table~\ref{tab:redis-key-patterns} lists every key pattern used by \sysname{}.
+
+\begin{table}[ht]
+\centering
+\caption{Redis key patterns, TTLs, and purposes.}
+\label{tab:redis-key-patterns}
+\begin{tabularx}{\textwidth}{l c X}
+\toprule
+\textbf{Key Format} & \textbf{TTL} & \textbf{Purpose} \\
+\midrule
+\ic{entity:\{user\_id\}:\{lookup\}:\{name\}} & 5 min &
+    Entity resolution cache.  Avoids re-running the 7-stage pipeline
+    for repeated mentions.  User-scoped to enforce data isolation. \\
+\addlinespace
+\ic{llm:\{version\}:extract:\{hash\}} & 24 h &
+    LLM response cache.  Keyed by prompt version so that changing the
+    extraction prompt automatically invalidates stale entries.
+    Global (same input $\rightarrow$ same output). \\
+\addlinespace
+\ic{emb:\{model\}:\{type\}:\{hash\}} & 30 d &
+    Embedding vector cache.  Embedding models are deterministic and
+    rarely change, so a long TTL is safe.  Global. \\
+\addlinespace
+\ic{rate:\{user\_id\}} & 60 s &
+    Rate limit counter.  Tracks request count within a sliding window.
+    Per-user.  See Chapter~\ref{ch:configuration},
+    Section~\ref{sec:rate-limiting}. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{keyinsight}
+The entity cache is per-user, but the LLM and embedding caches are global.
+This is intentional: entity resolution is user-scoped (different users may have
+different entities with the same name), but LLM and embedding outputs are
+deterministic functions of their input regardless of who triggered them.
+\end{keyinsight}

@@ -1,4 +1,317 @@
 \chapter{Configuration \& Settings}
 \label{ch:configuration}
 
-\textit{Content to be written.}
+\textit{Every tunable parameter in \sysname{} lives in a single file:
+\codefile{apps/api/config.py}.  This chapter explains the settings architecture,
+the security pattern for API keys, how to switch LLM and embedding providers,
+and the rationale behind every cache TTL and rate limit.}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Settings Architecture}
+\label{sec:settings-architecture}
+
+\sysname{} uses Pydantic's \ic{BaseSettings} class from the
+\ic{pydantic-settings} package.  Every configuration value is declared as a
+typed field with a default, and values are automatically loaded from environment
+variables or a \ic{.env} file.
+
+\begin{lstlisting}[style=python, caption={The Settings class skeleton (simplified).}]
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    database_url: str = ""
+    neo4j_uri: str = ""
+    nvidia_api_key: SecretStr = SecretStr("")
+    llm_provider: str = "nvidia"
+    fuzzy_match_threshold: float = 0.85
+    rate_limit_requests: int = 30
+    debug: bool = False
+    # ... 30+ more fields
+
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore"
+    )
+\end{lstlisting}
+
+The \ic{model\_config} line tells Pydantic two things:
+
+\begin{enumerate}
+    \item Load variables from a \ic{.env} file in the working directory.
+    \item Ignore extra environment variables that do not correspond to any
+          field---this prevents crashes when the shell has unrelated variables set.
+\end{enumerate}
+
+The entire application accesses settings through a singleton factory:
+
+\begin{lstlisting}[style=python, caption={The singleton pattern for settings access.}]
+from functools import lru_cache
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+\end{lstlisting}
+
+The \ic{@lru\_cache} decorator ensures that \ic{Settings()} is constructed
+exactly once.  Every subsequent call to \ic{get\_settings()} returns the same
+instance with zero overhead.  This matters because Pydantic parses the
+environment on every \ic{Settings()} call---without caching, that parsing would
+happen on every request.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The SecretStr Pattern}
+\label{sec:secretstr-pattern}
+
+Three fields in \ic{Settings} use Pydantic's \ic{SecretStr} type instead of
+plain \ic{str}:
+
+\begin{itemize}
+    \item \ic{nvidia\_api\_key} --- NVIDIA NIM API key
+    \item \ic{neo4j\_password} --- Neo4j database password
+    \item \ic{secret\_key} --- JWT signing secret
+\end{itemize}
+
+\ic{SecretStr} wraps the raw value so that it is never accidentally exposed.
+Calling \ic{print(settings)} or logging the object shows
+\ic{SecretStr('**********')} instead of the actual key.
+
+\subsection*{Accessing the raw value}
+
+You cannot use a \ic{SecretStr} field directly as a string.  The \ic{Settings}
+class provides explicit accessor methods:
+
+\begin{lstlisting}[style=python, caption={Correct vs.\ incorrect access of secret fields.}]
+settings = get_settings()
+
+# CORRECT: use the accessor method
+key = settings.get_nvidia_api_key()     # returns str
+pwd = settings.get_neo4j_password()     # returns str
+sec = settings.get_secret_key()         # returns str
+
+# ALSO CORRECT: call .get_secret_value() directly
+key = settings.nvidia_api_key.get_secret_value()
+
+# WRONG: this gives you a SecretStr object, not a string
+key = settings.nvidia_api_key  # type: SecretStr, not str
+\end{lstlisting}
+
+\begin{keyinsight}
+The \ic{SecretStr} pattern (tagged SEC-007 in the codebase) is a defense-in-depth
+measure.  Even if a developer accidentally writes
+\ic{logger.info(f"Config: \{settings\}")}, the API keys remain masked.
+The custom \ic{\_\_repr\_\_} method on \ic{Settings} adds a second layer by only
+including non-sensitive fields in the string representation.
+\end{keyinsight}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{LLM Provider Switching}
+\label{sec:llm-provider-switching}
+
+\sysname{} supports two LLM providers, selected by a single environment
+variable:
+
+\begin{lstlisting}[style=bash, numbers=none]
+# In your .env file:
+LLM_PROVIDER=nvidia    # default
+# or
+LLM_PROVIDER=bedrock   # Amazon Bedrock
+\end{lstlisting}
+
+The application uses a factory pattern to instantiate the correct provider at
+startup.  The provider interface is identical regardless of backend, so no
+application code needs to change when you switch.
+
+\subsection*{NVIDIA NIM (default)}
+
+\begin{itemize}
+    \item \textbf{Primary model:}
+          \ic{nvidia/llama-3.3-nemotron-super-49b-v1.5} (128k context)
+    \item \textbf{Fallback model:}
+          \ic{nvidia/llama-3.1-nemotron-70b-instruct} (auto-failover on 503 errors)
+    \item Requires \confkey{NVIDIA\_API\_KEY} from \ic{build.nvidia.com}
+\end{itemize}
+
+The fallback is automatic.  When the primary model returns a 503 (common under
+load on the free NIM tier), the system retries with the fallback model.  This
+is configured via:
+
+\begin{lstlisting}[style=python, numbers=none]
+llm_fallback_model: str = "nvidia/llama-3.1-nemotron-70b-instruct"
+llm_fallback_enabled: bool = True
+\end{lstlisting}
+
+\subsection*{Amazon Bedrock (alternative)}
+
+\begin{itemize}
+    \item \textbf{Model:} \ic{anthropic.claude-sonnet-4-20250514}
+    \item Requires AWS credentials in the environment (no explicit API key field).
+    \item Region defaults to \ic{us-west-2}, configurable via
+          \confkey{AWS\_REGION}.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Embedding Provider}
+\label{sec:embedding-provider}
+
+Embeddings use a separate provider selection:
+
+\begin{lstlisting}[style=bash, numbers=none]
+EMBEDDING_PROVIDER=nvidia    # default
+\end{lstlisting}
+
+The default model is \ic{nvidia/llama-3.2-nv-embedqa-1b-v2}, which produces
+2048-dimensional vectors.  A separate API key (\confkey{NVIDIA\_EMBEDDING\_API\_KEY})
+is required because NVIDIA issues distinct keys for LLM and embedding endpoints.
+
+\begin{keyinsight}
+You can use NVIDIA embeddings with the Bedrock LLM, and this is the recommended
+configuration if you switch LLM providers.  Set \ic{LLM\_PROVIDER=bedrock} but
+keep \ic{EMBEDDING\_PROVIDER=nvidia} to avoid re-indexing.
+\end{keyinsight}
+
+\begin{warning}
+Changing the embedding provider changes the vector dimensionality (NVIDIA
+produces 2048-d, Bedrock Titan produces 1024-d).  Existing vectors in Neo4j
+become incompatible---you must delete all \ic{embedding} properties and re-embed
+every decision trace and entity.  This is a multi-hour operation on a large
+graph.  Do not change the embedding provider casually.
+\end{warning}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Cache TTL Rationale}
+\label{sec:cache-ttl-rationale}
+
+Every cache TTL in \sysname{} was chosen based on how quickly the underlying
+data can change.  Table~\ref{tab:cache-ttl-rationale} explains the reasoning.
+
+\begin{table}[ht]
+\centering
+\caption{Cache TTL rationale.}
+\label{tab:cache-ttl-rationale}
+\begin{tabularx}{\textwidth}{l c X}
+\toprule
+\textbf{Cache} & \textbf{TTL} & \textbf{Why This Value} \\
+\midrule
+Entity resolution & 5 min &
+    Entities can change when merged or when aliases are added.
+    A short TTL ensures stale resolutions expire quickly.
+    Even 5 minutes captures the burst of repeated mentions
+    within a single extraction. \\
+\addlinespace
+LLM response & 24 h &
+    The same input text with the same prompt version produces the same
+    extraction.  A 24-hour TTL is safe because the cache is
+    keyed by prompt version---bumping
+    \confkey{LLM\_EXTRACTION\_PROMPT\_VERSION} invalidates all entries. \\
+\addlinespace
+Embedding vector & 30 d &
+    The embedding model does not change between deployments.
+    The same text always maps to the same vector.  A 30-day TTL
+    minimizes redundant API calls while still eventually refreshing
+    if the model is swapped. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Rate Limiting}
+\label{sec:rate-limiting}
+
+\sysname{} implements per-user rate limiting via a Redis-backed token bucket.
+The parameters:
+
+\begin{itemize}
+    \item \textbf{Authenticated users:} 30 requests per 60-second window
+    \item \textbf{Anonymous users:} 10 requests per 60-second window
+    \item \textbf{Window type:} Sliding window (counter resets 60 seconds after
+          the first request in the current window)
+\end{itemize}
+
+The Redis key follows the pattern \ic{rate:\{user\_id\}} with a 60-second TTL.
+When the counter exceeds the limit, the API returns HTTP 429 (Too Many Requests)
+with a \ic{Retry-After} header.
+
+Both parameters are configurable:
+
+\begin{lstlisting}[style=python, numbers=none]
+rate_limit_requests: int = 30   # requests per window
+rate_limit_window: int = 60     # window size in seconds
+\end{lstlisting}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Key Settings Reference}
+\label{sec:key-settings-reference}
+
+Table~\ref{tab:key-settings} lists the 15 most important settings.
+Appendix~\ref{ch:config-reference} contains the complete list.
+
+\begin{longtable}{l l p{6.5cm}}
+\caption{Key settings in \codefile{config.py}.}
+\label{tab:key-settings} \\
+\toprule
+\textbf{Setting} & \textbf{Default} & \textbf{Description} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Setting} & \textbf{Default} & \textbf{Description} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{3}{r}{\itshape Continued on next page\ldots} \\
+\bottomrule
+\endfoot
+\bottomrule
+\endlastfoot
+\confkey{LLM\_PROVIDER}
+    & \ic{nvidia}
+    & LLM backend: \ic{nvidia} or \ic{bedrock}. \\
+\confkey{EMBEDDING\_PROVIDER}
+    & \ic{nvidia}
+    & Embedding backend. Keep \ic{nvidia} to avoid re-indexing. \\
+\confkey{NVIDIA\_MODEL}
+    & \ic{nvidia/llama-3.3-nemotron-super-49b-v1.5}
+    & Primary LLM model identifier. \\
+\confkey{LLM\_FALLBACK\_MODEL}
+    & \ic{nvidia/llama-3.1-nemotron-70b-instruct}
+    & Fallback LLM on 503 errors. \\
+\confkey{LLM\_FALLBACK\_ENABLED}
+    & \ic{True}
+    & Enable automatic model fallback. \\
+\confkey{FUZZY\_MATCH\_THRESHOLD}
+    & \ic{0.85}
+    & Minimum fuzzy match score (0--1) for entity resolution. \\
+\confkey{EMBEDDING\_SIMILARITY\_THRESHOLD}
+    & \ic{0.90}
+    & Minimum cosine similarity for embedding-based entity match. \\
+\confkey{ENTITY\_CACHE\_TTL}
+    & \ic{300}
+    & Entity cache lifetime in seconds (5 minutes). \\
+\confkey{LLM\_CACHE\_TTL}
+    & \ic{86400}
+    & LLM response cache lifetime in seconds (24 hours). \\
+\confkey{LLM\_EXTRACTION\_PROMPT\_VERSION}
+    & \ic{v1}
+    & Bump to invalidate all LLM cache entries. \\
+\confkey{MAX\_PROMPT\_TOKENS}
+    & \ic{70000}
+    & Maximum input tokens for LLM calls (128k context). \\
+\confkey{RATE\_LIMIT\_REQUESTS}
+    & \ic{30}
+    & Requests per rate limit window. \\
+\confkey{RATE\_LIMIT\_WINDOW}
+    & \ic{60}
+    & Rate limit window in seconds. \\
+\confkey{SECRET\_KEY}
+    & (empty)
+    & JWT signing secret. Must match \confkey{NEXTAUTH\_SECRET}. \\
+\confkey{DEBUG}
+    & \ic{False}
+    & Enable debug mode (verbose logging, CORS relaxed). \\
+\end{longtable}
