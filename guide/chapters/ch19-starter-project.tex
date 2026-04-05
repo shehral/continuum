@@ -1,4 +1,284 @@
 \chapter{Starter Project}
 \label{ch:starter-project}
 
-\textit{Content to be written.}
+\textit{This chapter describes ``Decision Diff,'' a one-week onboarding
+project that touches every layer of the \sysname{} stack.  You will build
+a timeline view showing how decisions about a given entity evolve over
+time, including when later decisions supersede or contradict earlier ones.
+Completing this project means you understand the full stack well enough to
+contribute independently.}
+
+\begin{keyinsight}
+This project touches every layer: Neo4j queries, a FastAPI endpoint,
+Pydantic models, a React component, and an evaluation harness.  Completing
+it means you understand how data flows from the graph database to the
+user's screen.
+\end{keyinsight}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Overview}
+\label{sec:starter-overview}
+
+The \textbf{Decision Diff} feature adds a timeline view for any entity in
+the knowledge graph.  When a user clicks on an entity (say ``PostgreSQL''),
+they see a vertical timeline of every decision that mentions it, ordered
+chronologically.  Relationships between decisions---\ic{SUPERSEDES} and
+\ic{CONTRADICTS}---are shown as colored badges connecting timeline entries.
+
+This is useful because it answers the question: \emph{``How has our
+thinking about this technology changed over time?''}  A team might start by
+choosing PostgreSQL for everything, later decide to add Redis for caching,
+and eventually supersede the original decision when they migrate to a
+managed database.  Decision Diff makes that evolution visible.
+
+\medskip\noindent\textbf{Suggested timeline:}
+
+\begin{table}[ht]
+\centering
+\begin{tabularx}{0.75\textwidth}{l X}
+\toprule
+\textbf{Phase} & \textbf{Days} \\
+\midrule
+Phase 1: Backend  & Days 1--2 \\
+Phase 2: Frontend & Days 3--4 \\
+Phase 3: Evaluation & Day 5 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Phase 1: Backend (Days 1--2)}
+\label{sec:starter-backend}
+
+\subsection{Neo4j Query}
+
+Write a Cypher query that, given an entity name, returns all decisions
+connected to it via \ic{INVOLVES} relationships, along with any
+\ic{SUPERSEDES} or \ic{CONTRADICTS} edges between those decisions.
+
+\begin{lstlisting}[style=cypher, title=Entity timeline query]
+MATCH (e:Entity {name: $entity_name})<-[:INVOLVES]-(d:DecisionTrace)
+OPTIONAL MATCH (d)-[r:SUPERSEDES|CONTRADICTS]->(other:DecisionTrace)
+WHERE other IN collect(d)
+RETURN d {
+    .id, .decision, .rationale, .confidence,
+    .created_at, .context
+} AS decision,
+collect(DISTINCT {
+    type: type(r),
+    target_id: other.id,
+    target_decision: other.decision
+}) AS relationships
+ORDER BY d.created_at ASC
+\end{lstlisting}
+
+\begin{warning}
+Always use \ic{parameters=\{\}} dict for Neo4j query parameters---never
+pass \ic{query=} as a keyword argument.  It conflicts with the positional
+Cypher string argument and causes a confusing runtime error.
+\end{warning}
+
+\subsection{Pydantic Models}
+
+Define request/response models for the timeline endpoint:
+
+\begin{lstlisting}[style=python, title=Timeline data models]
+from datetime import datetime
+from pydantic import BaseModel
+
+class DecisionRelationship(BaseModel):
+    """A relationship from this decision to another."""
+    type: str           # "SUPERSEDES" or "CONTRADICTS"
+    target_id: str
+    target_decision: str
+
+class TimelineEntry(BaseModel):
+    """A single decision in the entity timeline."""
+    id: str
+    decision: str
+    rationale: str | None = None
+    confidence: float
+    created_at: datetime
+    context: str | None = None
+    relationships: list[DecisionRelationship] = []
+
+class EntityTimelineResponse(BaseModel):
+    """Complete timeline for an entity."""
+    entity_name: str
+    total_decisions: int
+    timeline: list[TimelineEntry]
+\end{lstlisting}
+
+\subsection{Router}
+
+Create the endpoint in a new router file or add it to the existing
+entities router:
+
+\begin{lstlisting}[style=python, title=Timeline endpoint]
+@router.get(
+    "/{entity_id}/timeline",
+    response_model=EntityTimelineResponse,
+)
+async def get_entity_timeline(
+    entity_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Return chronological decision timeline for an entity."""
+    # 1. Look up entity by ID (with user_id filtering)
+    # 2. Run the Cypher query above
+    # 3. Map results to TimelineEntry models
+    # 4. Return EntityTimelineResponse
+    ...
+\end{lstlisting}
+
+Remember to register the router in \codefile{main.py} if you created a
+new file (see Recipe~17.4 in Chapter~\ref{ch:how-to-add-features}).
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Phase 2: Frontend (Days 3--4)}
+\label{sec:starter-frontend}
+
+Build an \ic{EntityTimeline.tsx} component that renders the backend
+response as a vertical timeline.
+
+\subsection{Component Structure}
+
+\begin{lstlisting}[style=typescript, title=EntityTimeline.tsx (skeleton)]
+"use client";
+
+import { cn } from "@/lib/utils";
+
+interface TimelineEntry {
+  id: string;
+  decision: string;
+  rationale: string | null;
+  confidence: number;
+  created_at: string;
+  relationships: {
+    type: "SUPERSEDES" | "CONTRADICTS";
+    target_id: string;
+    target_decision: string;
+  }[];
+}
+
+interface EntityTimelineProps {
+  entityName: string;
+  entries: TimelineEntry[];
+}
+
+export function EntityTimeline({
+  entityName,
+  entries,
+}: EntityTimelineProps) {
+  return (
+    <div className={cn("relative space-y-6 pl-8")}>
+      {/* Vertical line */}
+      <div className={cn(
+        "absolute left-3 top-0 bottom-0 w-px",
+        "bg-border"
+      )} />
+
+      {entries.map((entry, i) => (
+        <TimelineCard
+          key={entry.id}
+          entry={entry}
+          isLatest={i === entries.length - 1}
+        />
+      ))}
+    </div>
+  );
+}
+\end{lstlisting}
+
+\subsection{Design Guidelines}
+
+\begin{itemize}
+    \item Use \textbf{glass-style cards} consistent with the existing
+          \sysname{} design system (see
+          \codefile{apps/web/CLAUDE.md} for the Nebula theme tokens).
+    \item Use \ic{cn()} from \ic{@/lib/utils} for all className
+          composition.
+    \item Use semantic color tokens (\ic{bg-primary},
+          \ic{text-foreground}) rather than hardcoded color values.
+    \item Relationship badges should be color-coded:
+          \begin{itemize}
+              \item \ic{SUPERSEDES} --- amber/warning color (this decision
+                    replaced an older one).
+              \item \ic{CONTRADICTS} --- red/destructive color (these
+                    decisions conflict).
+          \end{itemize}
+    \item Entity type colors should match the existing entity badge
+          colors used elsewhere in the application.
+    \item Each card should show: decision text, confidence as a subtle
+          badge, formatted timestamp, and any relationship badges linking
+          to other cards in the timeline.
+    \item Icons should come from \ic{lucide-react} exclusively.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Phase 3: Evaluation (Day 5)}
+\label{sec:starter-evaluation}
+
+Write 5 test cases that verify the timeline feature works correctly.
+These can be unit tests (mocked Neo4j), integration tests (real database),
+or both.
+
+\begin{table}[ht]
+\centering
+\caption{Timeline test cases.}
+\label{tab:timeline-tests}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{\#} & \textbf{Scenario} & \textbf{Expected behavior} \\
+\midrule
+1 & Zero decisions    & Entity exists but has no decisions. Returns
+                        empty timeline with \ic{total\_decisions: 0}. \\
+2 & Single decision   & Entity with one decision. Returns a timeline
+                        with exactly one entry and no relationships. \\
+3 & Chronological order & Three decisions created at different times.
+                        Timeline entries are sorted oldest to newest. \\
+4 & SUPERSEDES chain  & Decision B supersedes Decision A.  B's entry
+                        includes a \ic{SUPERSEDES} relationship
+                        pointing to A's ID. \\
+5 & CONTRADICTS pair  & Decisions C and D contradict each other.  Both
+                        entries include \ic{CONTRADICTS} relationships
+                        pointing to each other. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+For each test case, verify both the API response structure (correct HTTP
+status code, correct JSON shape) and the semantic correctness (right
+number of entries, correct ordering, correct relationship metadata).
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Definition of Done}
+\label{sec:starter-done}
+
+The starter project is complete when all of the following are true:
+
+\begin{enumerate}
+    \item The Neo4j query returns correct results for entities with 0, 1,
+          and many decisions.
+    \item \ic{GET /api/entities/\{id\}/timeline} returns a well-formed
+          \ic{EntityTimelineResponse}.
+    \item The endpoint filters by \ic{user\_id} (per-user data isolation).
+    \item The \ic{EntityTimeline.tsx} component renders a vertical
+          timeline with decision cards.
+    \item \ic{SUPERSEDES} and \ic{CONTRADICTS} badges display correctly
+          with appropriate colors.
+    \item All 5 test cases pass.
+    \item \ic{pnpm typecheck} passes with no TypeScript errors.
+    \item \ic{.venv/bin/pytest tests/ -v} passes with no failures.
+\end{enumerate}
+
+\begin{keyinsight}
+If you have completed all eight items above, you have built a feature that
+spans Cypher queries, a FastAPI endpoint, Pydantic validation, a React
+component, and an automated test suite.  You now understand how data flows
+through the entire \sysname{} stack.
+\end{keyinsight}

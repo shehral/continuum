@@ -1,4 +1,612 @@
 \chapter{How to Add Features}
 \label{ch:how-to-add-features}
 
-\textit{Content to be written.}
+\textit{This chapter provides seven self-contained recipes for extending
+\sysname{}.  Each recipe identifies what you are adding, which files to
+touch, the concrete steps, a code snippet, a verification command, and
+common gotchas.  Work through them in order the first time---Recipe~17.1 is
+a two-minute change that builds confidence for the harder ones.}
+
+\begin{keyinsight}
+Start with Recipe~17.1 (Add a Canonical Mapping).  It is the smallest
+possible change that touches the entity resolution pipeline, and the
+benchmark will immediately tell you whether you got it right.
+\end{keyinsight}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Add a Canonical Mapping}
+\label{sec:add-canonical-mapping}
+
+\noindent\textbf{What you are adding.}
+A new alias $\rightarrow$ canonical-name entry in the entity resolution
+dictionary so that a surface form like \ic{k8s} resolves to
+\ic{Kubernetes}.
+
+\medskip\noindent\textbf{Files to touch.}
+
+\begin{itemize}
+    \item \codefile{apps/api/models/ontology.py} --- the
+          \ic{CANONICAL\_NAMES} dictionary (currently 534 entries).
+\end{itemize}
+
+\medskip\noindent\textbf{Steps.}
+
+\begin{enumerate}
+    \item Open \codefile{apps/api/models/ontology.py}.
+    \item Locate the \ic{CANONICAL\_NAMES} dictionary (around line~271).
+    \item Add your mapping inside the appropriate category section.  Keys
+          are lowercase; values are the display-cased canonical form.
+    \item Save the file.
+    \item Run the synthetic benchmark to verify.
+\end{enumerate}
+
+\medskip\noindent\textbf{Code snippet.}
+
+\begin{lstlisting}[style=python, title=Adding a Kubernetes alias]
+CANONICAL_NAMES: dict[str, str] = {
+    # ... existing entries ...
+    # ============================================================
+    # CONTAINERIZATION & ORCHESTRATION
+    # ============================================================
+    "kubernetes": "Kubernetes",
+    "k8s": "Kubernetes",       # already present
+    "kube": "Kubernetes",      # already present
+    "k8": "Kubernetes",        # <-- NEW: common typo/shorthand
+    # ...
+}
+\end{lstlisting}
+
+\medskip\noindent\textbf{Verification.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+cd apps/api
+python -m evaluation.synthetic_benchmark
+\end{lstlisting}
+
+The benchmark generates surface-form variants for every canonical name and
+checks that each resolves correctly.  A passing run confirms your new
+mapping is well-formed.
+
+\medskip\noindent\textbf{Gotchas.}
+
+\begin{itemize}
+    \item Keys \emph{must} be lowercase.  The lookup calls
+          \ic{name.lower()} before hitting the dictionary.
+    \item Do not map a key that already exists with a different canonical
+          value---Python will silently overwrite the earlier entry.
+    \item If your canonical name is new (not yet in the dictionary as a
+          value), also add the well-known abbreviations to
+          \ic{KNOWN\_ABBREVIATIONS} in
+          \codefile{evaluation/synthetic\_benchmark.py} so the benchmark
+          can generate test variants.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Add an Entity Type}
+\label{sec:add-entity-type}
+
+\noindent\textbf{What you are adding.}
+A new category of node in the knowledge graph (e.g.\ \ic{METRIC},
+\ic{STANDARD}).
+
+\medskip\noindent\textbf{Files to touch.}
+
+\begin{enumerate}
+    \item \codefile{apps/api/models/ontology.py} --- add to \ic{EntityType}
+          enum.
+    \item \codefile{apps/api/models/ontology.py} --- update
+          \ic{VALID\_ENTITY\_RELATIONSHIPS} to declare which relationship
+          types are legal for the new entity type.
+    \item \codefile{apps/web/} --- frontend color map (entity badge
+          colors).
+    \item \codefile{apps/web/} --- graph node style (shape, size, color in
+          the React Flow renderer).
+\end{enumerate}
+
+\medskip\noindent\textbf{Steps.}
+
+\begin{enumerate}
+    \item Add the new member to \ic{EntityType}:
+\begin{lstlisting}[style=python]
+class EntityType(Enum):
+    TECHNOLOGY = "technology"
+    CONCEPT = "concept"
+    PATTERN = "pattern"
+    SYSTEM = "system"
+    PERSON = "person"
+    ORGANIZATION = "organization"
+    METRIC = "metric"  # <-- NEW
+\end{lstlisting}
+
+    \item For every relationship type in
+          \ic{VALID\_ENTITY\_RELATIONSHIPS}, decide whether your new type
+          participates.  Add the relevant \ic{(source, target)} tuples:
+
+\begin{lstlisting}[style=python]
+"RELATED_TO": {
+    # ... existing pairs ...
+    ("metric", "technology"),   # e.g., "latency RELATED_TO Redis"
+    ("metric", "concept"),      # e.g., "throughput RELATED_TO caching"
+},
+\end{lstlisting}
+
+    \item In the frontend, add a color entry for the new type so badges and
+          graph nodes render correctly.  Search for the existing
+          \ic{ENTITY\_TYPE\_COLORS} or equivalent mapping and add your type.
+    \item Restart both backend and frontend, then ingest a conversation
+          that mentions your new entity type.
+\end{enumerate}
+
+\medskip\noindent\textbf{Verification.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+# Backend: run the test suite
+cd apps/api && .venv/bin/pytest tests/ -v -k entity
+
+# Frontend: check TypeScript compiles
+cd apps/web && pnpm typecheck
+\end{lstlisting}
+
+\medskip\noindent\textbf{Gotchas.}
+
+\begin{itemize}
+    \item If you forget to update \ic{VALID\_ENTITY\_RELATIONSHIPS}, the
+          validator (\codefile{services/validator.py}) will reject
+          relationships involving the new type at runtime.
+    \item The extraction prompt in \codefile{services/extractor.py}
+          enumerates valid entity types.  Update the prompt so the LLM
+          knows to produce the new type.
+    \item Remember to bump \confkey{LLM\_EXTRACTION\_PROMPT\_VERSION} if
+          you change the prompt (see Recipe~17.7).
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Add a Relationship Type}
+\label{sec:add-relationship-type}
+
+\noindent\textbf{What you are adding.}
+A new edge kind in the knowledge graph (e.g.\ \ic{REPLACES},
+\ic{COMPLEMENTS}).
+
+\medskip\noindent\textbf{Files to touch.}
+
+\begin{enumerate}
+    \item \codefile{apps/api/models/ontology.py} --- \ic{RelationType}
+          enum, \ic{VALID\_ENTITY\_RELATIONSHIPS}, and the appropriate
+          frozen set (\ic{ENTITY\_ONLY\_RELATIONSHIPS},
+          \ic{DECISION\_ONLY\_RELATIONSHIPS}, or
+          \ic{DECISION\_ENTITY\_RELATIONSHIPS}).
+    \item \codefile{apps/api/services/extractor.py} --- detection logic in
+          the extraction prompt.
+    \item \codefile{apps/web/} --- edge style (color, dash pattern, label)
+          in the graph renderer.
+\end{enumerate}
+
+\medskip\noindent\textbf{Steps.}
+
+\begin{enumerate}
+    \item Add the new member to \ic{RelationType}:
+
+\begin{lstlisting}[style=python]
+class RelationType(Enum):
+    # ... existing members ...
+    COMPLEMENTS = "COMPLEMENTS"  # X works well alongside Y
+\end{lstlisting}
+
+    \item Declare valid source/target type pairs:
+
+\begin{lstlisting}[style=python]
+VALID_ENTITY_RELATIONSHIPS["COMPLEMENTS"] = {
+    ("technology", "technology"),  # Redis COMPLEMENTS PostgreSQL
+    ("pattern", "pattern"),        # CQRS COMPLEMENTS Event Sourcing
+}
+\end{lstlisting}
+
+    \item Add the new type to the correct frozen set:
+
+\begin{lstlisting}[style=python]
+ENTITY_ONLY_RELATIONSHIPS: frozenset[str] = frozenset([
+    # ... existing ...
+    "COMPLEMENTS",
+])
+\end{lstlisting}
+
+    \item Update the extraction prompt in \codefile{services/extractor.py}
+          to include the new relationship type and describe when the LLM
+          should use it.
+    \item Add an edge style in the frontend graph renderer (color, line
+          dash, arrowhead).
+    \item Bump \confkey{LLM\_EXTRACTION\_PROMPT\_VERSION}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Verification.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+cd apps/api
+.venv/bin/pytest tests/ -v -k relationship
+python -c "from models.ontology import validate_entity_relationship; \
+  print(validate_entity_relationship('COMPLEMENTS','technology','technology'))"
+\end{lstlisting}
+
+The second command should print \ic{(True, None)}.
+
+\medskip\noindent\textbf{Gotchas.}
+
+\begin{itemize}
+    \item \ic{ALL\_RELATIONSHIP\_TYPES} is a union of the three frozen
+          sets.  It recomputes automatically, but only if you added your
+          type to one of them.
+    \item The \ic{validate\_entity\_relationship()} function normalizes
+          inputs to uppercase/lowercase, so the enum value casing must be
+          all-uppercase.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Add an API Endpoint}
+\label{sec:add-api-endpoint}
+
+\noindent\textbf{What you are adding.}
+A new REST endpoint on the FastAPI backend.
+
+\medskip\noindent\textbf{Files to touch.}
+
+\begin{enumerate}
+    \item \codefile{apps/api/routers/\textit{your\_module}.py} --- new
+          router file.
+    \item \codefile{apps/api/main.py} --- register the router with
+          \ic{app.include\_router()}.
+    \item Pydantic request/response models (inline or in
+          \codefile{models/}).
+\end{enumerate}
+
+\medskip\noindent\textbf{Steps.}
+
+\begin{enumerate}
+    \item Create the router file:
+
+\begin{lstlisting}[style=python, title=routers/health\_check.py]
+"""Health-check router with database connectivity test."""
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+router = APIRouter()
+
+class HealthResponse(BaseModel):
+    status: str
+    neo4j: bool
+    postgres: bool
+
+@router.get("/", response_model=HealthResponse)
+async def health_check():
+    """Return service health with dependency status."""
+    # TODO: actual connectivity checks
+    return HealthResponse(
+        status="ok",
+        neo4j=True,
+        postgres=True,
+    )
+\end{lstlisting}
+
+    \item Register the router in \codefile{main.py}:
+
+\begin{lstlisting}[style=python]
+from routers import health_check
+
+app.include_router(
+    health_check.router,
+    prefix="/api/health",
+    tags=["Health"],
+)
+\end{lstlisting}
+
+    \item If the endpoint needs user context, add the \ic{user\_id}
+          dependency that existing routers use for per-user data isolation.
+
+    \item Write tests in \codefile{tests/routers/test\_health\_check.py}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Verification.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+# Start backend
+cd apps/api && .venv/bin/uvicorn main:app --reload --port 8000
+
+# In another terminal
+curl -s http://localhost:8000/api/health/ | python -m json.tool
+\end{lstlisting}
+
+\medskip\noindent\textbf{Gotchas.}
+
+\begin{itemize}
+    \item Every data-returning endpoint should filter by \ic{user\_id} to
+          maintain per-user isolation.  Review existing routers like
+          \codefile{routers/decisions.py} for the pattern.
+    \item Pydantic strict mode is used project-wide.  Use explicit type
+          annotations; implicit coercion will raise validation errors.
+    \item The trailing slash matters.  FastAPI redirects \ic{/api/health}
+          to \ic{/api/health/} by default.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Add an LLM Provider}
+\label{sec:add-llm-provider}
+
+\noindent\textbf{What you are adding.}
+A new LLM backend (e.g.\ Google Vertex AI, Ollama) alongside the existing
+NVIDIA NIM and Amazon Bedrock providers.
+
+\medskip\noindent\textbf{Files to touch.}
+
+\begin{enumerate}
+    \item \codefile{apps/api/services/llm\_providers/\textit{your\_provider}.py}
+          --- implement \ic{BaseLLMProvider} (and optionally
+          \ic{BaseEmbeddingProvider}).
+    \item \codefile{apps/api/services/llm\_providers/\_\_init\_\_.py} ---
+          register in the factory functions.
+    \item \codefile{apps/api/config.py} --- add any new environment
+          variables.
+\end{enumerate}
+
+\medskip\noindent\textbf{Steps.}
+
+\begin{enumerate}
+    \item Create your provider class by implementing the three abstract
+          members of \ic{BaseLLMProvider}:
+
+\begin{lstlisting}[style=python, title=llm\_providers/ollama.py]
+"""Ollama LLM provider for local model inference."""
+
+from typing import AsyncIterator
+from services.llm_providers.base import BaseLLMProvider
+
+class OllamaLLMProvider(BaseLLMProvider):
+    async def generate(
+        self,
+        messages: list[dict],
+        temperature: float = 0.6,
+        max_tokens: int = 4096,
+    ) -> tuple[str, dict]:
+        # Call Ollama REST API
+        ...
+
+    async def generate_stream(
+        self,
+        messages: list[dict],
+        temperature: float = 0.6,
+        max_tokens: int = 4096,
+    ) -> AsyncIterator[str]:
+        # Stream from Ollama REST API
+        ...
+
+    @property
+    def model_name(self) -> str:
+        return "ollama/llama3"
+\end{lstlisting}
+
+    \item Register in the factory
+          (\codefile{llm\_providers/\_\_init\_\_.py}):
+
+\begin{lstlisting}[style=python]
+def get_llm_provider() -> BaseLLMProvider:
+    settings = get_settings()
+    provider_name = getattr(settings, "llm_provider", "nvidia")
+
+    if provider_name == "bedrock":
+        from services.llm_providers.bedrock import BedrockLLMProvider
+        return BedrockLLMProvider()
+    elif provider_name == "ollama":           # <-- NEW
+        from services.llm_providers.ollama import OllamaLLMProvider
+        return OllamaLLMProvider()
+    else:
+        from services.llm_providers.nvidia import NvidiaLLMProvider
+        return NvidiaLLMProvider()
+\end{lstlisting}
+
+    \item Add config variables to \codefile{config.py}:
+
+\begin{lstlisting}[style=python]
+# In Settings class
+ollama_base_url: str = "http://localhost:11434"
+ollama_model: str = "llama3"
+\end{lstlisting}
+
+    \item Set \confkey{LLM\_PROVIDER=ollama} in your \codefile{.env} file.
+\end{enumerate}
+
+\medskip\noindent\textbf{Verification.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+LLM_PROVIDER=ollama python -c "
+from services.llm_providers import get_llm_provider
+p = get_llm_provider()
+print(type(p).__name__, p.model_name)
+"
+\end{lstlisting}
+
+\medskip\noindent\textbf{Gotchas.}
+
+\begin{itemize}
+    \item The \ic{generate()} method must return a \ic{(text, usage\_dict)}
+          tuple.  The \ic{usage\_dict} should contain
+          \ic{prompt\_tokens}, \ic{completion\_tokens}, and
+          \ic{total\_tokens} for token logging.
+    \item If your provider does not support streaming, raise
+          \ic{NotImplementedError} from \ic{generate\_stream()} rather
+          than silently failing.
+    \item The \ic{LLMClient} in \codefile{services/llm.py} wraps
+          providers with rate limiting and retry logic.  You do not need to
+          implement retries inside your provider.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Add an Evaluation Script}
+\label{sec:add-evaluation-script}
+
+\noindent\textbf{What you are adding.}
+A new evaluation or analysis script that follows the project's conventions.
+
+\medskip\noindent\textbf{Files to touch.}
+
+\begin{enumerate}
+    \item \codefile{apps/api/evaluation/\textit{your\_script}.py} --- new
+          script.
+\end{enumerate}
+
+\medskip\noindent\textbf{Steps.}
+
+\begin{enumerate}
+    \item Follow the established pattern: argparse for CLI arguments, JSON
+          output for machine-readable results, and use synthetic
+          conversations as input data.
+
+\begin{lstlisting}[style=python, title=evaluation/my\_baseline.py]
+"""TF-IDF cosine similarity baseline for entity resolution.
+
+Usage:
+    python -m evaluation.my_baseline [--output PATH]
+"""
+
+import argparse
+import json
+from pathlib import Path
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="TF-IDF baseline evaluation"
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("evaluation/data/v5/tfidf_results.json"),
+    )
+    args = parser.parse_args()
+
+    # Load synthetic conversations
+    conv_dir = Path("evaluation/data/synthetic_conversations")
+    conversations = []
+    for f in sorted(conv_dir.glob("*.json")):
+        conversations.append(json.loads(f.read_text()))
+
+    # Run evaluation ...
+    results = {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+
+    # Write results
+    args.output.write_text(
+        json.dumps(results, indent=2)
+    )
+    print(f"Results written to {args.output}")
+
+if __name__ == "__main__":
+    main()
+\end{lstlisting}
+
+    \item Use the same train/test split as the benchmark (140/60) to ensure
+          comparable results.
+    \item Output JSON with at least \ic{precision}, \ic{recall}, and
+          \ic{f1} keys.
+\end{enumerate}
+
+\medskip\noindent\textbf{Verification.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+cd apps/api
+python -m evaluation.my_baseline --output /tmp/test_results.json
+cat /tmp/test_results.json
+\end{lstlisting}
+
+\medskip\noindent\textbf{Gotchas.}
+
+\begin{itemize}
+    \item Always run from \codefile{apps/api/} so that relative imports
+          resolve correctly (\ic{sys.path} manipulation at the top of each
+          evaluation script handles this).
+    \item Write results to \codefile{evaluation/data/v5/} for consistency
+          with existing baselines.
+    \item If your script calls the LLM, use
+          \ic{sanitize\_input=False} when passing synthetic conversations
+          to avoid the prompt sanitizer blocking ``USER:''/``ASSISTANT:''
+          labels.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Modify the Extraction Prompt}
+\label{sec:modify-extraction-prompt}
+
+\noindent\textbf{What you are adding.}
+Changes to the LLM prompt template that governs decision extraction from
+conversations.
+
+\medskip\noindent\textbf{Files to touch.}
+
+\begin{enumerate}
+    \item \codefile{apps/api/services/extractor.py} --- the prompt
+          template string.
+    \item \codefile{apps/api/config.py} --- the
+          \confkey{llm\_extraction\_prompt\_version} setting.
+\end{enumerate}
+
+\medskip\noindent\textbf{Steps.}
+
+\begin{enumerate}
+    \item Edit the prompt in \codefile{services/extractor.py}.
+    \item Open \codefile{config.py} and bump
+          \confkey{llm\_extraction\_prompt\_version} (e.g.\ from
+          \ic{"v1"} to \ic{"v2"}).
+    \item Re-run extraction on a small sample to verify the new prompt
+          produces valid JSON output.
+\end{enumerate}
+
+\begin{warning}
+Always bump the prompt version after changing the prompt template.
+\sysname{} uses a Redis-backed LLM response cache keyed partly by prompt
+version.  If you change the prompt without bumping the version, the system
+will continue serving \emph{old cached responses} generated by the
+previous prompt.  This is a silent correctness bug that is difficult to
+diagnose.
+\end{warning}
+
+\medskip\noindent\textbf{Verification.}
+
+\begin{lstlisting}[style=bash, numbers=none]
+cd apps/api
+
+# Test on a single conversation
+python -c "
+import asyncio, json
+from services.extractor import DecisionExtractor
+
+async def test():
+    ext = DecisionExtractor()
+    result = await ext.extract_from_conversation(
+        json.load(open(
+            'evaluation/data/synthetic_conversations/conv-001.json'
+        )),
+        sanitize_input=False,
+    )
+    print(json.dumps(result, indent=2, default=str))
+
+asyncio.run(test())
+"
+\end{lstlisting}
+
+\medskip\noindent\textbf{Gotchas.}
+
+\begin{itemize}
+    \item NVIDIA Nemotron generates \ic{<think>...</think>} blocks that
+          consume tokens.  Set \ic{max\_tokens=4096} or higher to avoid
+          truncated JSON output.
+    \item The \ic{strip\_thinking\_tags()} function in
+          \codefile{services/llm.py} removes thinking blocks
+          automatically, but only \emph{after} the full response is
+          received.
+    \item After a prompt change, run the full evaluation suite
+          (\codefile{evaluation/run\_all.py}) to measure impact on
+          B-cubed metrics before merging.
+\end{itemize}

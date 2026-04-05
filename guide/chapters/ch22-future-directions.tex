@@ -1,4 +1,354 @@
 \chapter{Future Directions}
 \label{ch:future-directions}
 
-\textit{Content to be written.}
+\textit{This chapter outlines two tiers of future work: semester-length
+projects (3--4 months) suitable for a graduate course or independent study,
+and thesis-level research directions (6--12 months) that could form the
+core of an MS thesis or PhD chapter.  Each direction includes a problem
+statement, a suggested approach, and concrete deliverables or research
+questions.}
+
+
+% ═══════════════════════════════════════════════════════════════════════
+\section{Semester Projects (3--4 months)}
+\label{sec:future-semester}
+
+These projects are scoped to produce a concrete artifact and a short
+evaluation within one academic semester.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{Real Conversation Evaluation}
+\label{sec:future-real-eval}
+
+\noindent\textbf{Problem.}
+All current evaluation data is synthetic.  Metrics may not generalize to
+real developer--AI conversations (see
+Section~\ref{sec:lim-synthetic}).
+
+\medskip\noindent\textbf{Approach.}
+
+\begin{enumerate}
+    \item Identify open-source projects that publish AI coding assistant
+          logs (e.g.\ projects using Claude Code with public session logs,
+          or GitHub Copilot Chat histories shared in issues).
+    \item Collect 50--100 real conversations and anonymize them: replace
+          developer names, project names, and any PII.
+    \item Annotate entity mentions with ground-truth canonical names
+          (two independent annotators, inter-annotator agreement measured
+          with Cohen's $\kappa$).
+    \item Run \sysname{}'s pipeline on the real data and compare B-cubed
+          metrics against the synthetic results.
+\end{enumerate}
+
+\medskip\noindent\textbf{Deliverables.}
+
+\begin{itemize}
+    \item An anonymized real-conversation evaluation corpus.
+    \item B-cubed precision/recall/F1 on real data vs.\ synthetic data.
+    \item Analysis of failure modes unique to real conversations.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{Stronger Baselines}
+\label{sec:future-baselines}
+
+\noindent\textbf{Problem.}
+The current evaluation lacks strong baselines (see
+Section~\ref{sec:lim-weak-baselines}).
+
+\medskip\noindent\textbf{Approach.}
+
+\begin{enumerate}
+    \item Implement a \textbf{BERT entity matching} baseline: fine-tune a
+          pre-trained BERT model on the training split to predict whether
+          two entity mentions refer to the same canonical entity.
+    \item Implement a \textbf{TF-IDF cosine similarity} baseline using
+          character n-grams (see Exercise~\ref{sec:ex-new-baseline}).
+    \item Optionally implement or adapt an existing entity linking system
+          (e.g.\ BLINK, EntQA) to the technology-entity domain.
+    \item Evaluate all systems on the same held-out test set with B-cubed
+          metrics and McNemar's test for statistical significance.
+\end{enumerate}
+
+\medskip\noindent\textbf{Deliverables.}
+
+\begin{itemize}
+    \item At least two baseline implementations with reproducible
+          evaluation scripts.
+    \item A comparison table showing precision, recall, F1, and
+          statistical significance for each system.
+    \item Analysis of which mention types (abbreviations, misspellings,
+          etc.) each system handles well or poorly.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{User Study}
+\label{sec:future-user-study}
+
+\noindent\textbf{Problem.}
+The practical value of a decision knowledge graph is unvalidated (see
+Section~\ref{sec:lim-no-user-study}).
+
+\medskip\noindent\textbf{Approach.}
+
+\begin{enumerate}
+    \item Design a controlled experiment with two groups of developers
+          (minimum 10 per group).
+    \item Both groups receive the same set of 5 decision-making tasks
+          (e.g.\ ``Choose a caching strategy for this microservice given
+          the existing architecture'').
+    \item The treatment group has access to \sysname{} with a
+          pre-populated knowledge graph.  The control group has access to
+          the same information in a flat document (e.g.\ a README).
+    \item Measure: decision consistency (do team members make the same
+          choice?), time to decision, and subjective usefulness (Likert
+          scale survey).
+\end{enumerate}
+
+\medskip\noindent\textbf{Deliverables.}
+
+\begin{itemize}
+    \item IRB-approved study protocol.
+    \item Quantitative comparison of decision quality and time between
+          groups.
+    \item Qualitative analysis of how developers use the knowledge graph
+          (or do not use it).
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{Dormant Stage Analysis}
+\label{sec:future-dormant}
+
+\noindent\textbf{Problem.}
+Two pipeline stages (alias search, embedding similarity) rarely trigger
+on current data (see Section~\ref{sec:lim-dormant-stages}).
+
+\medskip\noindent\textbf{Approach.}
+
+\begin{enumerate}
+    \item Create an adversarial test set specifically designed to bypass
+          the first four stages: mentions with creative abbreviations,
+          domain-specific jargon, and ambiguous references.
+    \item Measure how often stages 4 and 6 activate on this harder data.
+    \item If they activate and resolve correctly, their value is
+          demonstrated.
+    \item If they do not, propose a simplified pipeline that removes them,
+          and compare accuracy with and without.
+\end{enumerate}
+
+\medskip\noindent\textbf{Deliverables.}
+
+\begin{itemize}
+    \item An adversarial evaluation dataset (at least 100 hard mentions).
+    \item Per-stage activation rates on easy vs.\ hard data.
+    \item A recommendation: keep, modify, or remove the dormant stages.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{Confidence Calibration}
+\label{sec:future-calibration}
+
+\noindent\textbf{Problem.}
+Entity resolution confidence scores (avg 0.945) may not be well
+calibrated---a score of 0.95 may not mean the prediction is correct 95\%
+of the time.
+
+\medskip\noindent\textbf{Approach.}
+
+\begin{enumerate}
+    \item Compute ECE on the current evaluation data using
+          \codefile{evaluation/compute\_calibration.py}.
+    \item If ECE is high, train a post-hoc calibration layer (e.g.\
+          Platt scaling or isotonic regression) on the training split.
+    \item Evaluate calibrated confidence scores on the test split.
+    \item Visualize reliability diagrams (expected accuracy vs.\ predicted
+          confidence per bin).
+\end{enumerate}
+
+\medskip\noindent\textbf{Deliverables.}
+
+\begin{itemize}
+    \item ECE before and after calibration.
+    \item A calibration model that can be integrated into the pipeline.
+    \item Reliability diagrams showing calibration improvement.
+\end{itemize}
+
+
+% ═══════════════════════════════════════════════════════════════════════
+\section{Thesis-Level Research (6--12 months)}
+\label{sec:future-thesis}
+
+These directions are open-ended research problems that require sustained
+investigation and could produce publishable results.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{Multi-Agent Knowledge Sharing via MCP}
+\label{sec:future-multi-agent}
+
+\noindent\textbf{Research question.}
+Can multiple AI coding agents share a decision knowledge graph through the
+Model Context Protocol (MCP) to improve collective decision quality?
+
+\medskip\noindent\textbf{Hypothesis.}
+When multiple agents working on the same codebase share decisions through
+a common knowledge graph, they will make more consistent decisions and
+avoid contradictions compared to agents working in isolation.
+
+\medskip\noindent\textbf{Methodology.}
+
+\begin{enumerate}
+    \item Deploy \sysname{} as an MCP server accessible to multiple AI
+          agent instances.
+    \item Design a multi-agent scenario: 3--5 agents working on different
+          modules of the same project, each making technology decisions.
+    \item Measure decision consistency (do agents choose compatible
+          technologies?) with and without the shared knowledge graph.
+    \item Analyze the knowledge graph for contradiction patterns
+          (\ic{CONTRADICTS} edges) and resolution strategies.
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{Cross-Project Knowledge Transfer}
+\label{sec:future-cross-project}
+
+\noindent\textbf{Research question.}
+Can entity alignment across project knowledge graphs enable useful
+knowledge transfer?
+
+\medskip\noindent\textbf{Hypothesis.}
+Decisions about a technology in one project (e.g.\ ``we moved from REST
+to GraphQL because of N+1 query problems'') are relevant to similar
+decisions in other projects using the same technology stack.
+
+\medskip\noindent\textbf{Methodology.}
+
+\begin{enumerate}
+    \item Populate \sysname{} with data from at least 5 different projects
+          that share some technology overlap.
+    \item Implement entity alignment: match entities with the same
+          canonical name across projects.
+    \item Build a cross-project query interface (e.g.\ ``What has our
+          organization decided about PostgreSQL?'').
+    \item Evaluate whether cross-project context improves GraphRAG answer
+          quality compared to single-project context.
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{Real-Time MCP Capture}
+\label{sec:future-realtime}
+
+\noindent\textbf{Research question.}
+Is real-time decision capture during AI-assisted development more
+effective than post-hoc extraction from conversation logs?
+
+\medskip\noindent\textbf{Hypothesis.}
+Real-time capture preserves contextual signals (developer intent, code
+state at decision time) that are lost in post-hoc analysis, leading to
+higher-quality decision records.
+
+\medskip\noindent\textbf{Methodology.}
+
+\begin{enumerate}
+    \item Implement a real-time capture mode in the MCP server that
+          intercepts decisions as they happen during coding sessions.
+    \item Compare decision quality (completeness of trigger, context,
+          options, rationale) between real-time and post-hoc extraction.
+    \item Measure latency impact: does real-time capture add perceptible
+          delay to the coding workflow?
+    \item Survey developers on the intrusiveness of real-time capture.
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{Privacy-Preserving Federated Graphs}
+\label{sec:future-federated}
+
+\noindent\textbf{Research question.}
+Can organizations share decision knowledge without exposing proprietary
+implementation details?
+
+\medskip\noindent\textbf{Hypothesis.}
+A federated learning approach---where each organization trains a local
+entity resolution model and shares only model updates (not raw data)---can
+produce a globally improved resolution model without compromising privacy.
+
+\medskip\noindent\textbf{Methodology.}
+
+\begin{enumerate}
+    \item Partition the evaluation data into 3--5 ``organizations'' with
+          non-overlapping domain distributions.
+    \item Implement federated averaging for the embedding-based resolution
+          stage: each organization trains locally, then shares embedding
+          model weight updates.
+    \item Compare resolution quality of the federated model against
+          locally-trained models and a centralized model (upper bound).
+    \item Analyze privacy guarantees: what information can be inferred
+          from shared model updates?
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{Temporal Graph Reasoning}
+\label{sec:future-temporal}
+
+\noindent\textbf{Research question.}
+Can temporal reasoning over the decision graph answer questions about
+decision evolution, such as ``When did we stop using technology X?'' or
+``How has our architecture philosophy changed over the past year?''
+
+\medskip\noindent\textbf{Hypothesis.}
+Adding temporal annotations (creation time, supersession time) to graph
+edges enables a class of useful queries that static graphs cannot support.
+
+\medskip\noindent\textbf{Methodology.}
+
+\begin{enumerate}
+    \item Extend the graph schema with temporal properties on all edges
+          (valid-from, valid-to, creation timestamp).
+    \item Implement temporal Cypher query patterns: point-in-time
+          snapshots, interval queries, and trend analysis.
+    \item Define a benchmark of 20 temporal questions and evaluate whether
+          \sysname{} can answer them correctly.
+    \item Compare against a baseline that treats the graph as static (no
+          temporal reasoning).
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\subsection{Scale and Performance}
+\label{sec:future-scale}
+
+\noindent\textbf{Research question.}
+How does the system perform at 10$\times$, 100$\times$, and 1{,}000$\times$
+the current scale (10K+ entities, 100K+ relationships)?
+
+\medskip\noindent\textbf{Hypothesis.}
+The current linear-scan entity resolution and exact nearest-neighbor
+embedding search will become bottlenecks at scale, but can be replaced
+with approximate algorithms without significant accuracy loss.
+
+\medskip\noindent\textbf{Methodology.}
+
+\begin{enumerate}
+    \item Generate synthetic data at 10$\times$ (2,000 conversations),
+          100$\times$ (20,000), and 1{,}000$\times$ (200,000) the current
+          dataset size.
+    \item Profile the full pipeline at each scale: entity resolution
+          latency, graph query time, GraphRAG retrieval time, and memory
+          usage.
+    \item Replace exact nearest-neighbor search with ANN indexes
+          (FAISS HNSW or pgvector IVFFlat) and measure the
+          accuracy--latency trade-off.
+    \item Implement graph sampling for large-neighborhood traversals in
+          the GraphRAG pipeline.
+    \item Report scaling curves: latency and accuracy as functions of
+          dataset size.
+\end{enumerate}

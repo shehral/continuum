@@ -1,4 +1,221 @@
 \chapter{Known Limitations}
 \label{ch:known-limitations}
 
-\textit{Content to be written.}
+\textit{Every research system has limitations.  This chapter documents
+seven known limitations of \sysname{}, with evidence, impact assessment,
+and potential mitigations for each.  These are not bugs to fix---they are
+boundaries of the current design that constrain what conclusions can be
+drawn from the system and its evaluation.}
+
+\begin{keyinsight}
+Every limitation listed here is a potential research contribution for a
+future student.  Addressing even one of these would strengthen the system
+significantly and could constitute a publishable result.
+\end{keyinsight}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Synthetic-Only Evaluation}
+\label{sec:lim-synthetic}
+
+\noindent\textbf{Description.}
+All evaluation data comes from 200 synthetically generated conversations.
+No real developer--AI conversations were used for evaluation.
+
+\medskip\noindent\textbf{Evidence.}
+The conversations in \codefile{evaluation/generate\_conversations.py} are
+hand-authored templates that follow predictable patterns: a developer asks
+about a technology choice, the assistant presents options, and they
+converge on a decision.  Real conversations are messier---they include
+tangents, incomplete thoughts, code blocks, and implicit decisions that
+are never explicitly stated.
+
+\medskip\noindent\textbf{Impact.}
+Reported metrics (B-cubed F1 = 0.979) are likely \emph{optimistic}.
+Entity mentions in synthetic data use well-known surface forms that the
+canonical dictionary was designed to handle.  Real conversations may
+contain novel abbreviations, domain-specific jargon, or typos that fall
+outside the dictionary's coverage.
+
+\medskip\noindent\textbf{Potential mitigation.}
+Collect real conversations from open-source projects that use AI coding
+assistants.  Several open-source teams publish their Claude Code or
+Copilot Chat logs.  These could be anonymized and used as an evaluation
+corpus (see Chapter~\ref{ch:future-directions},
+Section~\ref{sec:future-semester}).
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{No User Study}
+\label{sec:lim-no-user-study}
+
+\noindent\textbf{Description.}
+\sysname{}'s core value proposition---that a decision knowledge graph
+improves developer decision-making---has not been validated with actual
+users.
+
+\medskip\noindent\textbf{Evidence.}
+The system has been evaluated purely on technical metrics: entity
+resolution accuracy, extraction success rates, and graph topology
+statistics.  There is no data on whether developers who use \sysname{}
+make better, faster, or more consistent decisions compared to developers
+who do not.
+
+\medskip\noindent\textbf{Impact.}
+Without user validation, the system may solve a problem that does not
+exist in practice, or solve it in a way that does not match developer
+workflows.  Technical correctness does not imply practical utility.
+
+\medskip\noindent\textbf{Potential mitigation.}
+Conduct a controlled user study with two groups: one using \sysname{} and
+one without.  Measure decision consistency, time to find relevant prior
+decisions, and subjective usefulness ratings.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Weak Baselines}
+\label{sec:lim-weak-baselines}
+
+\noindent\textbf{Description.}
+The entity resolution pipeline is not compared against strong published
+baselines such as BLINK, EntQA, or fine-tuned BERT-based entity linkers.
+
+\medskip\noindent\textbf{Evidence.}
+The current evaluation compares the full pipeline against ablated versions
+of itself (removing one stage at a time).  While this demonstrates the
+value of each pipeline stage, it does not show whether the pipeline as a
+whole is competitive with state-of-the-art entity linking systems.
+
+\medskip\noindent\textbf{Impact.}
+The high B-cubed F1 (0.979) may reflect the relative simplicity of the
+synthetic evaluation data rather than genuine superiority of the approach.
+A strong baseline would contextualize this number and reveal whether the
+7-stage cascade is actually necessary.
+
+\medskip\noindent\textbf{Potential mitigation.}
+Implement at least one neural baseline (e.g.\ fine-tuned BERT for entity
+matching) and one traditional baseline (e.g.\ TF-IDF cosine similarity,
+as described in Exercise~\ref{sec:ex-new-baseline}).  Compare all systems
+on the same held-out test set.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Two Dormant Stages}
+\label{sec:lim-dormant-stages}
+
+\noindent\textbf{Description.}
+Two of the seven entity resolution stages---alias search (stage~4) and
+embedding similarity (stage~6)---rarely trigger during evaluation.
+
+\medskip\noindent\textbf{Evidence.}
+The pipeline benchmark shows that the vast majority of mentions are
+resolved by exact match (stage~2), canonical lookup (stage~3), or fuzzy
+matching (stage~5).  Alias search and embedding similarity contribute
+marginal improvements.  The evaluation data does not generate enough
+hard cases to exercise these stages meaningfully.
+
+\medskip\noindent\textbf{Impact.}
+These stages add code complexity and runtime cost (embedding lookups
+require vector similarity search) without demonstrable benefit on the
+current evaluation data.  They may be valuable on harder, real-world data,
+but this has not been shown.
+
+\medskip\noindent\textbf{Potential mitigation.}
+Design a targeted experiment with adversarial entity mentions that are
+specifically crafted to bypass the first four stages.  If the dormant
+stages resolve these correctly, their value is demonstrated.  If not,
+consider simplifying the pipeline (see
+Chapter~\ref{ch:future-directions}).
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Single-Project Scope}
+\label{sec:lim-single-project}
+
+\noindent\textbf{Description.}
+\sysname{} stores decisions within a single project context.  There is no
+mechanism for cross-project knowledge transfer or sharing.
+
+\medskip\noindent\textbf{Evidence.}
+The data model uses \ic{user\_id} and \ic{project\_id} filtering on all
+queries.  Entities and decisions from one project are invisible to
+another, even when they refer to the same technologies.
+
+\medskip\noindent\textbf{Impact.}
+An organization using PostgreSQL across 10 projects would build 10
+separate, redundant knowledge graphs.  Decisions made in one project
+(e.g.\ ``we switched from REST to GraphQL because of N+1 query
+problems'') cannot inform similar decisions in other projects.
+
+\medskip\noindent\textbf{Potential mitigation.}
+Implement cross-project entity alignment, where entities with the same
+canonical name across projects are linked at the graph level.  This would
+enable queries like ``what has our organization decided about
+PostgreSQL?'' across all projects.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{LLM Dependency}
+\label{sec:lim-llm-dependency}
+
+\noindent\textbf{Description.}
+Decision extraction quality is tightly coupled to the specific LLM used
+(NVIDIA Nemotron).  Results may differ substantially with a different
+model.
+
+\medskip\noindent\textbf{Evidence.}
+The reproducibility analysis (Chapter~\ref{ch:evaluation-methodology},
+Section~\ref{sec:eval-reproducibility}) shows that even the \emph{same}
+model produces different results across runs: 364 decisions in Run~1 vs.\
+383 in Run~2.  Switching to a different model (e.g.\ Claude, GPT-4) would
+introduce additional variation from differences in instruction-following
+behavior, JSON formatting reliability, and domain knowledge.
+
+\medskip\noindent\textbf{Impact.}
+The system's extraction quality is not a property of the pipeline
+alone---it is a property of the pipeline \emph{plus} the specific model.
+Users who substitute a weaker model may see significant quality
+degradation.  Users who substitute a stronger model may see improvements
+that the current evaluation does not predict.
+
+\medskip\noindent\textbf{Potential mitigation.}
+Run the evaluation with at least 3 different LLMs (e.g.\ Nemotron,
+Claude, GPT-4) and report per-model metrics.  This would disentangle
+pipeline quality from model quality and help users choose an appropriate
+model for their use case.
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Scale Untested}
+\label{sec:lim-scale}
+
+\noindent\textbf{Description.}
+The system has been tested with approximately 200 conversations, 383
+decisions, and 847 entities.  Performance at larger scales is unknown.
+
+\medskip\noindent\textbf{Evidence.}
+All evaluation data fits comfortably in memory.  The Neo4j graph has
+$\sim$1,230 nodes and $\sim$1,271 relationships---well within the range
+where brute-force operations are fast.  Entity resolution performs linear
+scans in several stages.  The embedding similarity stage uses exact cosine
+similarity, not approximate nearest neighbors.
+
+\medskip\noindent\textbf{Impact.}
+A production deployment with thousands of conversations and tens of
+thousands of entities may encounter:
+
+\begin{itemize}
+    \item Slow entity resolution due to linear scans in the fuzzy matching
+          stage.
+    \item High memory usage for the embedding index.
+    \item Slow graph traversal in the GraphRAG pipeline as subgraph
+          expansion retrieves increasingly large neighborhoods.
+    \item Neo4j query performance degradation without proper indexing.
+\end{itemize}
+
+\medskip\noindent\textbf{Potential mitigation.}
+Profile the system at 10$\times$ and 100$\times$ current scale.  Replace
+exact nearest-neighbor search with approximate nearest neighbors (ANN)
+using FAISS or pgvector HNSW indexes.  Add query result pagination and
+graph sampling for large neighborhoods (see
+Chapter~\ref{ch:future-directions}, Section~\ref{sec:future-thesis}).

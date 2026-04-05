@@ -1,4 +1,372 @@
 \chapter{Exercises}
 \label{ch:exercises}
 
-\textit{Content to be written.}
+\textit{Six hands-on exercises that progressively deepen your understanding
+of \sysname{}.  Each exercise states a learning objective, difficulty
+level, estimated time, the files you will work in, step-by-step
+instructions, and acceptance criteria.  Hints are provided at the end of
+each exercise for when you get stuck.}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Ontology Expansion}
+\label{sec:ex-ontology-expansion}
+
+\noindent\textbf{Difficulty:} Easy \quad
+\textbf{Time:} $\sim$2 hours \quad
+\textbf{Learning objective:} Understand canonical mappings and the
+synthetic benchmark.
+
+\medskip\noindent\textbf{Files.}
+
+\begin{itemize}
+    \item \codefile{apps/api/models/ontology.py}
+    \item \codefile{apps/api/evaluation/synthetic\_benchmark.py}
+\end{itemize}
+
+\medskip\noindent\textbf{Instructions.}
+
+\begin{enumerate}
+    \item Pick a technical domain you know well (e.g.\ game development,
+          embedded systems, bioinformatics).
+    \item Add 20 new canonical mappings to the \ic{CANONICAL\_NAMES}
+          dictionary in \codefile{ontology.py}.  For each canonical name,
+          add at least two surface-form aliases (e.g.\ \ic{"unreal"}
+          $\rightarrow$ \ic{"Unreal Engine"},
+          \ic{"ue5"} $\rightarrow$ \ic{"Unreal Engine"}).
+    \item For any canonical name that has well-known abbreviations, add
+          them to \ic{KNOWN\_ABBREVIATIONS} in
+          \codefile{synthetic\_benchmark.py}.
+    \item Run the benchmark and confirm all new mappings pass.
+\end{enumerate}
+
+\begin{tryit}
+\textbf{Acceptance criteria:}
+\begin{itemize}
+    \item 20 new entries in \ic{CANONICAL\_NAMES}, each with a lowercase
+          key and properly cased canonical value.
+    \item \ic{python -m evaluation.synthetic\_benchmark} runs to
+          completion with no failures.
+    \item No existing mappings are broken (the benchmark tests all of
+          them).
+\end{itemize}
+\end{tryit}
+
+\medskip\noindent\textbf{Hints.}
+
+\begin{itemize}
+    \item Look at the existing category sections (\ic{DATABASES},
+          \ic{AI/ML FRAMEWORKS}, etc.) for formatting conventions.
+    \item Remember: keys must be lowercase.  The resolver calls
+          \ic{name.lower()} before lookup.
+    \item If you are unsure whether a name already exists, search the file
+          for the canonical form first.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Graph Layout Enhancement}
+\label{sec:ex-graph-layout}
+
+\noindent\textbf{Difficulty:} Easy--Medium \quad
+\textbf{Time:} $\sim$3 hours \quad
+\textbf{Learning objective:} Work with the React Flow graph renderer and
+understand how node positions are computed.
+
+\medskip\noindent\textbf{Files.}
+
+\begin{itemize}
+    \item \codefile{apps/web/} --- graph page component and layout
+          utilities.
+\end{itemize}
+
+\medskip\noindent\textbf{Instructions.}
+
+\begin{enumerate}
+    \item Study the existing graph layout code.  The default layout
+          arranges nodes using a force-directed or hierarchical algorithm.
+    \item Implement a \textbf{circular layout} option that places nodes in
+          a circle with the most-connected node at the top.
+    \item Add a layout toggle (dropdown or button group) to the graph page
+          so users can switch between the existing layout and your new
+          circular layout.
+    \item Ensure edges render correctly with the new positions.
+\end{enumerate}
+
+\begin{tryit}
+\textbf{Acceptance criteria:}
+\begin{itemize}
+    \item A ``Circular'' option appears in the graph page layout controls.
+    \item Selecting it repositions all nodes in a circle.
+    \item The most-connected node (highest degree) appears at the 12
+          o'clock position.
+    \item Edges remain visible and do not overlap excessively.
+    \item Switching back to the default layout restores the original
+          positions.
+    \item \ic{pnpm typecheck} passes with no errors.
+\end{itemize}
+\end{tryit}
+
+\medskip\noindent\textbf{Hints.}
+
+\begin{itemize}
+    \item The circular position for node $i$ out of $N$ total is:
+          $x = r \cos(2\pi i / N)$, $y = r \sin(2\pi i / N)$.
+    \item Sort nodes by degree (number of connections) descending before
+          assigning positions so the highest-degree node gets index~0.
+    \item Use \ic{cn()} from \ic{@/lib/utils} for conditional class names
+          on the toggle buttons.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Search Entity Type Filter}
+\label{sec:ex-search-filter}
+
+\noindent\textbf{Difficulty:} Medium \quad
+\textbf{Time:} $\sim$3 hours \quad
+\textbf{Learning objective:} Add a feature that spans both backend and
+frontend, touching an API endpoint and a UI control.
+
+\medskip\noindent\textbf{Files.}
+
+\begin{itemize}
+    \item \codefile{apps/api/routers/search.py} --- add query parameter.
+    \item \codefile{apps/api/services/} --- filter logic in the search
+          service.
+    \item \codefile{apps/web/} --- search page component.
+\end{itemize}
+
+\medskip\noindent\textbf{Instructions.}
+
+\begin{enumerate}
+    \item Add an optional \ic{entity\_type} query parameter to the search
+          endpoint in \codefile{routers/search.py}.  Accept any value from
+          the \ic{EntityType} enum (e.g.\ \ic{technology}, \ic{concept}).
+    \item Update the search service to filter results by entity type when
+          the parameter is present.  When absent, return all types (current
+          behavior).
+    \item On the frontend search page, add a dropdown (or segmented
+          control) that lists all entity types plus an ``All'' option.
+    \item Wire the dropdown selection into the search API call as a query
+          parameter.
+    \item Test with several entity types and verify the result count
+          changes.
+\end{enumerate}
+
+\begin{tryit}
+\textbf{Acceptance criteria:}
+\begin{itemize}
+    \item \ic{GET /api/search/?q=react\&entity\_type=technology} returns
+          only technology entities.
+    \item \ic{GET /api/search/?q=react} (no filter) returns all types.
+    \item The frontend dropdown updates search results in real time.
+    \item Invalid entity types return a 422 validation error.
+    \item \ic{.venv/bin/pytest tests/ -v -k search} passes.
+    \item \ic{pnpm typecheck} passes.
+\end{itemize}
+\end{tryit}
+
+\medskip\noindent\textbf{Hints.}
+
+\begin{itemize}
+    \item Use \ic{Optional[EntityType] = None} as the FastAPI parameter
+          type for automatic enum validation.
+    \item The Neo4j query likely uses a \ic{WHERE} clause on node labels
+          or a \ic{type} property---add a conditional filter there.
+    \item On the frontend, use React Query's \ic{queryKey} to include the
+          entity type so cache invalidation works correctly when the filter
+          changes.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{New Evaluation Baseline}
+\label{sec:ex-new-baseline}
+
+\noindent\textbf{Difficulty:} Medium \quad
+\textbf{Time:} $\sim$4 hours \quad
+\textbf{Learning objective:} Implement a comparison baseline for entity
+resolution using traditional NLP techniques.
+
+\medskip\noindent\textbf{Files.}
+
+\begin{itemize}
+    \item \codefile{apps/api/evaluation/tfidf\_baseline.py} --- new file.
+    \item \codefile{apps/api/evaluation/data/v5/} --- output directory.
+\end{itemize}
+
+\medskip\noindent\textbf{Instructions.}
+
+\begin{enumerate}
+    \item Create \codefile{evaluation/tfidf\_baseline.py}.
+    \item Load the synthetic benchmark data (the CSV produced by
+          \codefile{synthetic\_benchmark.py}).
+    \item For each surface-form variant, compute its TF-IDF vector using
+          scikit-learn's \ic{TfidfVectorizer} with character n-grams
+          (\ic{analyzer="char\_wb"}, \ic{ngram\_range=(2,4)}).
+    \item Build a TF-IDF matrix for all canonical names.
+    \item For each test variant, find the nearest canonical name by cosine
+          similarity and predict that as the resolution.
+    \item Compute precision, recall, and F1 against the ground-truth
+          canonical labels.
+    \item Write results to
+          \codefile{evaluation/data/v5/tfidf\_baseline\_results.json}.
+\end{enumerate}
+
+\begin{tryit}
+\textbf{Acceptance criteria:}
+\begin{itemize}
+    \item The script runs end-to-end:
+          \ic{python -m evaluation.tfidf\_baseline}.
+    \item Output JSON contains \ic{precision}, \ic{recall}, and \ic{f1}.
+    \item Results are computed on the held-out test split only (60
+          conversations, not all 200).
+    \item The script prints a summary comparing TF-IDF F1 against
+          \sysname{}'s pipeline F1 (0.979 from B-cubed evaluation).
+\end{itemize}
+\end{tryit}
+
+\medskip\noindent\textbf{Hints.}
+
+\begin{itemize}
+    \item Install scikit-learn: \ic{.venv/bin/pip install scikit-learn}.
+    \item Character n-grams work better than word n-grams for entity name
+          matching because many tech names are single tokens.
+    \item Use \ic{cosine\_similarity} from
+          \ic{sklearn.metrics.pairwise} for efficient batch comparison.
+    \item The existing benchmark CSV has a \ic{split} column
+          (\ic{train}/\ic{test}) to identify held-out data.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{GraphRAG Depth Experiment}
+\label{sec:ex-graphrag-depth}
+
+\noindent\textbf{Difficulty:} Medium--Hard \quad
+\textbf{Time:} $\sim$4 hours \quad
+\textbf{Learning objective:} Understand how graph traversal depth affects
+retrieval quality in the GraphRAG pipeline.
+
+\medskip\noindent\textbf{Files.}
+
+\begin{itemize}
+    \item \codefile{apps/api/services/graph\_rag.py} --- retrieval depth
+          parameter.
+    \item \codefile{apps/api/evaluation/} --- new experiment script.
+\end{itemize}
+
+\medskip\noindent\textbf{Instructions.}
+
+\begin{enumerate}
+    \item Study \codefile{services/graph\_rag.py} to understand how the
+          retrieval pipeline expands from seed entities through graph
+          neighbors.
+    \item Create an experiment script that runs the same set of 10 queries
+          at depths 1, 2, and 3.
+    \item For each depth, record: number of nodes retrieved, number of
+          unique entity types, and the context string length.
+    \item Manually judge relevance of the top-5 retrieved nodes for each
+          query at each depth (use a simple 0/1/2 scale: irrelevant,
+          partially relevant, highly relevant).
+    \item Compute average relevance scores per depth and plot the
+          trade-off between depth and relevance.
+\end{enumerate}
+
+\begin{tryit}
+\textbf{Acceptance criteria:}
+\begin{itemize}
+    \item The experiment script produces a JSON file with per-query,
+          per-depth results.
+    \item At least 10 queries are tested at all three depths.
+    \item A summary table shows: depth, avg nodes retrieved, avg
+          relevance, avg context length.
+    \item The script includes a brief analysis comment interpreting whether
+          deeper traversal helps or hurts retrieval quality.
+\end{itemize}
+\end{tryit}
+
+\medskip\noindent\textbf{Hints.}
+
+\begin{itemize}
+    \item The \ic{retrieve\_context()} method in \ic{GraphRAGService}
+          returns \ic{(subgraph, context\_str, seed\_ids)}.  The subgraph
+          contains the retrieved nodes.
+    \item Depth~1 retrieves direct neighbors; depth~2 retrieves
+          neighbors-of-neighbors.
+    \item You will likely find that depth~2 is the sweet spot---depth~3
+          tends to bring in too much noise for most queries.
+    \item The existing \codefile{evaluation/test\_graphrag.py} has example
+          queries you can reuse.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────
+\section{New MCP Tool}
+\label{sec:ex-mcp-tool}
+
+\noindent\textbf{Difficulty:} Hard \quad
+\textbf{Time:} $\sim$4 hours \quad
+\textbf{Learning objective:} Extend the Model Context Protocol server
+with a new tool and write automated test cases.
+
+\medskip\noindent\textbf{Files.}
+
+\begin{itemize}
+    \item \codefile{apps/mcp/} --- MCP server tool definitions.
+    \item \codefile{apps/api/evaluation/test\_mcp.py} --- MCP test suite.
+\end{itemize}
+
+\medskip\noindent\textbf{Instructions.}
+
+\begin{enumerate}
+    \item Design a \ic{continuum\_timeline} MCP tool that accepts an
+          entity name and returns a chronological list of decisions
+          involving that entity.
+    \item The tool should query the Neo4j graph for all
+          \ic{DecisionTrace} nodes connected to the entity via
+          \ic{INVOLVES} relationships, sorted by timestamp.
+    \item Each entry in the returned list should include: decision
+          summary, timestamp, confidence score, and any
+          \ic{SUPERSEDES}/\ic{CONTRADICTS} relationships to other
+          decisions.
+    \item Implement the tool in the MCP server following the patterns of
+          existing tools.
+    \item Write at least 5 test cases covering:
+          \begin{itemize}
+              \item Entity with no decisions (empty result).
+              \item Entity with one decision (single entry).
+              \item Correct chronological ordering (oldest first).
+              \item Entity with a \ic{SUPERSEDES} chain.
+              \item Entity with a \ic{CONTRADICTS} pair.
+          \end{itemize}
+\end{enumerate}
+
+\begin{tryit}
+\textbf{Acceptance criteria:}
+\begin{itemize}
+    \item The \ic{continuum\_timeline} tool appears in the MCP server's
+          tool list.
+    \item Calling it with \ic{"PostgreSQL"} returns a chronological list
+          of decisions.
+    \item The response includes \ic{SUPERSEDES}/\ic{CONTRADICTS} metadata
+          when present.
+    \item All 5 test cases pass when running the MCP test suite.
+    \item The tool handles non-existent entity names gracefully (returns
+          empty list, not an error).
+\end{itemize}
+\end{tryit}
+
+\medskip\noindent\textbf{Hints.}
+
+\begin{itemize}
+    \item Study the existing MCP tools in \codefile{apps/mcp/} for the
+          registration pattern and response format.
+    \item The Cypher query will need to \ic{MATCH} the entity, traverse
+          \ic{INVOLVES} relationships to decision nodes, and optionally
+          \ic{MATCH} inter-decision relationships.
+    \item Use \ic{ORDER BY d.created\_at ASC} (or the equivalent timestamp
+          property) for chronological sorting.
+    \item The existing \codefile{evaluation/test\_mcp.py} has 31 test
+          cases that serve as a template for test structure.
+\end{itemize}
